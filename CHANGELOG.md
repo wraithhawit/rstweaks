@@ -8,6 +8,25 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.82
+
+- **The gametest could never have found its template.** `RSTweaksGameTests` asks for
+  `template = "rstweaks:empty"`, but the file shipped under `data/rsperf/` — the namespace this
+  mod stopped using at 0.2.41. The lookup could not have resolved, so the one gametest in the
+  project was broken from the rename onwards. Nobody noticed because gametests only register
+  with `-Dneoforge.enabledGameTestNamespaces=rstweaks`, and nothing has been run that way.
+
+  It also shipped twice: `structure/` and `structures/`, byte-identical. 1.21 singularised the
+  data pack directories, so `structure/` is correct and `structures/` was a 1.20 leftover kept
+  alongside rather than replaced. Checked against the pack rather than assumed — of the 1.21.1
+  mods installed here, 111 entries use `structure/` and 5 use `structures/`.
+
+  Now one file, at `data/rstweaks/structure/empty.nbt`, verified present in the built jar.
+
+  Found while reviewing the source before sharing it, which is a decent argument for reading
+  your own resources folder occasionally. Closes #6, and unblocks #2 — there is no point
+  writing gametests on a harness whose template does not load.
+
 ## 0.2.81
 
 - **Fluid substitution removed.** 26 files and roughly 3,600 lines: the pattern type and its

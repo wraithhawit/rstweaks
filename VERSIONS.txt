@@ -18,6 +18,11 @@ UNRELEASED (in source, not yet in a built jar)
   link is a protobuf payload on bytebin, not a web page.
 
 
+0.2.82  BUG FIX - the gametest could never have found its template. It asked for
+        "rstweaks:empty" while the file shipped under the pre-rename "rsperf" namespace,
+        in duplicate, one of them in the 1.20 "structures" directory that 1.21 renamed to
+        "structure". Now one file at data/rstweaks/structure/empty.nbt. (Issue #6)
+
 0.2.81  Fluid substitution REMOVED - 26 files, ~3,600 lines. Use Ultramegaaa's "Refined
         Fluid Substitution" instead. The crafting-grid container refill survives and is
         unaffected; so does the LP planner's cycle handling, which recycled containers
