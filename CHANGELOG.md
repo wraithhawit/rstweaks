@@ -8,6 +8,52 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.84
+
+- **Durability crafting did not work with fuzzy mode.** `PatternResolver.getFuzzyInput` replaces
+  the encoded stack with the recipe's own ingredient items:
+
+  ```java
+  ItemStack[] items = recipe.getIngredients().get(i).getItems();
+  return Arrays.stream(items).map(ItemResource::ofItemStack).toList();
+  ```
+
+  Those are plain instances, so a damageable tool comes back at **damage 0** however worn the
+  encoded one was. The byproduct is not rewritten — it comes from `getRemainingItems()` on the
+  encoded input and keeps the real damage. Encode with a crystal at damage 50 and the resolved
+  pattern reads `@0 in, @51 out`.
+
+  Everything downstream then draws the obvious and wrong conclusion. `DurabilityClasses.wearStep`
+  measures precisely that gap, so one craft is costed at 51 uses instead of 1 and a fresh crystal
+  becomes worth a single craft.
+
+  The encoded resource now goes back into the list, at the front. Fuzzy still means what it meant —
+  every alternative the recipe accepts is still there — and this only adds the one the player
+  actually put in the grid, which non-fuzzy patterns have always used. Front matters twice:
+  `CraftingGraph.buildEffects` takes `inputs().getFirst()` to pick the resource class, and
+  `wearStep` takes the first input belonging to the tool group. Restricted to durable items, so
+  alternative ordering is untouched for every other fuzzy pattern in the game.
+
+- **The planner was not changed, deliberately.** Its arithmetic on `@0 → @51` was always right: a
+  gap of fifty-one genuinely means fifty-one durability a craft, and recipes like that exist. The
+  lie was introduced before the planner ever saw it. Clamping `wearStep` would have made such a
+  recipe immortal in the ledger — 0.2.57's duplication bug returning — so a scenario now asserts
+  that layout is still **refused**, specifically to stop that "fix" being attempted later.
+
+**Two corrections to how this was investigated**, both worth recording:
+
+- The first reproduction was **mis-specified**. It asserted `expectPlan = true` for a request
+  needing 3,264 uses from a crystal holding 100, then treated the resulting failure as proof of the
+  bug. The planner was behaving correctly; the test was wrong. What it actually demonstrated is now
+  kept as the "refused, not clamped" guard.
+- The replacement scenarios were first added to `scenarios()`, which runs with `Durability.NONE`,
+  so nothing durability-related was being modelled at all — the suite caught it. They belong in
+  `durabilityChecks`, which installs `FakeDurability`.
+
+  `durabilityChecks` and `shortfallChecks` are **not counted** in the reported scenario total, so a
+  check placed there that silently never runs is indistinguishable from one that passes. Both new
+  checks were confirmed live by flipping an expectation and watching the suite fail.
+
 ## 0.2.83
 
 - **The Max button ignored reusable tools**, reporting either `0` or something that looked like a

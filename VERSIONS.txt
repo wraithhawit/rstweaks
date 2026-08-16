@@ -18,6 +18,12 @@ UNRELEASED (in source, not yet in a built jar)
   link is a protobuf payload on bytebin, not a web page.
 
 
+0.2.84  BUG FIX - durability crafting with fuzzy mode. Fuzzy replaced the encoded tool with
+        the recipe's own ingredient items, which are always damage 0, while the byproduct
+        kept the real damage - so a crystal at damage 50 read as "@0 in, @51 out" and one
+        craft was costed at 51 uses. The encoded tool is now kept, first in the list.
+        (Issue #9)
+
 0.2.83  BUG FIX - the Max button ignored reusable tools, reporting 0 or a container count.
         RS reaches its calculator through three listeners and we hooked two; the max path
         was the third and never saw the planner. Now answered by it. Adds 17 headless

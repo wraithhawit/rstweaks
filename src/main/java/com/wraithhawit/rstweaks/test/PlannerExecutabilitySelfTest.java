@@ -620,6 +620,33 @@ public final class PlannerExecutabilitySelfTest {
             "product", 64L, true,
             plan -> requisition(plan, "crystal@", 1L));
 
+        // The two halves of issue #9, and the pair matters more than either alone.
+        //
+        // Fuzzy mode used to hand the planner "crystal@0 in, crystal@51 out", because
+        // PatternResolver.getFuzzyInput replaces the encoded stack with the recipe's own
+        // ingredient items — plain instances at damage 0 — while the byproduct keeps the encoded
+        // tool's real damage. PatternResolverFuzzyMixin puts the encoded tool back at the front.
+        //
+        // FIRST: that layout must still be REFUSED, and the planner was always right to refuse it.
+        // A gap of 51 genuinely means fifty-one durability a craft, so 64 crafts want 3,264 uses
+        // from a crystal holding 100. This exists to stop anyone "fixing" the symptom by clamping
+        // wearStep to 1 — that would make a recipe which really does burn fifty-one durability
+        // immortal in the ledger, which is 0.2.57's duplication bug coming back.
+        run(failures, new FakeDurability("crystal", 100),
+            "implausible wear step is refused, not clamped",
+            repo -> repo.add(wearPattern(0, 51), 0),
+            Map.of(FakeDurability.worn("crystal", 0), 1L, "material", 4096L),
+            "product", 64L, false);
+
+        // SECOND: the layout the resolver now produces. The encoded wear is preserved, so the gap
+        // is one use per craft and a crystal at damage 50 covers exactly the 50 crafts it has left.
+        run(failures, new FakeDurability("crystal", 100),
+            "encoded wear preserved on a fuzzy pattern",
+            repo -> repo.add(wearPattern(50), 0),
+            Map.of(FakeDurability.worn("crystal", 50), 1L, "material", 4096L),
+            "product", 40L, true,
+            plan -> requisition(plan, "crystal@50", 1L));
+
         // Already worn, and enough left. Must reach for the worn one it already has
         // rather than declaring it has no crystal.
         run(failures, new FakeDurability("crystal", 100),
@@ -993,6 +1020,7 @@ public final class PlannerExecutabilitySelfTest {
                 List.of(ing(1, "bucket"), ing(1, "milk")), List.of()), 0);
         }, Map.of("sugar", 4096L, "egg", 4096L, "wheat", 4096L, "milk", 4096L, "bucket", 3L),
             "cake", 32L, true));
+
 
         // A byproduct that is not recycled, only surplus. The planner still engages —
         // a byproduct alone is enough — but there is nothing to bootstrap, so the
