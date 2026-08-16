@@ -1,0 +1,30 @@
+Refined Storage Tweaks (rstweaks)
+Copyright (c) 2026 wraithhawit and contributors
+
+All Rights Reserved.
+
+This software is provided for use as a Minecraft mod. No permission is granted to
+copy, modify, redistribute, sublicense, or create derivative works from this source
+code, in whole or in part, except as expressly permitted in writing by the copyright
+holder.
+
+Using the built mod in a modpack or on a server is permitted.
+
+This is a provisional licence chosen to keep options open while the project is young.
+It is not a considered long-term choice, and it has two known consequences worth
+being aware of:
+
+  1. Contributors retain copyright in their own contributions. This repository has
+     already received work from someone other than the copyright holder above, so
+     "All Rights Reserved" by a single party is a simplification. Before this project
+     accepts contributions publicly, it wants either a real open-source licence or an
+     explicit contributor agreement.
+
+  2. All Rights Reserved discourages the things that usually help a mod: forks that
+     fix it after it is abandoned, packs that need to patch it, and other developers
+     reading it to learn from. Worth revisiting before any public release.
+
+This licence covers only the code in this repository. It does not apply to Refined
+Storage, Cable Tiers, Step Crafter, Functional Storage, or any other mod this project
+depends on or interoperates with; those remain under their own licences and are not
+redistributed here.

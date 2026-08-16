@@ -114,10 +114,7 @@ public final class Config {
         skipMismatchedStorageTypes = SKIP_MISMATCHED_STORAGE_TYPES.get();
         skipEmptyCompositeExtract = SKIP_EMPTY_COMPOSITE_EXTRACT.get();
         durabilityAwarePlanning = DURABILITY_AWARE_PLANNING.get();
-        fluidSubstitutionPatterns = FLUID_SUBSTITUTION_PATTERNS.get();
-        convertUnmarkedFluidPatterns = CONVERT_UNMARKED_FLUID_PATTERNS.get();
         refillContainersInCraftingGrid = REFILL_CONTAINERS_IN_CRAFTING_GRID.get();
-        reversibleFluidSwapPatterns = REVERSIBLE_FLUID_SWAP_PATTERNS.get();
         AutocraftingLogSpam.apply(SILENCE_AUTOCRAFTING_DEBUG_LOG.get());
     }
 
@@ -147,9 +144,9 @@ public final class Config {
             "Refined Storage plans the craft exactly as it does today, and the reason is",
             "logged. The worst case is the behaviour you already have.",
             "",
-            "None of the other optimizations depend on this, but fluidSubstitutionPatterns",
-            "effectively does: a reversible swap is a cycle, and RS's own calculator reports",
-            "'cyclical pattern detected' rather than planning it."
+            "None of the other optimizations depend on this. It earns its keep on container",
+            "recycling -- one bucket round a loop 64 times is one bucket, not 64 -- which RS's",
+            "own depth-first calculator either refuses as a cycle or plans as 64 buckets."
         )
         .define("lpPlanner", true);
 
@@ -182,94 +179,6 @@ public final class Config {
     /** Cached like {@link #lazyPatternPlanCopy}; read once per crafted iteration. */
     public static volatile boolean keepRecycledResourcesInTask = true;
 
-    public static final ModConfigSpec.BooleanValue FLUID_SUBSTITUTION_PATTERNS = BUILDER
-        .comment(
-            "Let a pattern that only empties or fills a container run without a machine.",
-            "",
-            "Refined Storage builds every processing pattern as 'external', meaning: hand",
-            "this to a pattern provider and wait for a machine to give the result back.",
-            "That is right for a furnace and wrong for a bucket. Nothing has to happen for",
-            "a lava bucket to become an empty bucket and 1000mB of lava, so with no machine",
-            "to accept it, the craft can never start.",
-            "",
-            "With this on, a pattern whose inputs and outputs are the same container and",
-            "the same fluid on opposite sides is settled by Refined Storage itself, the way",
-            "a crafting table recipe is. Any container is covered -- the test asks the",
-            "item's own fluid handler, it does not look for buckets.",
-            "",
-            "The test is strict on purpose. A processing pattern turned internal by mistake",
-            "would have Refined Storage produce the output without the machine ever running,",
-            "which is a duplication bug rather than a stalled craft.",
-            "",
-            "PARKED, AND OFF BY DEFAULT. On 2026-08-16 Ultramegaaa released 'Refined Fluid",
-            "Substitution', which covers this ground, is maintained, and runs on both Fabric",
-            "and NeoForge. This implementation still works and is left in for anyone already",
-            "using it, but it is no longer being developed and will probably be removed in a",
-            "future version. Prefer that mod. Do not run both.",
-            "",
-            "Needs lpPlanner on, which it now is: a reversible swap is a cycle, and RS's own",
-            "calculator answers 'cyclical pattern detected' instead of planning it.",
-            "",
-            "One thing to know before turning it on: if your pack has a machine recipe that",
-            "really is a container and its own contents on opposite sides, that recipe is",
-            "settled in the ledger rather than sent to the machine. Nothing is created or",
-            "destroyed, but the machine does not run and its processing time is skipped."
-        )
-        .define("fluidSubstitutionPatterns", false);
-
-    /** Cached like {@link #lazyPatternPlanCopy}; read once per pattern resolution. */
-    public static volatile boolean fluidSubstitutionPatterns = false;
-
-    public static final ModConfigSpec.BooleanValue CONVERT_UNMARKED_FLUID_PATTERNS = BUILDER
-        .comment(
-            "Also treat a processing pattern as a fluid substitution when its contents look",
-            "like one, even though it was not encoded on the fluid substitution tab.",
-            "",
-            "OFF BY DEFAULT. Patterns encoded on the fluid tab carry a mark saying what they",
-            "are, and only marked patterns are treated as substitutions.",
-            "",
-            "Recognising one by its contents cannot tell it apart from a real machine recipe",
-            "that takes a full container and gives back the empty one plus its fluid, because",
-            "at the level of ingredients and outputs those are the same thing. Such a recipe",
-            "was being settled in the ledger instead of being sent to the machine, so the",
-            "machine never ran. Requiring the mark removes that ambiguity entirely.",
-            "",
-            "WHAT TURNING IT ON COSTS: nothing is destroyed, but a pattern encoded before",
-            "0.2.65 has no mark, so it goes back to being an ordinary processing pattern and",
-            "its craft waits for a machine that does not exist. Re-encode it on the fluid tab",
-            "and it carries the mark like any new one. Turn this on if you would rather not",
-            "re-encode them and accept the ambiguity above.",
-            "",
-            "Has no effect unless fluidSubstitutionPatterns is on."
-        )
-        .define("convertUnmarkedFluidPatterns", false);
-
-    /** Cached like {@link #lazyPatternPlanCopy}; read once per pattern resolution. */
-    public static volatile boolean convertUnmarkedFluidPatterns = false;
-
-    public static final ModConfigSpec.BooleanValue REVERSIBLE_FLUID_SWAP_PATTERNS = BUILDER
-        .comment(
-            "Make one fluid substitution pattern work in both directions, so a single",
-            "pattern for 'water bucket -> bucket + 1000mB water' also covers",
-            "'bucket + 1000mB water -> water bucket'.",
-            "",
-            "Emptying a container and filling it are the same fact stated twice, so",
-            "encoding both is busywork. Refined Storage models a pattern as one direction,",
-            "so this registers a second, mirrored pattern alongside the one you inserted.",
-            "It is removed again with the original when the crafter is broken.",
-            "",
-            "NOTE: this deliberately creates a cycle in the crafting graph -- a water",
-            "bucket makes water, and water makes a water bucket. The LP planner handles",
-            "cycles by construction, which is what it was written for. Refined Storage's",
-            "own calculator is more likely to struggle, so leave lpPlanner on if you turn",
-            "this on, and turn this off first if plans start failing or hanging.",
-            "",
-            "Has no effect unless fluidSubstitutionPatterns is on."
-        )
-        .define("reversibleFluidSwapPatterns", true);
-
-    public static volatile boolean reversibleFluidSwapPatterns = true;
-
     public static final ModConfigSpec.BooleanValue REFILL_CONTAINERS_IN_CRAFTING_GRID = BUILDER
         .comment(
             "In the Crafting Grid, refill a container the recipe hands back instead of leaving",
@@ -286,11 +195,10 @@ public final class Config {
             "spend the fluid to fill the container the player has. Stock before tank -- turning",
             "milk into buckets while full ones sit in a drawer is the wrong way round.",
             "",
-            "NO PATTERNS NEEDED, and independent of fluidSubstitutionPatterns since 0.2.80. It",
-            "used to require a pattern producing the filled container, as a stand-in for 'you",
-            "meant this fluid to be convertible' -- but that only ever worked because our own",
-            "fluid substitution registered such a pattern, so with that parked the feature could",
-            "never fire at all.",
+            "NO PATTERNS NEEDED. It used to require a pattern producing the filled container,",
+            "as a stand-in for 'you meant this fluid to be convertible', which only ever worked",
+            "because this mod's own fluid substitution registered such a pattern. That feature",
+            "is gone; this one no longer depends on it.",
             "",
             "What limits it now is whether the network can pay: no full container in storage and",
             "not enough fluid means nothing happens and you get the empty container back, exactly",

@@ -8,6 +8,100 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.83
+
+- **The Max button ignored reusable tools**, reporting either `0` or something that looked like a
+  container count. Neither was a miscount — the max path had never had durability applied to it.
+
+  Refined Storage reaches its crafting calculator through **three** listeners, and this mod hooked
+  two: `TaskPlanCraftingCalculatorListener` for starting a craft and
+  `PreviewCraftingCalculatorListener` for the preview. The third,
+  `IsCraftableCraftingCalculatorListener`, backs `getMaxAmount`, so the Max button was answered
+  entirely by stock Refined Storage — which matches ingredients exactly and knows nothing about a
+  tool being a supply of uses.
+
+  That explains both symptoms precisely. Damage lives in an item's component patch, so `crystal@0`
+  and `crystal@37` are different resources; a pattern encoded with a fresh crystal is not craftable
+  *at all* against a worn one, and `binarySearchMaxAmount` fails its very first probe, leaving
+  `low == high == 1` and returning `0`. Where the ingredient does match exactly it counts whole
+  items rather than the uses left in them.
+
+  The fix keeps Refined Storage's algorithm — double until it fails, then binary search the gap —
+  and changes only the oracle. The planner's three answers are all used: a plan is yes, a *proved*
+  infeasibility is no, and a decline is **not an answer** and falls through to stock RS untouched.
+  That last distinction is the whole thing: collapsing it to a boolean would report zero for every
+  ordinary recipe.
+
+- **The search was lifted out of the mixin** into `planner/MaxCraftable`, so it can be run without
+  Minecraft, and `MaxCraftableSelfTest` covers it with 17 cases — the boundaries around powers of
+  two, nothing craftable, declining outright, declining partway, cancellation, and the probe
+  ceiling. `./gradlew plannerCheck` now runs 42 scenarios.
+
+  The tests were checked by reinstating the bug they guard: making the oracle treat "declined" as
+  "not craftable" fails with *"a declining oracle must yield null, not a number"*, and restoring it
+  passes. A test that has never failed is not yet evidence.
+
+- A probe ceiling was added, which stock Refined Storage does not have. Its oracle is cheap enough
+  to leave unbounded; ours is a linear program per probe, and an unbounded loop over a solver on
+  RS's executor is how a button press becomes a stalled thread.
+
+**Corrects the issue's own hypothesis:** #8 guessed the uncraftable cache in
+`AutocraftingNetworkComponentImplMixin` might be the source of the spurious zero. It is not —
+`getMaxAmount` builds its own calculator and never goes through `ensureTask`.
+
+## 0.2.82
+
+- **The gametest could never have found its template.** `RSTweaksGameTests` asks for
+  `template = "rstweaks:empty"`, but the file shipped under `data/rsperf/` — the namespace this
+  mod stopped using at 0.2.41. The lookup could not have resolved, so the one gametest in the
+  project was broken from the rename onwards. Nobody noticed because gametests only register
+  with `-Dneoforge.enabledGameTestNamespaces=rstweaks`, and nothing has been run that way.
+
+  It also shipped twice: `structure/` and `structures/`, byte-identical. 1.21 singularised the
+  data pack directories, so `structure/` is correct and `structures/` was a 1.20 leftover kept
+  alongside rather than replaced. Checked against the pack rather than assumed — of the 1.21.1
+  mods installed here, 111 entries use `structure/` and 5 use `structures/`.
+
+  Now one file, at `data/rstweaks/structure/empty.nbt`, verified present in the built jar.
+
+  Found while reviewing the source before sharing it, which is a decent argument for reading
+  your own resources folder occasionally. Closes #6, and unblocks #2 — there is no point
+  writing gametests on a harness whose template does not load.
+
+## 0.2.81
+
+- **Fluid substitution removed.** 26 files and roughly 3,600 lines: the pattern type and its
+  mark, the Pattern Grid tab, its layout and renderer, the per-tab matrices, the reversible
+  mirror registration, the resolver hook, the tooltip, and the three config entries
+  (`fluidSubstitutionPatterns`, `reversibleFluidSwapPatterns`, `convertUnmarkedFluidPatterns`).
+  Those three can be deleted from an existing `rstweaks-common.toml`.
+
+  Ultramegaaa's *Refined Fluid Substitution* does this job now, is maintained, and runs on both
+  loaders. Keeping a second unmaintained implementation of the same feature in the same pack was
+  a conflict waiting to happen.
+
+- **What deliberately survives**, and why it was worth the effort to make it survivable:
+
+  - The **crafting-grid container refill** is untouched. It shared exactly one helper with fluid
+    substitution — asking an item what fluid is in it — and 0.2.80 split that into
+    `storage/FluidContainers` precisely so this deletion would not take it too. Without that step
+    first, removing fluid substitution would have silently killed a working, confirmed feature.
+  - The **LP planner's cycle handling** stays. It was motivated by reversible swaps, but a
+    degenerate cycle whose net production is zero is the general case, and container recycling —
+    one bucket round a loop 64 times is one bucket, not 64 — needs it regardless of which mod
+    creates the loop.
+  - The **planner's swap scenarios** stay as coverage, renamed in the comments away from our own
+    removed mixin. The shape they test is what *any* fluid substitution produces, so it is still
+    the case the planner exists for.
+
+- The client mixin config is gone entirely — every mixin in it existed for the tab — and with it
+  its `[[mixins]]` entry in `neoforge.mods.toml`. **rstweaks registers no content again**: the
+  `rstweaks:fluid_substitution` data component was its only registered object, so the mod is back
+  to being purely mixins, which is what it was before 0.2.65.
+
+78 Java files down to 53; 15 gameplay mixins remain, all of them performance or autocrafting
+correctness.
+
 ## 0.2.80
 
 - **The crafting-grid container refill no longer needs patterns.** It required the network to

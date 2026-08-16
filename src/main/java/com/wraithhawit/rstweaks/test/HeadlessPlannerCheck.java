@@ -15,14 +15,21 @@ public final class HeadlessPlannerCheck {
     }
 
     public static void main(final String[] args) {
-        final CraftingPlanSelfTest.Result result = PlannerExecutabilitySelfTest.run();
-        System.out.println("scenarios: " + result.scenarios());
-        if (result.failures().isEmpty()) {
+        final CraftingPlanSelfTest.Result planner = PlannerExecutabilitySelfTest.run();
+        final CraftingPlanSelfTest.Result maxAmount = MaxCraftableSelfTest.run();
+
+        final int scenarios = planner.scenarios() + maxAmount.scenarios();
+        final java.util.List<String> failures = new java.util.ArrayList<>(planner.failures());
+        failures.addAll(maxAmount.failures());
+
+        System.out.println("scenarios: " + scenarios
+            + "  (planner " + planner.scenarios() + ", max-craftable " + maxAmount.scenarios() + ")");
+        if (failures.isEmpty()) {
             System.out.println("PASS");
             return;
         }
-        System.out.println("FAIL (" + result.failures().size() + ")");
-        result.failures().forEach(f -> System.out.println("  - " + f));
+        System.out.println("FAIL (" + failures.size() + ")");
+        failures.forEach(f -> System.out.println("  - " + f));
         System.exit(1);
     }
 }

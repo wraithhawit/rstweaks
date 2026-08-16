@@ -18,6 +18,23 @@ UNRELEASED (in source, not yet in a built jar)
   link is a protobuf payload on bytebin, not a web page.
 
 
+0.2.83  BUG FIX - the Max button ignored reusable tools, reporting 0 or a container count.
+        RS reaches its calculator through three listeners and we hooked two; the max path
+        was the third and never saw the planner. Now answered by it. Adds 17 headless
+        checks for the search. (Issue #8)
+
+0.2.82  BUG FIX - the gametest could never have found its template. It asked for
+        "rstweaks:empty" while the file shipped under the pre-rename "rsperf" namespace,
+        in duplicate, one of them in the 1.20 "structures" directory that 1.21 renamed to
+        "structure". Now one file at data/rstweaks/structure/empty.nbt. (Issue #6)
+
+0.2.81  Fluid substitution REMOVED - 26 files, ~3,600 lines. Use Ultramegaaa's "Refined
+        Fluid Substitution" instead. The crafting-grid container refill survives and is
+        unaffected; so does the LP planner's cycle handling, which recycled containers
+        need regardless. rstweaks registers no content again.
+        Gone from the config: fluidSubstitutionPatterns, reversibleFluidSwapPatterns,
+        convertUnmarkedFluidPatterns. They can be deleted from rstweaks-common.toml.
+
 0.2.80  Crafting-grid container refill no longer needs patterns or fluid substitution; the
         only limit is whether the network can pay. Live for everyone - it had been dead
         since 0.2.79.
