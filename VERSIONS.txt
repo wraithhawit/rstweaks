@@ -18,186 +18,63 @@ UNRELEASED (in source, not yet in a built jar)
   link is a protobuf payload on bytebin, not a web page.
 
 
-0.2.80  Crafting-grid container refill no longer needs patterns, or fluid substitution.
-        It required a network pattern producing the filled container, as a stand-in for
-        "you meant this fluid to be convertible" - but that only ever passed because our
-        own fluid substitution registered such a pattern, so parking that feature killed
-        this one too. Both gates are gone. What limits it now is whether the network can
-        pay: no full container in storage and not enough fluid means nothing happens and
-        you get the empty container back, which is Refined Storage's own behaviour.
-        BEHAVIOUR CHANGE: this feature is default-on and has been dead since 0.2.79, so it
-        goes live for everyone here. It cannot create or destroy - both payment routes are
-        a straight trade - but the network now spends fluid it previously would not have.
-        The container inspection moved to a new FluidContainers class so this feature no
-        longer depends on any fluid substitution code and will survive its deletion.
-        Also: AutocraftingNetworkComponentImplMixin's @Unique map no longer relies on an
-        inline field initializer - the last place that shape survived, and the one that
-        destroyed items in AbstractTaskPatternMixin for seven versions.
+0.2.80  Crafting-grid container refill no longer needs patterns or fluid substitution; the
+        only limit is whether the network can pay. Live for everyone - it had been dead
+        since 0.2.79.
 
-0.2.79  Fluid substitution is PARKED. Ultramegaaa released "Refined Fluid Substitution" on
-        2026-08-16, covering the same ground, maintained, on both Fabric and NeoForge.
-        Ours stays in and still works - the default was already off - but it is no longer
-        being developed and will probably be removed. The config entry now says so, and
-        says not to run both. No code change beyond that text.
-        Everything else is unaffected: the LP planner, durability-aware planning, all the
-        performance work and all the item-loss fixes stand on their own.
+0.2.79  Fluid substitution PARKED - Ultramegaaa's "Refined Fluid Substitution" covers it.
+        Ours stays, default off, no longer developed. Config text only.
 
-0.2.78  BUG FIX - Processing and Fluid Substitution are independent on both sides of the
-        connection. The client now keeps two matrices and rebinds immediately, removing
-        the copied contents and one-tick delay while the server catches up. Tab changes
-        use RS's synced menu property instead of intercepting a global menu-button id,
-        including late initial sync when reopening a grid. Putting a marked pattern back
-        into the Pattern Grid now copies it into the fluid matrix instead of clearing and
-        overwriting Processing's matrix.
+0.2.78  BUG FIX - putting a stored fluid pattern back in the grid wiped the Processing tab.
+        Also: separate client and server matrices, immediate tab rebind (no flash), tab
+        state moved onto RS's synced property channel.
 
+0.2.77  The Pattern Grid remembers which tab it was on, synced as an RS menu property. The
+        client no longer announces "Processing" on every open, which was overwriting it.
 
-0.2.77  The Pattern Grid remembers the fluid tab. Which tab a grid was left on is now synced
-        to the client as a Refined Storage menu property, instead of the client guessing by
-        looking for a swap in the matrix it was sent. The guess could not work: that matrix
-        is always RS's Processing one whatever tab is live, and an empty fluid tab has
-        nothing to recognise anyway. Worse, on failing to recognise one the screen told the
-        server "Processing" - overwriting the flag the block entity had just loaded. That
-        announcement is gone; the server is told only when the player clicks a tab.
+0.2.76  Diagnostics removed; the fluid tab's own matrix confirmed in game.
 
-0.2.76  Step 2 confirmed in game and the diagnostics removed. The fluid tab has its own
-        matrix: two grids each keep their own contents, auto-fill populates the opposite
-        side, and a pattern encoded that way crafts. The multiplayer gap is gone with the
-        stash - slots belong to a menu and containers to the block entity, so two players
-        can hold one grid on different tabs.
-        KNOWN GAP, unchanged since 0.2.50 and now more visible: which tab you land on when
-        reopening a grid is still guessed client-side from the contents, so leaving on the
-        fluid tab and coming back shows Processing. Nothing is lost - the server has the
-        right matrix - and fixing it needs the flag synced server-to-client.
+0.2.75  BUG FIX - Clear wiped the Processing matrix while on the fluid tab, leaving no way
+        out of a fluid tab stuck holding contents in its 159 off-screen slots.
 
-0.2.75  BUG FIX - Clear cleared the wrong matrix on the fluid tab, wiping the Processing tab
-        instead and appearing to do nothing. That left no way out of a stuck fluid tab:
-        auto-fill refuses to overwrite a matrix holding something that is not a valid swap,
-        and only 3 of the 162 slots are visible in that layout, so anything left in the
-        other 159 blocks it invisibly and unreachably. The 0.2.74 diagnostic proved this is
-        what is happening - replaceable=false with inputs/outputs found correctly - and now
-        also names which slots are holding what.
+0.2.74  BUG FIX - auto-fill did nothing on the fluid tab: 0.2.72's container did not carry
+        the marker interface the input-slot lookup tests for, so it found no inputs.
 
-0.2.74  BUG FIX - auto-fill still did nothing on the fluid tab; 0.2.73 fixed a real bug but
-        not this one. The input slots are found by testing their container against a marker
-        interface that a mixin puts on Refined Storage's matrix input container. 0.2.72
-        replaced the fluid tab's container with a plain ResourceContainerImpl, which does
-        not carry the marker, so after rebinding the input list came back empty and there
-        was nothing to fill from. The fluid input container is now a subclass that
-        implements the marker - subclassing being the only way, since we cannot mixin onto
-        our own class. Adds a one-line-per-action diagnostic on the fluid tab; remove once
-        confirmed.
+0.2.73  BUG FIX - auto-fill wrote to the Processing container while the slots were bound to
+        the fluid one. Output-slot lookup no longer breaks after a rebind either.
 
-0.2.73  BUG FIX - auto-fill stopped filling the opposite side on the fluid tab, from 0.2.72.
-        Fallout from giving that tab its own container: auto-fill still wrote to Refined
-        Storage's processingOutput while the slots had been pointed at the fluid one, so the
-        write landed in the tab you were not looking at. It now asks the slot what it is
-        bound to. Fixed alongside it: output slots were found by comparing container
-        identity to processingOutput, which stops being true after the first rebind - so
-        switching back to Processing would have found no output slots and silently refused
-        to rebind. That list is now captured once, before anything moves.
+0.2.72  BUG FIX - 0.2.71 would not launch. Never ship a class in another mod's package:
+        NeoForge loads mods as named modules, so it fails at module resolution.
 
-0.2.72  BUG FIX - 0.2.71 would not launch. It shipped a class inside Refined Storage's own
-        package to reach a package-private container factory, and NeoForge loads mods as
-        named modules on the module path, so two modules exporting one package is a hard
-        error at module resolution: "Modules refinedstorage and rstweaks export package
-        com.refinedmods.refinedstorage.common.autocrafting.patterngrid". Never ship a class
-        in another mod's package. Reflection is no better - the package is not opened, so
-        setAccessible throws.
-        The fluid tab's containers are now plain ResourceContainerImpl built from public
-        API. They lack the fuzzy allowed-alternatives of RS's matrix container, which a
-        fluid swap has no use for: a swap is one exact container against one exact fluid and
-        an input offering alternatives is rejected outright. Encoding still runs through
-        RS's own container, borrowed for the length of one call from the menu, which is the
-        only place both are reachable as a public type.
+0.2.71  DID NOT LAUNCH. The fluid tab gets its own matrix and a tab switch rebinds slots
+        instead of copying NBT. The old stash is gone with no migration.
 
-0.2.71  DID NOT LAUNCH - superseded by 0.2.72. The fluid tab gets its own matrix. Step 2 of the real pattern type: two real
-        containers on the Pattern Grid block entity instead of copying one tab's pattern in
-        and out of the other's as NBT. Switching tab now just points that menu's slots at
-        the other container pair, which also fixes the multiplayer gap - two players can
-        hold the same grid open on different tabs without moving each other's pattern, which
-        the stash could not express at all. Needs one class shipped inside Refined Storage's
-        package (RsTweaksContainers) because the matrix input container, its factory and the
-        getIngredient the encoder needs are all package-private.
-        NOTE: the old stash is gone with no migration, by request - a pattern currently
-        parked on the tab you are NOT looking at is lost on update. The live one is fine.
-        UNTESTED IN GAME.
+0.2.70  Diagnostics removed; the mark confirmed working in game.
 
-0.2.70  Removed the 0.2.68 diagnostic logging, confirmed in game first: the mark is written
-        and a pattern encoded on the fluid tab is named "Fluid Substitution Pattern" with
-        convertUnmarkedFluidPatterns off, so the name comes from the mark and not from the
-        old contents guess. The single "encoded a fluid substitution pattern" line stays -
-        it is the only evidence the write happened, and its absence is what identified the
-        Cable Tiers conflict. No behaviour change.
+0.2.69  BUG FIX - the 0.2.65 mark had never once been written. Cable Tiers cancels the same
+        method at RETURN, so our callback was never reached. Ours is now priority 500.
 
-0.2.69  BUG FIX - found why the mark was never written, and it was a mod interaction, not
-        our logic. Cable Tiers injects into the same createProcessingPattern RETURN and
-        ends with cir.setReturnValue(...), which cancels the method; every callback
-        appended after it is skipped. At equal priority ours was second, so it had never
-        run once since 0.2.65 - no error, no warning, the injector applied and was never
-        reached. Our mixin is now priority 500 so it runs first; Cable Tiers then adds its
-        component to the same stack and both survive. The diagnostic logging from 0.2.68
-        is kept for one build to confirm, and comes out next.
+0.2.68  Diagnostic build, no behaviour change.
 
-0.2.68  DIAGNOSTIC BUILD, no behaviour change. 0.2.67 still did not write the mark and
-        reading the code has not explained why, so this logs the three facts that decide
-        it: the menu's tab flag when createPattern runs, every setFluidTab call with the
-        value it already held, and what createProcessingPattern saw. Menu and block entity
-        identity hashes are included to rule out the signal and the encode landing on
-        different objects. Remove all three lines once the cause is known.
+0.2.67  BUG FIX - the mark still was not written: it read the block entity's stash flag
+        rather than the menu's tab, which is the only thing that knows.
 
-0.2.67  BUG FIX - the mark from 0.2.65 was never actually written, so with 0.2.66's strict
-        default a pattern encoded on the fluid tab came out named "Processing Pattern" and
-        would not craft. It read the block entity's rstweaks$tabOpen, which is stash
-        bookkeeping - written only when a matrix swap really happens - and not a record of
-        which tab is on screen. The tab now comes from the menu, which is the only thing
-        that knows, handed down for the duration of createPattern. Adds one log line per
-        encoded fluid pattern, since nothing else made the write observable.
+0.2.66  The mark is required - convertUnmarkedFluidPatterns defaults off. Patterns encoded
+        before 0.2.65 revert to Processing and need re-encoding. (0.2.65 never launched.)
 
-0.2.66  The mark is now required: convertUnmarkedFluidPatterns defaults OFF (Wraith's call,
-        back-compat explicitly not wanted). Only patterns encoded on the fluid tab are
-        treated as substitutions, so the machine-recipe ambiguity is closed rather than
-        merely closeable. A pattern encoded before 0.2.65 reverts to an ordinary processing
-        pattern and waits for a machine - nothing is destroyed, re-encode it on the fluid
-        tab. The tooltip follows the same rule now, so it can no longer draw a container and
-        a fluid on a pattern that is named and resolved as Processing.
-        0.2.65 was never launched; these two are one step.
+0.2.65  Fluid patterns carry a rstweaks:fluid_substitution component and the resolver reads
+        it, instead of guessing from contents and mistaking real machine recipes for swaps.
+        Config: convertUnmarkedFluidPatterns.
 
-0.2.65  Fluid substitution patterns now say what they are. A pattern encoded on the fluid
-        tab carries a new rstweaks:fluid_substitution component, and the resolver reads it
-        instead of guessing from the contents. Step 1 of making this a real pattern type
-        rather than a skin over Processing. Guessing could not tell a substitution from a
-        real machine recipe that takes a full container and returns the empty one plus its
-        fluid - that recipe was settled in the ledger and the machine never ran. Patterns
-        encoded before this keep working; set convertUnmarkedFluidPatterns=false to require
-        the mark and close the ambiguity for good.
-        Config: convertUnmarkedFluidPatterns (default on).
+0.2.64  BUG FIX - autocrafting tasks ate their ingredients and reported success, in every
+        build from 0.2.57. A null @Unique field threw, and RS treats any throw in a task
+        step as completion: toast fired, internal storage dropped. LavaSurf's item loss.
 
-0.2.64  BUG FIX - autocrafting tasks were destroying their materials, present in every
-        build from 0.2.57. The @Unique field holding the tools taken this iteration was
-        declared with an inline initializer that never reached the instance, so the
-        durability handler threw NullPointerException on its first line - above the
-        config check, so durabilityAwarePlanning=false could not avoid it. Refined
-        Storage treats any exception from a task step as completion: it drops the task,
-        fires the "task completed" toast, and never returns the internal storage. So the
-        craft ate its ingredients, announced success, and produced nothing. This is the
-        item loss LavaSurf reported. Every @Unique field in those mixins is now null-safe,
-        and all three task-step handlers catch and fall back to stock RS behaviour, so a
-        future bug there costs the optimization instead of the player's items.
+0.2.63  skipEmptyCompositeExtract defaults OFF. The network's resource list can be wrong
+        rather than merely late, and 0.2.62 made extraction trust it.
 
-0.2.63  skipEmptyCompositeExtract now defaults OFF, pending an open item-loss report on
-        0.2.62 (a completed craft whose output never reached storage). The 0.2.62
-        reasoning was wrong on one point: an external storage adds nothing to the
-        network's resource list on insert, and the list gains the item only via
-        detectChanges(), which diffs a fresh inventory snapshot - so the list can be
-        wrong, not merely late. That desync was cosmetic until 0.2.62 made extraction
-        trust the list, at which point items still sitting in a drawer become invisible
-        AND unreachable. Cause of the report not yet confirmed.
-
-0.2.62  Empty-extract skip. CompositeStorage.extract returned 0 without walking a single
-        storage when the network's own resource list says it holds none. Aimed at the
-        ~12% of a struggling server thread spent asking every storage for things that
-        are not there. Adds no cache - it reads the list RS already keeps.
-        Config: skipEmptyCompositeExtract (default on).
+0.2.62  Empty-extract skip - CompositeStorage.extract returns 0 without walking any storage
+        when the network list says it holds none. Config: skipEmptyCompositeExtract.
 
 0.2.61  Removed the crafting-grid diagnostic logging from 0.2.60. No behaviour change.
 
@@ -210,7 +87,8 @@ UNRELEASED (in source, not yet in a built jar)
 0.2.58  Crafting grid refills containers. Craft a cake and the milk buckets stay milk
         buckets; the network pays the milk. RS already did this for ordinary
         ingredients, never for ones handed back as containers.
-        Config: refillContainersInCraftingGrid (default on, needs fluid substitution).
+        Config: refillContainersInCraftingGrid (default on; needed fluid substitution
+        until 0.2.80).
 
 0.2.57  BUG FIX - durability duplication. A recipe burning two different durable tools
         recorded only one, so the other's byproduct came back exactly as encoded: a
