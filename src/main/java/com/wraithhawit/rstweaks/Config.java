@@ -286,8 +286,17 @@ public final class Config {
             "spend the fluid to fill the container the player has. Stock before tank -- turning",
             "milk into buckets while full ones sit in a drawer is the wrong way round.",
             "",
-            "Only applies when the network has a pattern producing that filled container, so it",
-            "is limited to fluids you have set up. Needs fluidSubstitutionPatterns on."
+            "NO PATTERNS NEEDED, and independent of fluidSubstitutionPatterns since 0.2.80. It",
+            "used to require a pattern producing the filled container, as a stand-in for 'you",
+            "meant this fluid to be convertible' -- but that only ever worked because our own",
+            "fluid substitution registered such a pattern, so with that parked the feature could",
+            "never fire at all.",
+            "",
+            "What limits it now is whether the network can pay: no full container in storage and",
+            "not enough fluid means nothing happens and you get the empty container back, exactly",
+            "as Refined Storage intended. The test on the items is unchanged and is the strict",
+            "part -- one container, one remainder, and the remainder must be precisely that",
+            "container emptied, so a recipe with a bespoke remainder is left alone."
         )
         .define("refillContainersInCraftingGrid", true);
 

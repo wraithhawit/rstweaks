@@ -12,6 +12,8 @@ import com.wraithhawit.rstweaks.Stats;
 import java.util.HashMap;
 import java.util.Map;
 
+import javax.annotation.Nullable;
+
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -56,8 +58,26 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(AutocraftingNetworkComponentImpl.class)
 public abstract class AutocraftingNetworkComponentImplMixin {
+    /**
+     * <p>Deliberately not {@code final} and deliberately without an inline initializer. The same
+     * shape in {@code AbstractTaskPatternMixin} silently failed to apply and threw
+     * {@code NullPointerException} on first use for seven versions, which Refined Storage turned
+     * into destroyed items — see that class for the full account. This one has always worked, but
+     * "has always worked" is what that one looked like too, so it is built on first use instead.
+     */
     @Unique
-    private final Map<ResourceKey, Long> rstweaks$uncraftableUntil = new HashMap<>();
+    @Nullable
+    private Map<ResourceKey, Long> rstweaks$uncraftableUntil;
+
+    @Unique
+    private Map<ResourceKey, Long> rstweaks$uncraftable() {
+        Map<ResourceKey, Long> map = this.rstweaks$uncraftableUntil;
+        if (map == null) {
+            map = new HashMap<>();
+            this.rstweaks$uncraftableUntil = map;
+        }
+        return map;
+    }
 
     @Inject(method = "ensureTask", at = @At("HEAD"), cancellable = true)
     private void rstweaks$skipKnownUncraftable(
@@ -67,7 +87,7 @@ public abstract class AutocraftingNetworkComponentImplMixin {
         final CancellationToken cancellationToken,
         final CallbackInfoReturnable<AutocraftingNetworkComponent.EnsureResult> cir
     ) {
-        final Long until = this.rstweaks$uncraftableUntil.get(resource);
+        final Long until = rstweaks$uncraftable().get(resource);
         if (until == null) {
             return;
         }
@@ -76,7 +96,7 @@ public abstract class AutocraftingNetworkComponentImplMixin {
             cir.setReturnValue(AutocraftingNetworkComponent.EnsureResult.MISSING_RESOURCES);
             return;
         }
-        this.rstweaks$uncraftableUntil.remove(resource);
+        rstweaks$uncraftable().remove(resource);
     }
 
     @Inject(method = "ensureTask", at = @At("RETURN"))
@@ -88,19 +108,19 @@ public abstract class AutocraftingNetworkComponentImplMixin {
         final CallbackInfoReturnable<AutocraftingNetworkComponent.EnsureResult> cir
     ) {
         if (cir.getReturnValue() != AutocraftingNetworkComponent.EnsureResult.MISSING_RESOURCES) {
-            this.rstweaks$uncraftableUntil.remove(resource);
+            rstweaks$uncraftable().remove(resource);
             return;
         }
         final long now = ServerTicks.current();
-        this.rstweaks$uncraftableUntil.put(
+        rstweaks$uncraftable().put(
             resource,
             now + Config.UNCRAFTABLE_RECHECK_TICKS.getAsInt()
         );
         // Bounded by the number of distinct resources ever requested, which is
         // small in practice, but a long-lived network with a wandering exporter
         // filter should not accumulate entries forever.
-        if (this.rstweaks$uncraftableUntil.size() > 256) {
-            this.rstweaks$uncraftableUntil.values().removeIf(expiry -> expiry <= now);
+        if (rstweaks$uncraftable().size() > 256) {
+            rstweaks$uncraftable().values().removeIf(expiry -> expiry <= now);
         }
     }
 }

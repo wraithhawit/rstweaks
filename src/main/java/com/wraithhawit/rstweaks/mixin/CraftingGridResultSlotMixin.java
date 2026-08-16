@@ -2,7 +2,6 @@ package com.wraithhawit.rstweaks.mixin;
 
 import com.refinedmods.refinedstorage.api.core.Action;
 import com.refinedmods.refinedstorage.api.network.Network;
-import com.refinedmods.refinedstorage.api.network.autocrafting.AutocraftingNetworkComponent;
 import com.refinedmods.refinedstorage.api.network.storage.StorageNetworkComponent;
 import com.refinedmods.refinedstorage.api.storage.Actor;
 import com.refinedmods.refinedstorage.common.api.storage.PlayerActor;
@@ -10,7 +9,7 @@ import com.refinedmods.refinedstorage.common.grid.CraftingGrid;
 import com.refinedmods.refinedstorage.common.support.resource.ItemResource;
 import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.RSTweaks;
-import com.wraithhawit.rstweaks.storage.FluidSwap;
+import com.wraithhawit.rstweaks.storage.FluidContainers;
 import com.wraithhawit.rstweaks.storage.GridNetworkAccess;
 
 import net.minecraft.world.entity.player.Player;
@@ -39,10 +38,19 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * the ready-made bucket is what the network was holding for exactly this, and turning fluid into
  * containers while full ones sit in a drawer is the wrong way round.
  *
- * <p>Gated on the network actually having a pattern that produces the filled container, which is
- * the player saying this fluid is theirs to convert. With reversible swaps on — the default —
- * encoding either direction registers both, so one pattern is enough. Without it, encode the
- * filling direction.
+ * <p><b>No patterns required, since 0.2.80.</b> This used to demand that the network hold a pattern
+ * producing the filled container, as a proxy for "the player meant this fluid to be convertible".
+ * That proxy only ever worked because our own fluid substitution registered such a pattern, and
+ * with that feature parked the check could never pass — the feature was dead rather than cautious.
+ *
+ * <p>What limits it now is simply whether the network can pay. If there is no full container in
+ * storage and not enough fluid, nothing happens and the empty container is handed back exactly as
+ * Refined Storage intended. That is a better guard than the pattern was: it asks whether the
+ * network <em>can</em>, rather than whether the player once encoded something unrelated.
+ *
+ * <p>The test on the items themselves is unchanged and is the strict part — one container, one
+ * remainder, and the remainder must be precisely that container emptied. A recipe with a bespoke
+ * remainder is not this and is left alone.
  *
  * <p>Targeted by string because the slot class is package-private.
  */
@@ -63,7 +71,7 @@ public abstract class CraftingGridResultSlotMixin {
                                             final int slot,
                                             final ItemStack remainingItem,
                                             final CallbackInfo ci) {
-        if (!Config.fluidSubstitutionPatterns || !Config.refillContainersInCraftingGrid) {
+        if (!Config.refillContainersInCraftingGrid) {
             return;
         }
         try {
@@ -91,7 +99,7 @@ public abstract class CraftingGridResultSlotMixin {
             return false;
         }
         final ItemResource filled = ItemResource.ofItemStack(inSlot);
-        final FluidSwap.Contents contents = FluidSwap.contents(filled);
+        final FluidContainers.Contents contents = FluidContainers.of(filled);
         if (contents == null) {
             return false;
         }
@@ -105,11 +113,6 @@ public abstract class CraftingGridResultSlotMixin {
         }
         final Network network = access.rstweaks$network();
         if (network == null) {
-            return false;
-        }
-        final AutocraftingNetworkComponent autocrafting =
-            network.getComponent(AutocraftingNetworkComponent.class);
-        if (autocrafting.getPatternsByOutput(filled).isEmpty()) {
             return false;
         }
         final StorageNetworkComponent storage = network.getComponent(StorageNetworkComponent.class);
@@ -154,7 +157,7 @@ public abstract class CraftingGridResultSlotMixin {
     @Unique
     private static boolean rstweaks$payWithFluid(final StorageNetworkComponent storage,
                                                  final Actor actor,
-                                                 final FluidSwap.Contents contents) {
+                                                 final FluidContainers.Contents contents) {
         // Simulated first: a partial extraction would take the fluid and still leave the player
         // with an empty bucket, which is worse than not helping at all.
         if (storage.extract(contents.fluid(), contents.amount(), Action.SIMULATE, actor)
