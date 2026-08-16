@@ -63,6 +63,7 @@ final class DurabilityClasses {
                 groupOf.put(member, g);
             }
         }
+        mergeGroupsSharingAClass(groups, groupOf, classOf, durability);
 
         final Map<String, Integer> renumbered = new LinkedHashMap<>();
         final Map<ResourceKey, Integer> out = new LinkedHashMap<>();
@@ -77,6 +78,74 @@ final class DurabilityClasses {
             }
         }
         return new Result(out, toolClasses);
+    }
+
+    /**
+     * Keeps tool grouping from tearing apart a class the graph had already unified.
+     *
+     * <p>{@code CraftingGraph.buildClasses} gives every alternative in an ingredient slot the same
+     * signature, so a fuzzy slot's alternatives arrive here as <b>one</b> class — which is correct,
+     * they are interchangeable. Grouping by {@code sameTool} then cuts across that, because a
+     * copper hammer and an iron hammer are different tools. Splitting them left
+     * {@code CraftingGraph.buildEffects} falling back to its documented assumption and counting
+     * only {@code inputs().getFirst()}, so the planner demanded the first hammer in the list and
+     * declared the craft impossible when the player held a different one.
+     *
+     * <p>The remedy is to go the other way: where a shared class spans several tool groups, merge
+     * those groups into one. That is the honest model — if the slot accepts any of these tools,
+     * then a use of any of them is a use, and their uses add up.
+     *
+     * <p><b>Only when every resource involved is durable.</b> A slot mixing a tool with an ordinary
+     * item would otherwise drag that item into a class measured in uses, where {@code usesLeft}
+     * reports zero for it and its stock silently stops counting. In that case the groups are left
+     * alone and the tools stay as plain items, which is no worse than before this feature existed.
+     */
+    private static void mergeGroupsSharingAClass(final List<Set<ResourceKey>> groups,
+                                                 final Map<ResourceKey, Integer> groupOf,
+                                                 final Map<ResourceKey, Integer> classOf,
+                                                 final Durability durability) {
+        // Which tool groups each original class touches.
+        final Map<Integer, Set<Integer>> groupsPerClass = new LinkedHashMap<>();
+        groupOf.forEach((resource, group) -> {
+            final Integer cls = classOf.get(resource);
+            if (cls != null) {
+                groupsPerClass.computeIfAbsent(cls, k -> new LinkedHashSet<>()).add(group);
+            }
+        });
+
+        for (final Map.Entry<Integer, Set<Integer>> entry : groupsPerClass.entrySet()) {
+            final int cls = entry.getKey();
+            final Set<Integer> spanned = entry.getValue();
+            final List<ResourceKey> members = classOf.entrySet().stream()
+                .filter(e -> e.getValue() == cls)
+                .map(Map.Entry::getKey)
+                .toList();
+            if (members.stream().anyMatch(m -> !durability.isDurable(m))) {
+                continue;
+            }
+            // Fold every spanned group into the lowest-numbered one.
+            final int target = spanned.stream().min(Integer::compareTo).orElseThrow();
+            for (final int other : spanned) {
+                if (other == target) {
+                    continue;
+                }
+                groups.get(target).addAll(groups.get(other));
+                for (final ResourceKey member : groups.get(other)) {
+                    groupOf.put(member, target);
+                }
+                groups.get(other).clear();
+            }
+            // Then pull in the members that had no group of their own. A tool appearing at only
+            // one wear level is dropped by groupByTool as "just an item", which is right in
+            // isolation and wrong here: sharing a slot with a tool that IS worn makes it one of
+            // the interchangeable options, and leaving it outside is precisely what split the
+            // class and made the planner demand the first alternative by name.
+            for (final ResourceKey member : members) {
+                if (groupOf.putIfAbsent(member, target) == null) {
+                    groups.get(target).add(member);
+                }
+            }
+        }
     }
 
     private static List<Set<ResourceKey>> groupByTool(final Set<ResourceKey> resources,

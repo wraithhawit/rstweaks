@@ -462,21 +462,36 @@ public final class PlannerExecutabilitySelfTest {
         final Durability durability = Durability.Holder.get();
         final Map<ResourceKey, ResourceKey> wear = new HashMap<>();
         for (final Ingredient ingredient : layout.ingredients()) {
-            final ResourceKey encoded = ingredient.inputs().getFirst();
-            if (!durability.isDurable(encoded)) {
-                continue;
-            }
+            // Every durable alternative is considered, not just the first. A fuzzy slot lists a
+            // whole family of tools and the pool may hold any of them — checking only
+            // inputs().getFirst() made this replay refuse a plan the executor runs perfectly,
+            // because the executor never sees the layout's first input at all: it walks the
+            // iteration inputs, which calculateIterationInputs builds from the *plan's* chosen
+            // possibilities. The non-durable branch below has always done this properly.
             ResourceKey found = null;
-            for (final Map.Entry<ResourceKey, Long> held : pool.entrySet()) {
-                if (held.getValue() > 0L && durability.sameTool(encoded, held.getKey())) {
-                    found = held.getKey();
+            boolean durableSlot = false;
+            for (final ResourceKey input : ingredient.inputs()) {
+                if (!durability.isDurable(input)) {
+                    continue;
+                }
+                durableSlot = true;
+                for (final Map.Entry<ResourceKey, Long> held : pool.entrySet()) {
+                    if (held.getValue() > 0L && durability.sameTool(input, held.getKey())) {
+                        found = held.getKey();
+                        break;
+                    }
+                }
+                if (found != null) {
                     break;
                 }
+            }
+            if (!durableSlot) {
+                continue;
             }
             if (found == null) {
                 return false;
             }
-            wear.put(encoded, found);
+            wear.put(ingredient.inputs().getFirst(), found);
         }
 
         for (final Ingredient ingredient : layout.ingredients()) {
@@ -646,6 +661,35 @@ public final class PlannerExecutabilitySelfTest {
             Map.of(FakeDurability.worn("crystal", 50), 1L, "material", 4096L),
             "product", 40L, true,
             plan -> requisition(plan, "crystal@50", 1L));
+
+        // FUZZY ACROSS DIFFERENT TOOLS — the case reported in game, reduced.
+        //
+        // A fuzzy hammer slot accepts every hammer in the set; the player owns the iron one and
+        // the planner demanded the copper one:
+        //
+        //   LP planner declined gold_dust: no integer solution --
+        //     required with no pattern and none in storage: [alltheores:copper_ore_hammer]
+        //
+        // buildClasses correctly unifies a slot's alternatives into one class by signature.
+        // DurabilityClasses.merge then regrouped by sameTool, and copper and iron are different
+        // tools, so it split that class back apart — after which buildEffects falls back to its
+        // documented assumption and counts only inputs().getFirst().
+        //
+        // The uses of any hammer the slot accepts are interchangeable, so they belong in ONE class
+        // measured in uses. Asserting the requisition is the point: a plan that silently demanded
+        // the copper hammer would still "produce a plan" and pass a weaker check.
+        run(failures, new FakeDurability(java.util.Set.of("copper_hammer", "iron_hammer"), 100),
+            "fuzzy slot across two tools, only the second in storage",
+            repo -> repo.add(pattern("crush",
+                List.of(new Ingredient(1L, List.of(
+                        res(FakeDurability.worn("copper_hammer", 0)),
+                        res(FakeDurability.worn("iron_hammer", 0)))),
+                    ing(1, "ore")),
+                List.of(new ResourceAmount(res("dust"), 1L)),
+                List.of(new ResourceAmount(res(FakeDurability.worn("iron_hammer", 1)), 1L))), 0),
+            Map.of(FakeDurability.worn("iron_hammer", 0), 1L, "ore", 4096L),
+            "dust", 64L, true,
+            plan -> requisition(plan, "iron_hammer@0", 1L));
 
         // Already worn, and enough left. Must reach for the worn one it already has
         // rather than declaring it has no crystal.

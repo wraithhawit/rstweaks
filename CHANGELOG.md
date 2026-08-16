@@ -8,6 +8,51 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.85
+
+- **Fuzzy mode across different tools.** The other half of issue #9, and the half actually reported
+  in game: a fuzzy hammer slot demanded one specific hammer and declared the craft impossible when
+  a different one was held.
+
+  ```
+  LP planner declined gold_dust: no integer solution --
+    required with no pattern and none in storage: [alltheores:copper_ore_hammer]
+  ```
+
+  `CraftingGraph.buildClasses` unifies a slot's alternatives by signature — same slot, same class,
+  interchangeable — which is right. `DurabilityClasses.merge` then regrouped by `sameTool`, and a
+  copper hammer is not a wear level of an iron one, so it split that class back apart.
+  `buildEffects` was left holding an assumption it states in a comment and could no longer rely on:
+
+  ```java
+  // Every alternative shares a class by construction when they are interchangeable
+  final Integer cls = classOf.get(ingredient.inputs().getFirst());
+  ```
+
+  So only the first alternative was counted, its stock was zero, and the program was infeasible.
+
+  Tool groups sharing a class are now merged rather than split, and a tool with only one wear level
+  — dropped by `groupByTool` as "just an item", which is right in isolation — is pulled in when it
+  shares a slot with a tool that *is* worn. If the slot accepts any of these tools then a use of any
+  of them is a use, and their uses add up. Guarded to classes where **every** member is durable: a
+  slot mixing a tool with an ordinary item would otherwise drag that item into a class measured in
+  uses, where its stock would silently stop counting.
+
+- **The executability replay was also wrong**, and it is worth separating from the fix above. Its
+  wear substitution looked only at `ingredient.inputs().getFirst()`, so it refused a plan the real
+  executor runs perfectly — the executor never sees the layout's first input, it walks the iteration
+  inputs, which `calculateIterationInputs` builds from the *plan's* chosen possibilities. The
+  non-durable branch immediately below it had always handled alternatives properly. A fixture
+  shortcut that was safe while every slot had one input.
+
+  **Both changes were checked for being load-bearing.** With the fixture corrected but the planner
+  reverted, the scenario still fails with the original decline; only with both does it pass. Changing
+  a fixture to make a test pass deserves that check, since it is indistinguishable from hiding the
+  bug.
+
+**#9 was two independent faults under one report** — 0.2.84 fixed the encoded-wear one, this fixes
+the different-tools one. Neither would have been found without the other being fixed first.
+
 ## 0.2.84
 
 - **Durability crafting did not work with fuzzy mode.** `PatternResolver.getFuzzyInput` replaces

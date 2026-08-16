@@ -18,6 +18,11 @@ UNRELEASED (in source, not yet in a built jar)
   link is a protobuf payload on bytebin, not a web page.
 
 
+0.2.85  BUG FIX - fuzzy mode across DIFFERENT tools, the other half of #9. A fuzzy hammer
+        slot demanded the copper hammer specifically and declared the craft impossible when
+        you held the iron one. Tool grouping was splitting a class the graph had already
+        unified; the uses of every tool a slot accepts now share one class. (Issue #9)
+
 0.2.84  BUG FIX - durability crafting with fuzzy mode. Fuzzy replaced the encoded tool with
         the recipe's own ingredient items, which are always damage 0, while the byproduct
         kept the real damage - so a crystal at damage 50 read as "@0 in, @51 out" and one
