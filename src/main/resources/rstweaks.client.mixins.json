@@ -1,0 +1,17 @@
+{
+  "required": false,
+  "minVersion": "0.8.5",
+  "package": "com.wraithhawit.rstweaks.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [],
+  "client": [
+    "PatternGridScreenMixin",
+    "PatternTypeButtonMixin",
+    "ProcessingPatternClientTooltipComponentMixin",
+    "ProcessingPatternGridRendererMixin"
+  ],
+  "server": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

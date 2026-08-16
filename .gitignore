@@ -1,0 +1,45 @@
+# Build output
+build/
+.gradle/
+run/
+runs/
+out/
+*.jar
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.settings/
+.classpath
+.project
+bin/
+
+# Decompiled Refined Storage, Cable Tiers and Step Crafter sources.
+#
+# NOT IGNORED BECAUSE IT IS BIG -- 20 MB is nothing. Ignored because it is somebody
+# else's source code, recovered from their jars for reference. Committing it to a public
+# repository would redistribute Refined Storage's code under our name, which is both a
+# licensing problem and a discourteous thing to do to a project we depend on and hope to
+# stay on good terms with. Regenerate it locally instead; see SETUP.md.
+decompiled/
+
+# Dev-run leftovers. These are the ones that would quietly turn a 0.5 MB repository into a
+# 6 GB one, so they are listed explicitly rather than trusted to a pattern:
+#   worlds/    5.3 GB  the survival-rsperf test world
+#   *.hprof    864 MB  a JVM heap dump -- also a raw image of everything in memory at the
+#                      time, so it is not something to publish even if it were small
+worlds/
+saves/
+logs/
+libs/
+*.hprof
+*.log
+
+# Scratch files from earlier sessions, kept locally, not part of the project
+cp.txt
+cp-out.txt
+build-log.txt
+scratchpad/

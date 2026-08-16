@@ -1,0 +1,111 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.gradle.userdev' version '7.1.38'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+// Mojang ships Java 21 for 1.21.1.
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+repositories {
+    mavenCentral()
+}
+
+// Runs the planner suite in a plain JVM, so a planner change can be checked without
+// restarting Minecraft. Uses the real runtime classpath because Config touches
+// NeoForge's ModConfigSpec, which drags in FML, night-config and Guava.
+tasks.register('plannerCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the LP planner self-tests headlessly.'
+    // Refined Storage is compileOnly, so the runtime classpath alone is not enough.
+    classpath = sourceSets.main.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'com.wraithhawit.rstweaks.test.HeadlessPlannerCheck'
+}
+
+tasks.register('sparkProfile', JavaExec) {
+    group = 'verification'
+    description = 'Decodes a spark profile: ./gradlew sparkProfile --args="<url|code|file>"'
+    classpath = sourceSets.main.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'com.wraithhawit.rstweaks.test.SparkProfile'
+    // Stack traces in a busy profile are deep, and the decoder recurses with them.
+    jvmArgs = ['-Xss512m']
+}
+
+minecraft {
+    accessTransformers {
+        file('src/main/resources/META-INF/accesstransformer.cfg')
+    }
+}
+
+runs {
+    configureEach {
+        systemProperty 'forge.logging.markers', 'REGISTRIES'
+        systemProperty 'forge.logging.console.level', 'debug'
+        // Make mixin failures loud and fatal in dev instead of silently no-op'ing.
+        systemProperty 'mixin.debug.export', 'true'
+        systemProperty 'mixin.debug.verbose', 'true'
+        workingDirectory project.layout.projectDirectory.dir('run').dir(name)
+        modSource project.sourceSets.main
+    }
+
+    client {}
+    server { argument '--nogui' }
+}
+
+dependencies {
+    implementation "net.neoforged:neoforge:${neo_version}"
+
+    // Refined Storage and its addons, taken byte-for-byte from the ATM10
+    // instance we profile against. Deliberately local files rather than
+    // CurseForge maven coordinates: mixin targets are matched by exact method
+    // descriptor, so the jars we compile against must be the identical builds
+    // the game loads. If the pack updates any of them, drop the new jar in
+    // libs/ and re-verify every mixin that touches it.
+    //
+    // compileOnly because the pack supplies all of these at runtime; we must
+    // never bundle or shade them.
+    //
+    // Contents of libs/ (all confirmed to declare a `refinedstorage`
+    // dependency in their own manifest, except EdivadLib which is
+    // ExtraStorage's support library):
+    //   refinedstorage-neoforge-2.0.9              the core
+    //   cabletiers-neoforge-1.21.1-0.6.13          tiered cables/importers/exporters
+    //   stepcrafter-neoforge-1.21.1-0.1.5          autocrafting addon
+    //   ExtraDisks-1.21.1-4.0.15                   higher-capacity disks
+    //   ExtraStorage-1.21.1-5.0.9                  higher-capacity storage blocks
+    //   refined-types-1.21.1-0.3.2                 shared type layer (cabletiers dep)
+    //   rspolymorph-neoforge-1.21.1-1.2.0          recipe conflict resolution
+    //   universalgrid-neoforge-1.21.1-0.3.2        grid addon
+    //   refinedstorage-quartz-arsenal-neoforge-1.0.8
+    //   refinedstorage-mekanism-integration-1.1.1
+    //   EdivadLib-1.21-3.0.0                       ExtraStorage/DimStorage support lib
+    compileOnly fileTree(dir: 'libs', include: ['*.jar'])
+}
+
+tasks.withType(ProcessResources).configureEach {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version            : neo_version,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+    ]
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/neoforge.mods.toml']) {
+        expand replaceProperties
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}

@@ -1,0 +1,116 @@
+modLoader="javafml"
+loaderVersion="${loader_version_range}"
+license="${mod_license}"
+
+[[mods]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+description='''
+Autocrafting and server-tick fixes for Refined Storage, developed against a copy
+of a live All the Mods 10 world and driven by spark profiles. Adds reusable tools
+that wear out instead of being consumed, fluid substitution patterns, and a
+linear-programming planner for crafts involving byproducts or cycles.
+Contains no blocks or items.
+'''
+
+# One config per mod whose classes we touch, gated on that mod being present.
+#
+# A mixin config is all-or-nothing: if any mixin in it cannot find its target, the
+# whole config fails and every optimization in it is lost. With all of them in one
+# file, rstweaks hard-required Step Crafter, Cable Tiers and Functional Storage just to
+# load. Split like this, a pack without one of them simply skips that config, and the
+# rest still apply.
+#
+# requiredMods is FML's, not Mixin's: ModFileParser reads it from these entries and
+# never hands the config to Mixin when the mod is absent. Each config keeps
+# required=true, so a mod that IS present but has changed shape still fails loudly
+# rather than quietly disabling an optimization you believe is running.
+[[mixins]]
+config="${mod_id}.mixins.json"
+
+# Cosmetic only, and NOT required. Every other config fails loudly because a silently
+# disabled optimization is worse than a crash -- but this one only adds a tab, whose
+# absence is self-evident, and a screen mixin fails during MenuScreens registration,
+# which takes the whole game down before the main menu.
+[[mixins]]
+config="${mod_id}.client.mixins.json"
+
+[[mixins]]
+config="${mod_id}.stepcrafter.mixins.json"
+requiredMods=["stepcrafter"]
+
+[[mixins]]
+config="${mod_id}.cabletiers.mixins.json"
+requiredMods=["cabletiers"]
+
+[[mixins]]
+config="${mod_id}.functionalstorage.mixins.json"
+requiredMods=["functionalstorage"]
+
+[[dependencies.${mod_id}]]
+    modId="neoforge"
+    type="required"
+    versionRange="[${neo_version},)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="minecraft"
+    type="required"
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+# Refined Storage is the whole point of this mod — hard requirement, and we must
+# load AFTER it so our mixins apply to a fully-registered RS.
+# Pinned to the 2.0.x line: mixin targets are matched against exact method
+# descriptors, so a 2.1 release must not silently load with stale injections.
+[[dependencies.${mod_id}]]
+    modId="refinedstorage"
+    type="required"
+    versionRange="[2.0.9,2.1.0)"
+    ordering="AFTER"
+    side="BOTH"
+
+# The three below are OPTIONAL. Each one has its own mixin config gated on it above,
+# so a pack without the mod loads rstweaks fine and simply does without that one
+# optimization. They are still declared, for two reasons: the version range keeps a
+# reshaped release from loading against stale injections, and ordering=AFTER makes
+# sure our mixins see a fully registered mod.
+#
+# The ranges stay pinned to the current minor line on purpose. Mixin matches exact
+# method descriptors, so a refactor upstream is a hard failure at class-load time --
+# and a mod that refuses to load is far easier to diagnose than one that crashes the
+# first time somebody starts a craft. Widen these only after checking the targets
+# against the new jar's bytecode.
+#
+# NB: all three prefix their version with the Minecraft version — the Step Crafter jar
+# declares "1.21.1-0.1.5", not "0.1.5". A bare [0.1.5,0.2.0) range REJECTS it: Maven
+# reads the leading 1.21.1 as the major version, which passes the lower bound but
+# blows straight through the upper one. The bounds must carry the same prefix.
+[[dependencies.${mod_id}]]
+    modId="stepcrafter"
+    type="optional"
+    versionRange="[1.21.1-0.1.5,1.21.1-0.2.0)"
+    ordering="AFTER"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="cabletiers"
+    type="optional"
+    versionRange="[1.21.1-0.6.13,1.21.1-0.7.0)"
+    ordering="AFTER"
+    side="BOTH"
+
+# Functional Storage leaves its own version as an unexpanded Gradle placeholder in its
+# mods.toml, so the real version lives in the jar MANIFEST under Implementation-Version.
+# Verified against 1.21.1-1.5.8.
+# (Do not write a literal dollar-brace placeholder in this file: processResources runs
+# Groovy template expansion over it and fails on unknown keys.)
+[[dependencies.${mod_id}]]
+    modId="functionalstorage"
+    type="optional"
+    versionRange="[1.21.1-1.5.8,1.21.1-1.6.0)"
+    ordering="AFTER"
+    side="BOTH"
