@@ -16,11 +16,11 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandlerItem;
 /**
  * What a filled fluid container holds, and what it becomes when emptied.
  *
- * <p>Lifted out of {@link FluidSwap} so that the crafting-grid refill does not depend on the fluid
- * substitution feature. The two shared this code only because both need to ask an item what fluid is
- * in it — a question about the item, not about patterns — and that shared helper was enough to make
- * one feature die with the other. Fluid substitution is parked and expected to be deleted; this is
- * the part that has to outlive it.
+ * <p>Lifted out of the old {@code FluidSwap} in 0.2.80 so that the crafting-grid refill did not
+ * depend on the fluid substitution feature. The two shared this code only because both need to ask
+ * an item what fluid is in it — a question about the item, not about patterns — and that shared
+ * helper was enough that one feature would have died with the other. Fluid substitution was removed
+ * in 0.2.81; this is the part that outlived it, which was the point of splitting it out first.
  *
  * <p>Everything goes through the item's own fluid handler capability rather than hardcoding buckets,
  * so any container a pack adds is covered by the same rule.

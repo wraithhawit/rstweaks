@@ -8,6 +8,40 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.81
+
+- **Fluid substitution removed.** 26 files and roughly 3,600 lines: the pattern type and its
+  mark, the Pattern Grid tab, its layout and renderer, the per-tab matrices, the reversible
+  mirror registration, the resolver hook, the tooltip, and the three config entries
+  (`fluidSubstitutionPatterns`, `reversibleFluidSwapPatterns`, `convertUnmarkedFluidPatterns`).
+  Those three can be deleted from an existing `rstweaks-common.toml`.
+
+  Ultramegaaa's *Refined Fluid Substitution* does this job now, is maintained, and runs on both
+  loaders. Keeping a second unmaintained implementation of the same feature in the same pack was
+  a conflict waiting to happen.
+
+- **What deliberately survives**, and why it was worth the effort to make it survivable:
+
+  - The **crafting-grid container refill** is untouched. It shared exactly one helper with fluid
+    substitution — asking an item what fluid is in it — and 0.2.80 split that into
+    `storage/FluidContainers` precisely so this deletion would not take it too. Without that step
+    first, removing fluid substitution would have silently killed a working, confirmed feature.
+  - The **LP planner's cycle handling** stays. It was motivated by reversible swaps, but a
+    degenerate cycle whose net production is zero is the general case, and container recycling —
+    one bucket round a loop 64 times is one bucket, not 64 — needs it regardless of which mod
+    creates the loop.
+  - The **planner's swap scenarios** stay as coverage, renamed in the comments away from our own
+    removed mixin. The shape they test is what *any* fluid substitution produces, so it is still
+    the case the planner exists for.
+
+- The client mixin config is gone entirely — every mixin in it existed for the tab — and with it
+  its `[[mixins]]` entry in `neoforge.mods.toml`. **rstweaks registers no content again**: the
+  `rstweaks:fluid_substitution` data component was its only registered object, so the mod is back
+  to being purely mixins, which is what it was before 0.2.65.
+
+78 Java files down to 53; 15 gameplay mixins remain, all of them performance or autocrafting
+correctness.
+
 ## 0.2.80
 
 - **The crafting-grid container refill no longer needs patterns.** It required the network to

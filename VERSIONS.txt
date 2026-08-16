@@ -18,6 +18,13 @@ UNRELEASED (in source, not yet in a built jar)
   link is a protobuf payload on bytebin, not a web page.
 
 
+0.2.81  Fluid substitution REMOVED - 26 files, ~3,600 lines. Use Ultramegaaa's "Refined
+        Fluid Substitution" instead. The crafting-grid container refill survives and is
+        unaffected; so does the LP planner's cycle handling, which recycled containers
+        need regardless. rstweaks registers no content again.
+        Gone from the config: fluidSubstitutionPatterns, reversibleFluidSwapPatterns,
+        convertUnmarkedFluidPatterns. They can be deleted from rstweaks-common.toml.
+
 0.2.80  Crafting-grid container refill no longer needs patterns or fluid substitution; the
         only limit is whether the network can pay. Live for everyone - it had been dead
         since 0.2.79.

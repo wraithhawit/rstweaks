@@ -51,12 +51,11 @@ public final class ChatReporter {
                           long slotCounts,
                           long drawerChecks,
                           long wrongTypeProbes,
-                          long fluidSwaps,
                           long lpPlanned,
                           long planCopies,
                           long emptyExtracts) {
 
-        static final Counts ZERO = new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        static final Counts ZERO = new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
         static Counts now() {
             return new Counts(
@@ -70,7 +69,6 @@ public final class ChatReporter {
                 Stats.slotCountLookupsAvoided,
                 Stats.drawerMembershipChecks,
                 Stats.mismatchedProviderCallsAvoided,
-                Stats.fluidSwapPatterns,
                 Stats.lpPlannerUsed,
                 Stats.patternPlanCopiesAvoided,
                 Stats.emptyExtractsAvoided);
@@ -88,7 +86,6 @@ public final class ChatReporter {
                 slotCounts - earlier.slotCounts,
                 drawerChecks - earlier.drawerChecks,
                 wrongTypeProbes - earlier.wrongTypeProbes,
-                fluidSwaps - earlier.fluidSwaps,
                 lpPlanned - earlier.lpPlanned,
                 planCopies - earlier.planCopies,
                 emptyExtracts - earlier.emptyExtracts);
@@ -175,9 +172,6 @@ public final class ChatReporter {
         if (delta.wrongTypeProbes() > 0) {
             parts.add(String.format("%,d wrong-type storage probes avoided",
                 delta.wrongTypeProbes()));
-        }
-        if (delta.fluidSwaps() > 0) {
-            parts.add(String.format("%,d fluid substitution patterns", delta.fluidSwaps()));
         }
         if (delta.lpPlanned() > 0) {
             parts.add(String.format("%,d crafts planned by solver", delta.lpPlanned()));

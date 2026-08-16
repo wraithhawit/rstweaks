@@ -16,7 +16,6 @@ import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 
-import com.wraithhawit.rstweaks.content.RSTweaksComponents;
 import com.wraithhawit.rstweaks.planner.Durability;
 import com.wraithhawit.rstweaks.storage.ItemDurability;
 import com.wraithhawit.rstweaks.test.RSTweaksGameTests;
@@ -27,11 +26,11 @@ import org.slf4j.Logger;
 /**
  * Entry point for the Refined Storage tick-time optimizations.
  *
- * <p>Almost all behaviour lives in {@code mixin/}, applied via {@code rstweaks.mixins.json}. The one
- * exception is {@link RSTweaksComponents}, a single data component marking a pattern as a fluid
- * substitution — no block, item or recipe, just a mark on someone else's item. The class exists so
- * FML has something to construct for the {@code rstweaks} modid, and so there is one obvious place
- * to log which optimizations are active when reading a spark profile back.
+ * <p>This mod registers no content. All behaviour lives in {@code mixin/}, applied via
+ * {@code rstweaks.mixins.json}. It briefly registered one data component, for fluid substitution;
+ * that feature and its component were removed when a dedicated mod took over the job. The class
+ * exists so FML has something to construct for the {@code rstweaks} modid, and so there is one
+ * obvious place to log which optimizations are active when reading a spark profile back.
  */
 @Mod(RSTweaks.MODID)
 public class RSTweaks {
@@ -53,7 +52,6 @@ public class RSTweaks {
         // durability is the one thing only the game can answer, so it is handed in.
         Durability.Holder.set(ItemDurability.INSTANCE);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
-        RSTweaksComponents.register(modEventBus);
         // The pattern-plan mixin reads its toggle on a path far too hot for a
         // config-spec lookup, so mirror it into a plain field whenever it changes.
         modEventBus.addListener(ModConfigEvent.Loading.class, event -> {

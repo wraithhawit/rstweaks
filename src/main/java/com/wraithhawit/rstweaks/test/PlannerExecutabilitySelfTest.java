@@ -855,7 +855,7 @@ public final class PlannerExecutabilitySelfTest {
                    "slimeball", new long[]{0L, 0L, 64L}));
     }
 
-    /** One encoded fluid substitution pattern plus the mirror the swap mixin registers. */
+    /** A container/fluid pattern and its mirror — the cycle shape any fluid substitution makes. */
     private static void fluidSwapPair(final PatternRepositoryImpl repo) {
         repo.add(recipe("lava", 1000,
             List.of(ing(1, "lava_bucket")), List.of(out("bucket", 1))), 0);
@@ -1001,7 +1001,10 @@ public final class PlannerExecutabilitySelfTest {
             repo.add(recipe("ingot", 2, List.of(ing(1, "ore")), List.of(out("slag", 1))), 0);
         }, Map.of("ore", 512L), "ingot", 64L, true));
 
-        // A bidirectional fluid substitution pair, which is the shape ReversibleFluidSwapMixin
+        // A bidirectional container/fluid pair. rstweaks' own fluid substitution, which used to
+        // generate this shape, was removed in 0.2.81 — but the shape itself is not going anywhere:
+        // it is what any mod doing fluid substitution produces, and a degenerate cycle whose net
+        // production is zero is the case the LP planner exists for. Kept as planner coverage.
         // puts into the network: one encoded pattern, plus its mirror. Emptying a bucket and
         // filling one are a two-cycle by construction, so these three exist to prove the
         // planner treats that as an ordinary cycle rather than either looping on it or

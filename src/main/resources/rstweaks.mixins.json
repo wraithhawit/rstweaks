@@ -1,11 +1,9 @@
-﻿{
+{
   "required": true,
   "minVersion": "0.8.5",
   "package": "com.wraithhawit.rstweaks.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "AbstractBaseContainerMenuInvoker",
-    "AbstractResourceContainerMenuMixin",
     "AbstractTaskPatternMixin",
     "AutocraftingNetworkComponentImplMixin",
     "CompositeExternalStorageProviderMixin",
@@ -18,16 +16,7 @@
     "ItemHandlerExternalStorageProviderMixin",
     "ItemHandlerExtractableStorageMixin",
     "MutablePatternPlanMixin",
-    "PatternGridBlockEntityMixin",
-    "PatternGridContainerMenuMixin",
-    "PatternGridPatternInputSlotMixin",
-    "PatternItemMixin",
-    "PatternResolverMixin",
-    "ProcessingMatrixInputContainerMixin",
-    "ResourceSlotMixin",
     "PreviewCraftingCalculatorListenerMixin",
-    "ResolvedProcessingPatternMixin",
-    "ReversibleFluidSwapMixin",
     "TaskImplMixin",
     "TaskPlanCraftingCalculatorListenerMixin"
   ],

@@ -79,11 +79,7 @@ public final class Stats {
      * evidence, since no single call is slow enough to see.
      */
     public static long mismatchedProviderCallsAvoided;
-    /**
-     * Patterns recognised as a pure container/fluid swap and made internal. Counted
-     * because the whole feature is invisible when it works -- the craft simply runs.
-     */
-    public static long fluidSwapPatterns;
+    /** Crafts the LP planner produced a plan for, rather than declining to stock RS. */
     public static long lpPlannerUsed;
 
     /**

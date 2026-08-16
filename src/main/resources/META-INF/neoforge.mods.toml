@@ -9,9 +9,9 @@ displayName="${mod_name}"
 description='''
 Autocrafting and server-tick fixes for Refined Storage, developed against a copy
 of a live All the Mods 10 world and driven by spark profiles. Adds reusable tools
-that wear out instead of being consumed, fluid substitution patterns, and a
-linear-programming planner for crafts involving byproducts or cycles.
-Contains no blocks or items.
+that wear out instead of being consumed, a linear-programming planner for crafts
+involving byproducts or cycles, and a Crafting Grid that refills the containers a
+recipe hands back. Contains no blocks or items.
 '''
 
 # One config per mod whose classes we touch, gated on that mod being present.
@@ -28,13 +28,6 @@ Contains no blocks or items.
 # rather than quietly disabling an optimization you believe is running.
 [[mixins]]
 config="${mod_id}.mixins.json"
-
-# Cosmetic only, and NOT required. Every other config fails loudly because a silently
-# disabled optimization is worse than a crash -- but this one only adds a tab, whose
-# absence is self-evident, and a screen mixin fails during MenuScreens registration,
-# which takes the whole game down before the main menu.
-[[mixins]]
-config="${mod_id}.client.mixins.json"
 
 [[mixins]]
 config="${mod_id}.stepcrafter.mixins.json"
