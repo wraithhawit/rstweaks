@@ -1,8 +1,11 @@
 RSTWEAKS / RSPERF - WHAT EACH VERSION DID
 =========================================
 
-One or two lines per version, newest first. CHANGELOG.md holds the long-form reasoning
-for 0.1.0 - 0.2.17; this file is the index, and the only record for everything after.
+One or two lines per version, newest first. This file is the short form; CHANGELOG.md is
+the detailed history and carries the reasoning. BOTH ARE MAINTAINED - every version bump
+gets an entry in each. CHANGELOG.md was backfilled to 0.2.80 on 2026-08-16; the only gap
+left is 0.2.18 - 0.2.46, which was never written down anywhere and is recorded there as
+one honest block rather than reconstructed.
 
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
