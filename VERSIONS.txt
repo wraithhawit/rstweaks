@@ -84,11 +84,9 @@ UNRELEASED (in source, not yet in a built jar)
 0.2.59  Crafting-grid refill now spends a full container from storage before spending
         fluid. Stock before tank.
 
-0.2.58  Crafting grid refills containers. Craft a cake and the milk buckets stay milk
-        buckets; the network pays the milk. RS already did this for ordinary
-        ingredients, never for ones handed back as containers.
-        Config: refillContainersInCraftingGrid (default on; needed fluid substitution
-        until 0.2.80).
+0.2.58  Crafting grid refills containers - craft a cake and the milk buckets stay milk
+        buckets while the network pays the milk.
+        Config: refillContainersInCraftingGrid (needed fluid substitution until 0.2.80).
 
 0.2.57  BUG FIX - durability duplication. A recipe burning two different durable tools
         recorded only one, so the other's byproduct came back exactly as encoded: a
@@ -131,21 +129,10 @@ UNRELEASED (in source, not yet in a built jar)
 
 0.2.18 - 0.2.46  FLUID SUBSTITUTION (not individually recorded)
 ---------------------------------------------------------------
-        The changelog lapsed across this range. What was built, in rough order:
-
-        - Fluid substitution patterns: a pattern that only empties or fills a container
-          is settled by RS itself instead of waiting for a machine that does not exist.
-        - The Pattern Grid tab and its 1-to-2 layout, drawn over the processing matrix.
-        - Auto-fill: put a bucket or a fluid in, get the other side filled in for you.
-        - Reversible patterns - one encoded pattern registers its mirror, so emptying
-          and filling both work from one.
-        - Empty containers no longer advertised as craftable (moved to byproducts).
-        - 0.2.30-31: auto-fill direction fixes.
-        - 0.2.40: last build under the name "rsperf".
-        - 0.2.41: renamed to "rstweaks".
-        - 0.2.45: swallowed RS's PatternCycleDetectedException to let it build a
-          preview. Reverted in 0.2.46 - it left Start enabled on an impossible craft.
-        - 0.2.46: that revert.
+        Both records lapsed across this range and the per-version detail is gone. Fluid
+        substitution was built here: the pattern type, the Pattern Grid tab and its 1-to-2
+        layout, auto-fill, and reversible mirror patterns. Renamed rsperf -> rstweaks at
+        0.2.41. See CHANGELOG.md for the fuller account of what is known.
 
 
 0.2.17  Split the mixin configs so an absent optional mod (Step Crafter, Cable Tiers,
