@@ -8,6 +8,47 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.83
+
+- **The Max button ignored reusable tools**, reporting either `0` or something that looked like a
+  container count. Neither was a miscount — the max path had never had durability applied to it.
+
+  Refined Storage reaches its crafting calculator through **three** listeners, and this mod hooked
+  two: `TaskPlanCraftingCalculatorListener` for starting a craft and
+  `PreviewCraftingCalculatorListener` for the preview. The third,
+  `IsCraftableCraftingCalculatorListener`, backs `getMaxAmount`, so the Max button was answered
+  entirely by stock Refined Storage — which matches ingredients exactly and knows nothing about a
+  tool being a supply of uses.
+
+  That explains both symptoms precisely. Damage lives in an item's component patch, so `crystal@0`
+  and `crystal@37` are different resources; a pattern encoded with a fresh crystal is not craftable
+  *at all* against a worn one, and `binarySearchMaxAmount` fails its very first probe, leaving
+  `low == high == 1` and returning `0`. Where the ingredient does match exactly it counts whole
+  items rather than the uses left in them.
+
+  The fix keeps Refined Storage's algorithm — double until it fails, then binary search the gap —
+  and changes only the oracle. The planner's three answers are all used: a plan is yes, a *proved*
+  infeasibility is no, and a decline is **not an answer** and falls through to stock RS untouched.
+  That last distinction is the whole thing: collapsing it to a boolean would report zero for every
+  ordinary recipe.
+
+- **The search was lifted out of the mixin** into `planner/MaxCraftable`, so it can be run without
+  Minecraft, and `MaxCraftableSelfTest` covers it with 17 cases — the boundaries around powers of
+  two, nothing craftable, declining outright, declining partway, cancellation, and the probe
+  ceiling. `./gradlew plannerCheck` now runs 42 scenarios.
+
+  The tests were checked by reinstating the bug they guard: making the oracle treat "declined" as
+  "not craftable" fails with *"a declining oracle must yield null, not a number"*, and restoring it
+  passes. A test that has never failed is not yet evidence.
+
+- A probe ceiling was added, which stock Refined Storage does not have. Its oracle is cheap enough
+  to leave unbounded; ours is a linear program per probe, and an unbounded loop over a solver on
+  RS's executor is how a button press becomes a stalled thread.
+
+**Corrects the issue's own hypothesis:** #8 guessed the uncraftable cache in
+`AutocraftingNetworkComponentImplMixin` might be the source of the spurious zero. It is not —
+`getMaxAmount` builds its own calculator and never goes through `ensureTask`.
+
 ## 0.2.82
 
 - **The gametest could never have found its template.** `RSTweaksGameTests` asks for

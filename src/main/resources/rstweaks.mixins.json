@@ -13,6 +13,7 @@
     "CraftingGridResultSlotMixin",
     "FluidHandlerExternalStorageProviderMixin",
     "InternalTaskPatternMixin",
+    "IsCraftableCraftingCalculatorListenerMixin",
     "ItemHandlerExternalStorageProviderMixin",
     "ItemHandlerExtractableStorageMixin",
     "MutablePatternPlanMixin",
