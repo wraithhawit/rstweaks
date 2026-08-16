@@ -15,6 +15,14 @@ UNRELEASED (in source, not yet in a built jar)
   link is a protobuf payload on bytebin, not a web page.
 
 
+0.2.79  Fluid substitution is PARKED. Ultramegaaa released "Refined Fluid Substitution" on
+        2026-08-16, covering the same ground, maintained, on both Fabric and NeoForge.
+        Ours stays in and still works - the default was already off - but it is no longer
+        being developed and will probably be removed. The config entry now says so, and
+        says not to run both. No code change beyond that text.
+        Everything else is unaffected: the LP planner, durability-aware planning, all the
+        performance work and all the item-loss fixes stand on their own.
+
 0.2.78  BUG FIX - Processing and Fluid Substitution are independent on both sides of the
         connection. The client now keeps two matrices and rebinds immediately, removing
         the copied contents and one-tick delay while the server catches up. Tab changes
