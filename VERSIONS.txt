@@ -15,6 +15,15 @@ UNRELEASED (in source, not yet in a built jar)
   link is a protobuf payload on bytebin, not a web page.
 
 
+0.2.78  BUG FIX - Processing and Fluid Substitution are independent on both sides of the
+        connection. The client now keeps two matrices and rebinds immediately, removing
+        the copied contents and one-tick delay while the server catches up. Tab changes
+        use RS's synced menu property instead of intercepting a global menu-button id,
+        including late initial sync when reopening a grid. Putting a marked pattern back
+        into the Pattern Grid now copies it into the fluid matrix instead of clearing and
+        overwriting Processing's matrix.
+
+
 0.2.77  The Pattern Grid remembers the fluid tab. Which tab a grid was left on is now synced
         to the client as a Refined Storage menu property, instead of the client guessing by
         looking for a swap in the matrix it was sent. The guess could not work: that matrix

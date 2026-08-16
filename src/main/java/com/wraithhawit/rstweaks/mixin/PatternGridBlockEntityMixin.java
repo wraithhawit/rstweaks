@@ -1,7 +1,9 @@
 package com.wraithhawit.rstweaks.mixin;
 
 import com.refinedmods.refinedstorage.common.api.support.resource.ResourceContainer;
+import com.refinedmods.refinedstorage.common.autocrafting.ProcessingPatternState;
 import com.refinedmods.refinedstorage.common.autocrafting.patterngrid.PatternGridBlockEntity;
+import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.RSTweaks;
 import com.wraithhawit.rstweaks.storage.FluidMatrixContainers;
 import com.wraithhawit.rstweaks.storage.FluidSubstitutionMark;
@@ -51,6 +53,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class PatternGridBlockEntityMixin implements FluidSwapStash {
     @Unique
     private boolean rstweaks$tabOpen;
+
+    /** True only while {@code copyPattern} is loading a marked processing-pattern stack. */
+    @Unique
+    private boolean rstweaks$copyingFluidPattern;
 
     /**
      * The fluid tab's own matrix, built lazily and never null once asked for.
@@ -140,6 +146,54 @@ public abstract class PatternGridBlockEntityMixin implements FluidSwapStash {
         if (tag.contains(RSTWEAKS_FLUID_OUTPUTS)) {
             rstweaks$fluidOutput().fromTag(tag.getCompound(RSTWEAKS_FLUID_OUTPUTS), provider);
         }
+    }
+
+    /**
+     * Routes an encoded Fluid Substitution pattern into its own matrix when it is put back in the
+     * Pattern Grid.
+     *
+     * <p>Refined Storage sees the stack's base type as PROCESSING and normally calls
+     * {@code copyProcessingPattern}, which clears and overwrites the Processing tab. The component
+     * on the stack is the missing discriminator. Keeping the outer call intact still lets RS set
+     * its base type to PROCESSING and run its normal change notification; only the destination
+     * containers are replaced.
+     */
+    @Inject(method = "copyPattern", at = @At("HEAD"))
+    private void rstweaks$beginPatternCopy(final ItemStack stack, final CallbackInfo ci) {
+        this.rstweaks$copyingFluidPattern = Config.fluidSubstitutionPatterns
+            && FluidSubstitutionMark.isMarked(stack);
+    }
+
+    @Inject(method = "copyPattern", at = @At("RETURN"))
+    private void rstweaks$endPatternCopy(final ItemStack stack, final CallbackInfo ci) {
+        this.rstweaks$copyingFluidPattern = false;
+    }
+
+    @Inject(method = "copyProcessingPattern", at = @At("HEAD"), cancellable = true)
+    private void rstweaks$copyFluidPattern(final ProcessingPatternState state,
+                                           final CallbackInfo ci) {
+        if (!this.rstweaks$copyingFluidPattern) {
+            return;
+        }
+        final ResourceContainer input = rstweaks$fluidInput();
+        final ResourceContainer output = rstweaks$fluidOutput();
+        input.clear();
+        output.clear();
+        final int inputCount = Math.min(input.size(), state.ingredients().size());
+        for (int i = 0; i < inputCount; i++) {
+            final var ingredient = state.ingredients().get(i);
+            if (ingredient.isPresent()) {
+                input.set(i, ingredient.orElseThrow().input());
+            }
+        }
+        final int outputCount = Math.min(output.size(), state.outputs().size());
+        for (int i = 0; i < outputCount; i++) {
+            final var resource = state.outputs().get(i);
+            if (resource.isPresent()) {
+                output.set(i, resource.orElseThrow());
+            }
+        }
+        ci.cancel();
     }
 
     /**

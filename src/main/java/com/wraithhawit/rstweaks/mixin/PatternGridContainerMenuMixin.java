@@ -260,13 +260,10 @@ public abstract class PatternGridContainerMenuMixin implements FluidSwapFillable
     @Unique
     private boolean rstweaks$captureProcessingSlots() {
         final List<ResourceSlot> inputs = rstweaks$inputSlots();
-        final List<ResourceSlot> outputs = new ArrayList<>(inputs.size());
-        for (final Slot slot : ((AbstractContainerMenu) (Object) this).slots) {
-            if (slot instanceof ResourceSlot resourceSlot
-                && ((SlotContainerAccess) resourceSlot).rstweaks$container() == this.processingOutput) {
-                outputs.add(resourceSlot);
-            }
-        }
+        // Use the cache-aware lookup. On a grid reopened on the fluid tab, the authoritative
+        // property can rebind the client slots before the screen has applied its layout; identity
+        // against processingOutput is already gone by then, but loadTabState primed the cache.
+        final List<ResourceSlot> outputs = new ArrayList<>(rstweaks$outputSlots());
         if (inputs.isEmpty() || outputs.size() < 2) {
             return false;
         }
@@ -427,14 +424,35 @@ public abstract class PatternGridContainerMenuMixin implements FluidSwapFillable
     @Nullable
     private Property<Boolean> rstweaks$fluidTabProperty;
 
+    /** The writable property exists only on the client menu. */
+    @Unique
+    @Nullable
+    private ClientProperty<Boolean> rstweaks$clientFluidTabProperty;
+
+    /**
+     * True between a local click and the matching value coming back from the server.
+     *
+     * <p>This rejects an older property update that was already in flight when the player clicked;
+     * otherwise a delayed {@code false} could briefly throw the screen back to Processing before
+     * the server's {@code true} acknowledgement arrived.
+     */
+    @Unique
+    private boolean rstweaks$clientTabChangePending;
+
     @Inject(
         method = "<init>(ILnet/minecraft/world/entity/player/Inventory;"
             + "Lcom/refinedmods/refinedstorage/common/autocrafting/patterngrid/PatternGridData;)V",
         at = @At("RETURN")
     )
     private void rstweaks$registerClientTabProperty(final CallbackInfo ci) {
-        final Property<Boolean> property =
-            new ClientProperty<>(RSTWEAKS_FLUID_TAB_PROPERTY, false);
+        final ClientProperty<Boolean> property =
+            new ClientProperty<Boolean>(RSTWEAKS_FLUID_TAB_PROPERTY, false) {
+                @Override
+                protected void onChangedOnClient(final Boolean open) {
+                    rstweaks$acceptServerTabState(Boolean.TRUE.equals(open));
+                }
+            };
+        this.rstweaks$clientFluidTabProperty = property;
         this.rstweaks$fluidTabProperty = property;
         ((AbstractBaseContainerMenuInvoker) this).rstweaks$registerProperty(property);
     }
@@ -451,7 +469,7 @@ public abstract class PatternGridContainerMenuMixin implements FluidSwapFillable
                 rstweaks$loadTabState();
                 return this.rstweaks$fluidTab;
             },
-            open -> { });
+            this::rstweaks$setFluidTab);
         this.rstweaks$fluidTabProperty = property;
         ((AbstractBaseContainerMenuInvoker) this).rstweaks$registerProperty(property);
     }
@@ -463,16 +481,59 @@ public abstract class PatternGridContainerMenuMixin implements FluidSwapFillable
     }
 
     @Override
-    public void rstweaks$setFluidTab(final boolean open) {
+    public void rstweaks$selectFluidTab(final boolean open) {
         rstweaks$loadTabState();
         if (open == this.rstweaks$fluidTab) {
-            // Already showing what is being asked for. Swapping anyway would hand the player the
-            // other tab's pattern -- which is exactly what reopening a grid left on the fluid tab
-            // does, since the client announces the tab it has just selected.
+            return;
+        }
+        this.rstweaks$clientTabChangePending = true;
+        rstweaks$applyTabState(open);
+        final ClientProperty<Boolean> property = this.rstweaks$clientFluidTabProperty;
+        if (property != null) {
+            property.setValue(open);
+        }
+    }
+
+    @Override
+    public void rstweaks$setFluidTab(final boolean open) {
+        rstweaks$loadTabState();
+        rstweaks$applyTabState(open);
+    }
+
+    @Override
+    public boolean rstweaks$isFluidTab() {
+        rstweaks$loadTabState();
+        return this.rstweaks$fluidTab;
+    }
+
+    @Override
+    public void rstweaks$patternLoaded(final boolean fluidSubstitution) {
+        rstweaks$loadTabState();
+        this.rstweaks$clientTabChangePending = false;
+        rstweaks$applyTabState(fluidSubstitution);
+    }
+
+    /** Applies a tab selection to this menu without sending anything over the network. */
+    @Unique
+    private void rstweaks$applyTabState(final boolean open) {
+        if (open == this.rstweaks$fluidTab) {
             return;
         }
         this.rstweaks$fluidTab = open;
         rstweaks$swapMatrix();
+    }
+
+    /** Accepts an authoritative property update on the client. */
+    @Unique
+    private void rstweaks$acceptServerTabState(final boolean open) {
+        rstweaks$loadTabState();
+        if (this.rstweaks$clientTabChangePending) {
+            if (open != this.rstweaks$fluidTab) {
+                return;
+            }
+            this.rstweaks$clientTabChangePending = false;
+        }
+        rstweaks$applyTabState(open);
     }
 
     /**
@@ -487,9 +548,6 @@ public abstract class PatternGridContainerMenuMixin implements FluidSwapFillable
             return;
         }
         this.rstweaks$tabStateLoaded = true;
-        if (!(this.patternGrid instanceof FluidSwapStash stash)) {
-            return;
-        }
         // Refined Storage's own containers, read while the slots still point at them. After the
         // bind below they no longer do, and the block entity's accessor for the input side is
         // package-private, so this is the last chance to learn it.
@@ -502,6 +560,12 @@ public abstract class PatternGridContainerMenuMixin implements FluidSwapFillable
         // the bind below it never does again, and without the cache switching back to Processing
         // would find no output slots and quietly refuse to rebind.
         rstweaks$outputSlots();
+        if (!(this.patternGrid instanceof FluidSwapStash stash)) {
+            // The client has no block entity. It still needs the captures above so it can keep a
+            // second local matrix and switch immediately instead of waiting for slot packets to
+            // overwrite its Processing matrix.
+            return;
+        }
         this.rstweaks$fluidTab = stash.rstweaks$fluidTabOpen();
         if (this.rstweaks$fluidTab && !Config.fluidSubstitutionPatterns) {
             // The feature was switched off while a grid was left on the fluid tab. There is no tab
@@ -537,26 +601,40 @@ public abstract class PatternGridContainerMenuMixin implements FluidSwapFillable
      *       allowed alternatives survive a world reload without this method knowing they exist.</li>
      * </ul>
      *
-     * <p>Server-side only, by construction: the client's menu is built from a
-     * {@code PatternGridData} record and has no block entity, so the {@code instanceof} below fails
-     * there and the client simply receives the result.
+     * <p>The server binds to the block entity's two persistent fluid containers. The client has no
+     * block entity, so it binds to a second pair owned by this menu. Slot update packets then land
+     * in the selected client container instead of overwriting Processing's only client-side copy.
      */
     @Unique
     private void rstweaks$swapMatrix() {
         final List<ResourceSlot> inputs = rstweaks$inputSlots();
-        if (inputs.isEmpty() || !(this.patternGrid instanceof FluidSwapStash stash)) {
+        if (inputs.isEmpty()) {
             return;
         }
         final List<ResourceSlot> outputs = rstweaks$outputSlots();
         if (outputs.isEmpty()) {
             return;
         }
-        final ResourceContainer input = this.rstweaks$fluidTab
-            ? stash.rstweaks$fluidInput()
-            : rstweaks$processingInput();
-        final ResourceContainer output = this.rstweaks$fluidTab
-            ? stash.rstweaks$fluidOutput()
-            : this.processingOutput;
+        final ResourceContainer input;
+        final ResourceContainer output;
+        if (this.patternGrid == null) {
+            input = this.rstweaks$fluidTab
+                ? rstweaks$clientFluidInput()
+                : rstweaks$processingInput();
+            output = this.rstweaks$fluidTab
+                ? rstweaks$clientFluidOutput()
+                : this.processingOutput;
+        } else if (this.patternGrid instanceof FluidSwapStash stash) {
+            input = this.rstweaks$fluidTab
+                ? stash.rstweaks$fluidInput()
+                : rstweaks$processingInput();
+            output = this.rstweaks$fluidTab
+                ? stash.rstweaks$fluidOutput()
+                : this.processingOutput;
+            stash.rstweaks$setFluidTabOpen(this.rstweaks$fluidTab);
+        } else {
+            return;
+        }
 
         for (final ResourceSlot slot : inputs) {
             ((SlotContainerAccess) slot).rstweaks$rebind(input);
@@ -564,7 +642,6 @@ public abstract class PatternGridContainerMenuMixin implements FluidSwapFillable
         for (final ResourceSlot slot : outputs) {
             ((SlotContainerAccess) slot).rstweaks$rebind(output);
         }
-        stash.rstweaks$setFluidTabOpen(this.rstweaks$fluidTab);
 
         // Rebinding changes every slot at once. Left unrecorded, the next tick reads it as the
         // player having filled a slot by hand, and the auto-fill would rebuild the pattern they
@@ -573,6 +650,34 @@ public abstract class PatternGridContainerMenuMixin implements FluidSwapFillable
         all.addAll(outputs);
         rstweaks$remember(all);
     }
+
+    @Unique
+    private ResourceContainer rstweaks$clientFluidInput() {
+        ResourceContainer container = this.rstweaks$clientFluidInput;
+        if (container == null) {
+            container = com.wraithhawit.rstweaks.storage.FluidMatrixContainers.createInput();
+            this.rstweaks$clientFluidInput = container;
+        }
+        return container;
+    }
+
+    @Unique
+    private ResourceContainer rstweaks$clientFluidOutput() {
+        ResourceContainer container = this.rstweaks$clientFluidOutput;
+        if (container == null) {
+            container = com.wraithhawit.rstweaks.storage.FluidMatrixContainers.createOutput();
+            this.rstweaks$clientFluidOutput = container;
+        }
+        return container;
+    }
+
+    @Unique
+    @Nullable
+    private ResourceContainer rstweaks$clientFluidInput;
+
+    @Unique
+    @Nullable
+    private ResourceContainer rstweaks$clientFluidOutput;
 
     /**
      * Refined Storage's own processing input container, captured the first time it is seen.

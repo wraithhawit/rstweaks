@@ -9,26 +9,17 @@ package com.wraithhawit.rstweaks.storage;
  * other, and this interface joins them.
  */
 public interface FluidSwapFillable {
-    /**
-     * Menu button ids the client uses to tell the server whether the fluid substitution tab is
-     * open. Which tab is showing is client state — the tab is a widget, and the pattern type
-     * underneath it is PROCESSING either way — but the auto-fill runs on the server, because the
-     * matrix containers are synced server-to-client and a client-side write is simply overwritten
-     * on the next broadcast.
-     *
-     * <p>Sent as a menu button click rather than a custom payload on purpose. It is a vanilla
-     * packet that needs no registration, it cannot disconnect a client that joins a server without
-     * this mod, and neither Refined Storage nor any of its menus overrides
-     * {@code clickMenuButton} — checked against the compiled classes — so the channel is free.
-     * The values are arbitrary and only have to miss vanilla's small button ids; the packet codes
-     * the id as a VarInt, so their size costs nothing.
-     */
-    int RSTWEAKS_FLUID_TAB_ON = 0x727301;
-
-    /** @see #RSTWEAKS_FLUID_TAB_ON */
-    int RSTWEAKS_FLUID_TAB_OFF = 0x727300;
-
     void rstweaks$autoFillFluidSubstitution();
+
+    /**
+     * Selects a tab immediately on the client and asks the server to make the same change through
+     * the synced Refined Storage menu property.
+     *
+     * <p>The immediate client-side change is important. Waiting for the server to rebind its slots
+     * made the old tab's contents remain visible for a tick, and because the client had only one
+     * matrix that update also overwrote its only remembered copy.
+     */
+    void rstweaks$selectFluidTab(boolean open);
 
     /**
      * Records whether the player has the fluid substitution tab open.
@@ -39,6 +30,17 @@ public interface FluidSwapFillable {
      * named a fluid substitution.
      */
     void rstweaks$setFluidTab(boolean open);
+
+    /** The tab this menu is currently bound to, independently on client and server. */
+    boolean rstweaks$isFluidTab();
+
+    /**
+     * Selects the tab represented by an encoded pattern placed in the Pattern Grid.
+     *
+     * <p>This does not send a request: the same slot change is already handled on the server and
+     * its property is the authority. It only makes both menu instances bind the matching matrix.
+     */
+    void rstweaks$patternLoaded(boolean fluidSubstitution);
 
     /**
      * Which tab the server says this grid was left on.

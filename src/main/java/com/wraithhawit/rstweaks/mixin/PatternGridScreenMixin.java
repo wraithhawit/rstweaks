@@ -18,7 +18,6 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Renderable;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -77,13 +76,6 @@ public abstract class PatternGridScreenMixin extends Screen {
     private FluidSubstitutionTab rstweaks$tab;
 
     /**
-     * Set while we are the ones asking for the pattern type to change, so the callback below can
-     * tell our own request apart from the player picking a different tab.
-     */
-    @Unique
-    private boolean rstweaks$requesting;
-
-    /**
      * Whether the layout has been seen live at least once since it was switched on.
      *
      * <p>Without this the first click on the tab undid itself. Selecting the tab presses Refined
@@ -135,8 +127,13 @@ public abstract class PatternGridScreenMixin extends Screen {
      */
     @Unique
     private void rstweaks$selected() {
-        this.rstweaks$requesting = true;
-        try {
+        rstweaks$showFluidTab(true);
+    }
+
+    /** Activates the custom layout, optionally as a new player request. */
+    @Unique
+    private void rstweaks$showFluidTab(final boolean requestServerChange) {
+        if (requestServerChange) {
             for (final Map.Entry<?, ?> entry : this.patternTypeButtons.entrySet()) {
                 if ("PROCESSING".equals(String.valueOf(entry.getKey()))
                     && entry.getValue() instanceof Button processing) {
@@ -144,15 +141,15 @@ public abstract class PatternGridScreenMixin extends Screen {
                     break;
                 }
             }
-        } finally {
-            this.rstweaks$requesting = false;
         }
         // Applied after the press, not before: switching type is what would otherwise reposition
         // the slots out from under us.
         if (rstweaks$layout(true)) {
             FluidSwapLayout.active = true;
             this.rstweaks$tab.setSelected(true);
-            rstweaks$tellServerFluidTab(true);
+            if (requestServerChange) {
+                rstweaks$selectFluidTab(true);
+            }
         }
     }
 
@@ -160,39 +157,16 @@ public abstract class PatternGridScreenMixin extends Screen {
      * Tells the server the tab has opened or closed, which is the only thing that lets auto-fill
      * stay out of Refined Storage's own Processing tab.
      *
-     * <p>The fill has to run server-side — the matrix containers are synced server-to-client, so
-     * anything written here is overwritten on the next broadcast — and which tab is showing never
-     * otherwise leaves the client. A menu button click is the cheapest honest way to say it: a
-     * vanilla packet, no registration, and harmless on a server without this mod.
+     * <p>The fill has to run server-side. The menu changes its client binding immediately, then
+     * uses Refined Storage's own property channel to request the same binding on the server.
      */
     @Unique
-    private void rstweaks$tellServerFluidTab(final boolean open) {
-        final LocalPlayer player = Minecraft.getInstance().player;
-        final MultiPlayerGameMode gameMode = Minecraft.getInstance().gameMode;
-        if (player == null || gameMode == null
-            || !(player.containerMenu instanceof FluidSwapFillable)) {
-            return;
+    private void rstweaks$selectFluidTab(final boolean open) {
+        final FluidSwapFillable menu = rstweaks$menu();
+        if (menu != null) {
+            menu.rstweaks$selectFluidTab(open);
         }
-        final int container = player.containerMenu.containerId;
-        // Said once per change, and once per grid regardless. Every message now moves a pattern
-        // between the live matrix and the stash, so repeating one swaps the two tabs' contents for
-        // no reason -- and opening a grid used to announce a close and an open in the same tick.
-        if (container == this.rstweaks$announcedFor && open == this.rstweaks$announced) {
-            return;
-        }
-        this.rstweaks$announcedFor = container;
-        this.rstweaks$announced = open;
-        gameMode.handleInventoryButtonClick(container,
-            open ? FluidSwapFillable.RSTWEAKS_FLUID_TAB_ON
-                : FluidSwapFillable.RSTWEAKS_FLUID_TAB_OFF);
     }
-
-    /** The container id the tab state below was last announced for; -1 before anything was said. */
-    @Unique
-    private int rstweaks$announcedFor = -1;
-
-    @Unique
-    private boolean rstweaks$announced;
 
     /**
      * Puts Refined Storage's Processing tab out while ours is lit, and lights it again on the way
@@ -229,9 +203,8 @@ public abstract class PatternGridScreenMixin extends Screen {
         // open is always Refined Storage's Processing one whatever tab is live, and an empty fluid
         // tab has nothing to recognise even when it is sent the right one.
         final FluidSwapFillable menu = rstweaks$menu();
-        if (this.rstweaks$tab != null && menu != null
-            && (menu.rstweaks$serverSaysFluidTab() || menu.rstweaks$holdsFluidSwap())) {
-            rstweaks$selected();
+        if (this.rstweaks$tab != null && menu != null && menu.rstweaks$isFluidTab()) {
+            rstweaks$showFluidTab(false);
             return;
         }
         // Deliberately NOT announcing Processing here any more. Saying it unprompted is what
@@ -239,6 +212,29 @@ public abstract class PatternGridScreenMixin extends Screen {
         // contents that this was Processing, and told it so -- overwriting the flag the block
         // entity had just loaded. The server already knows; it only needs telling when the player
         // actually clicks a tab.
+    }
+
+    /**
+     * Reconciles the widgets after the server's tab property arrives.
+     *
+     * <p>The screen is constructed before vanilla sends its first data-slot update, so reading the
+     * property only from {@code init} races the network and usually sees the default {@code false}.
+     * The menu applies the property immediately; this lightweight check makes the visible tab
+     * follow on the next client tick without sending the value back to the server.
+     */
+    @Inject(method = "containerTick", at = @At("RETURN"))
+    private void rstweaks$followSyncedTab(final CallbackInfo ci) {
+        final FluidSwapFillable menu = rstweaks$menu();
+        if (this.rstweaks$tab == null || menu == null) {
+            return;
+        }
+        if (menu.rstweaks$isFluidTab()) {
+            if (!FluidSwapLayout.active) {
+                rstweaks$showFluidTab(false);
+            }
+        } else if (FluidSwapLayout.active) {
+            rstweaks$clearFluidSubstitution();
+        }
     }
 
     /**
@@ -344,7 +340,7 @@ public abstract class PatternGridScreenMixin extends Screen {
         for (final Object value : this.patternTypeButtons.values()) {
             if (value instanceof AbstractWidget widget && widget.isMouseOver(mouseX, mouseY)) {
                 rstweaks$clearFluidSubstitution();
-                rstweaks$tellServerFluidTab(false);
+                rstweaks$selectFluidTab(false);
                 return;
             }
         }
@@ -403,7 +399,7 @@ public abstract class PatternGridScreenMixin extends Screen {
                 rstweaks$highlightProcessing(false);
             } else if (this.rstweaks$confirmed) {
                 rstweaks$clearFluidSubstitution();
-                rstweaks$tellServerFluidTab(false);
+                rstweaks$selectFluidTab(false);
             }
         }
         if (this.rstweaks$tab == null) {
