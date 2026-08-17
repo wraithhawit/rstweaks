@@ -231,8 +231,9 @@ public abstract class ResourceRepositoryImplDiagnosticMixin {
                 }
                 RSTweaks.LOGGER.warn("[rstweaks][grid] PHANTOM ROW after {}: {} is in the view "
                         + "list, the backing list holds none of it, and it is not sticky. This "
-                        + "row will render 0 until the next sort(). Stack trace is where it was "
-                        + "noticed, not necessarily where it was created.", when, resource,
+                        + "row will render 0 until the next sort(). Step Crafter says: {}. "
+                        + "Stack trace is where it was noticed, not necessarily where it was "
+                        + "created.", when, resource, rstweaks$stepCrafterClaim(this, resource),
                     new Throwable("phantom row noticed here"));
             }
             // Forget rows that have since been cleaned up, so a phantom that comes back is
@@ -254,6 +255,40 @@ public abstract class ResourceRepositoryImplDiagnosticMixin {
     @Inject(method = "sort", at = @At("RETURN"), require = 0)
     private void rstweaks$auditAfterSort(final CallbackInfo ci) {
         this.rstweaks$audit("sort()");
+    }
+
+    /**
+     * What Step Crafter says about this resource, asked by reflection.
+     *
+     * <p>Step Crafter's {@code MixinResourceRepositoryImpl} puts a {@code @Redirect} on the very
+     * {@code stickyResources.contains(resource)} call that decides whether a row is removed, and
+     * answers {@code sticky || isMaintained} so that a resource one of its Step Crafters maintains
+     * keeps its row. Our own logging reads the raw set and cannot see that redirect, so a row kept
+     * by Step Crafter is logged by us as REMOVED — which is exactly the contradiction the 0.2.89
+     * audit turned up.
+     *
+     * <p>The repository object itself implements Step Crafter's {@code MaintainingResource}, whose
+     * {@code stepcrafter$getMaintainingResources} returns what it claims for a given resource. That
+     * is not a dependency we have or want, so it is asked for by name; a pack without Step Crafter
+     * simply has no such method and this reports as much.
+     */
+    @Unique
+    private static String rstweaks$stepCrafterClaim(final Object repository,
+                                                    final ResourceKey resource) {
+        try {
+            final Object claimed = repository.getClass()
+                .getMethod("stepcrafter$getMaintainingResources", ResourceKey.class)
+                .invoke(repository, resource);
+            if (claimed instanceof Iterable<?> entries && entries.iterator().hasNext()) {
+                return "MAINTAINING this resource " + entries + " -- Step Crafter's redirect on "
+                    + "stickyResources.contains is what kept this row";
+            }
+            return "not maintaining it (so Step Crafter is not the cause)";
+        } catch (final NoSuchMethodException absent) {
+            return "not installed";
+        } catch (final ReflectiveOperationException | RuntimeException e) {
+            return "could not be asked (" + e + ")";
+        }
     }
 
     /**

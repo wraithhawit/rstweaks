@@ -18,6 +18,13 @@ UNRELEASED (in source, not yet in a built jar)
   link is a protobuf payload on bytebin, not a web page.
 
 
+0.2.90  DIAGNOSTIC - the 0.2.89 audit caught the phantom row and produced a contradiction:
+        the row was logged REMOVED and survived anyway. That can only happen if Refined
+        Storage never called ViewList.remove, i.e. the sticky check inside updateExisting
+        answered differently from the same check outside it - which is what a @Redirect
+        does, and Step Crafter ships one on exactly that call. This logs whether remove was
+        called and what Step Crafter claims about the resource. (Issue #15)
+
 0.2.89  DIAGNOSTIC - the 0.2.87 probe came back clean on a session that still showed the
         phantom 0 row, which rules out all three paths it watched. logGridViewDiagnostics
         now also audits the view list against the backing list after every update and every

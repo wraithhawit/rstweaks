@@ -24,7 +24,8 @@
   ],
   "client": [
     "AbstractGridScreenMixin",
-    "ResourceRepositoryImplDiagnosticMixin"
+    "ResourceRepositoryImplDiagnosticMixin",
+    "ViewListDiagnosticMixin"
   ],
   "server": [],
   "injectors": {

@@ -8,6 +8,50 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.90
+
+- **The audit caught it, and the answer contradicts itself (issue #15).** One craft, one hit:
+
+  ```
+  update iron_ore_hammer@6 by -1 (backing had 1, sticky=false)
+    existing row: REMOVED (removedFromBacking=true, sticky=false, backing now 0)
+  PHANTOM ROW ... iron_ore_hammer@6 is in the view list, the backing list holds none of it
+  ```
+
+  A row cannot be removed and still be there. `ResourceRepositoryImpl` removes one by calling
+  `ViewList.remove`, which does `index.remove(resource)` on the same key `viewList.get(resource)`
+  had just found a moment earlier — and a `HashMap` that finds a key with `get` always drops it
+  with `remove`. So `remove` was never called, and the branch condition
+  `removedFromBackingList && !stickyResources.contains(resource)` was false. With
+  `removedFromBacking=true` logged, that leaves only one possibility: the `contains` call returned
+  **true**.
+
+- **Which is impossible unless something rewrote it, and something did.** Our own line above reads
+  the same set on the same object and gets `false`. A call answering differently inside a method
+  than outside it is a `@Redirect`, and Step Crafter ships one on exactly this call —
+  `MixinResourceRepositoryImpl.checkForMaintainingResources`, returning `sticky || isMaintained` so
+  a resource one of its Step Crafters maintains keeps its row. Our probe reads the raw set and
+  cannot see the redirect, which is why it has been reporting REMOVED for rows that were kept. Step
+  Crafter 0.1.6 is installed in the pack this was reported from.
+
+  It also explains the one fact that killed the plain sticky theory: a SHIFT tap clears the row,
+  because `sort()` rebuilds from the backing list and Step Crafter's separate `@ModifyArg` only
+  widens the set passed to `createSorted` for resources it is actually maintaining.
+
+- **Four deductions about this bug have already been wrong, so this one gets checked too.**
+  `ViewListDiagnosticMixin` logs whether `remove` was called at all, and the phantom report now
+  asks Step Crafter, by reflection, what it claims about that exact resource. One reproduction
+  distinguishes every remaining possibility:
+
+  - `ViewList.remove CALLED` absent + `MAINTAINING this resource` → confirmed, and it is Step
+    Crafter's redirect keeping a row for a resource that left the network.
+  - `remove` absent + `not maintaining it` → something else redirects or overwrites that branch.
+  - `remove CALLED` and the row still present → the fault is in `ViewList`/key identity after all,
+    and every conclusion above is wrong.
+
+- Still default off, still behaviour-free. `ViewList` is package-private so the new mixin targets
+  it by name, the same trick as `ProcessingPatternClientTooltipComponentMixin`.
+
 ## 0.2.89
 
 - **The 0.2.87 probe came back clean while the phantom was still on screen (issue #15).** A 0.2.88
