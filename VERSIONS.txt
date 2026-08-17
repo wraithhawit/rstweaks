@@ -18,6 +18,12 @@ UNRELEASED (in source, not yet in a built jar)
   link is a protobuf payload on bytebin, not a web page.
 
 
+0.2.89  DIAGNOSTIC - the 0.2.87 probe came back clean on a session that still showed the
+        phantom 0 row, which rules out all three paths it watched. logGridViewDiagnostics
+        now also audits the view list against the backing list after every update and every
+        sort, reporting any row with nothing behind it, with a stack trace. Catches the bug
+        whatever creates it. Changes no behaviour. (Issue #15)
+
 0.2.88  BUG FIX - a worn tool's last few uses were stranded whenever the craft also had to
         make a replacement. One hammer with 3 uses left, 32 crafts asked for: the plan made
         a new hammer, took all 32 uses from it, and never touched the old one. The tool

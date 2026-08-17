@@ -387,8 +387,13 @@ public final class Config {
             "so the line that reports 'view row ADDED' or 'view row KEPT' with 'backing now 0'",
             "is the bug happening, and names the resource and the code path that did it.",
             "",
-            "Client-side only, and noisy - a line per resource per grid update. Turn it on to",
-            "reproduce, then turn it off."
+            "Since 0.2.89 this also audits the view list against the backing list after every",
+            "update and every sort, and reports any row that has nothing behind it with a",
+            "stack trace. Search the log for 'PHANTOM ROW' first - it catches the bug however",
+            "the row got there, which the per-path logging above cannot.",
+            "",
+            "Client-side only, and noisy - a line per resource per grid update, plus a walk of",
+            "the whole view list. Turn it on to reproduce, then turn it off."
         )
         .define("logGridViewDiagnostics", false);
 

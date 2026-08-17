@@ -8,6 +8,43 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.89
+
+- **The 0.2.87 probe came back clean while the phantom was still on screen (issue #15).** A 0.2.88
+  session ran two durability crafts with the grid open and `logGridViewDiagnostics` on. Every
+  removal reported `REMOVED`; nothing added or kept a row over an empty backing entry:
+
+  ```
+  update iron_ore_hammer@61 by -1 (backing had 1, sticky=false)
+    existing row: REMOVED (removedFromBacking=true, sticky=false, backing now 0)
+  ```
+
+  That is this probe's own documented signal that the row is not created by the three paths it
+  watches.
+
+- **Two more candidates died with it.** The row still clears on a SHIFT tap, so it is not sticky —
+  `ViewList.createSorted` re-adds every sticky resource on rebuild, which is how autocraftable
+  items legitimately show a `Craft` row at zero, so a sticky phantom would *survive* the tap. And
+  `MutableResourceListImpl.removeCompletely` drops an entry rather than zeroing it, so the backing
+  list cannot hold a zero and a freshly sorted view cannot contain a phantom either. Between them
+  that accounts for every path in `ResourceRepositoryImpl`, which is the point: the row is being
+  created somewhere else.
+
+- **So the diagnostic stops guessing.** It now checks the invariant directly, after every update
+  and every sort: nothing may sit in the view list with an empty backing entry unless it is
+  sticky. Any violation is reported as `PHANTOM ROW`, naming the resource, and carries a stack
+  trace of where it was noticed. This catches the bug however the row got there, which is the
+  property the per-path logging lacked — four theories built by reading `ResourceRepositoryImpl`
+  have now been wrong, three of them at the cost of a build and an in-game test each.
+
+- **Reflection, deliberately.** `ViewList` is package-private in Refined Storage's own package, so
+  its type cannot be named from a mixin at all, and its index is the only place the view's
+  `ResourceKey`s exist — `GridResource` exposes an amount and a name but never its key. The lookup
+  is wrapped so a shape change downgrades the audit to silence rather than breaking a grid.
+
+- Still `default off`, still behaviour-free, and now O(view size) per update on top of the existing
+  per-resource lines. Turn it on to reproduce, then turn it off.
+
 ## 0.2.88
 
 - **A worn tool's remaining uses were stranded when a replacement was crafted (issue #10).**

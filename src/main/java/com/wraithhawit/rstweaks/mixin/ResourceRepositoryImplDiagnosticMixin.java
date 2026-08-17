@@ -6,11 +6,17 @@ import com.refinedmods.refinedstorage.api.resource.repository.ResourceRepository
 import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.RSTweaks;
 
+import java.lang.reflect.Field;
+import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
+
+import javax.annotation.Nullable;
 
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -49,6 +55,21 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * <b>kept</b> a row. That names the resource and the branch in one go. If instead every removal
  * reports {@code view row REMOVED} and the phantom still appears, the row is not coming from this
  * class at all and the search moves to whatever else mixes into it.
+ *
+ * <h2>0.2.89: that is exactly what happened, so read the audit first</h2>
+ *
+ * <p>A 0.2.88 session reproduced the phantom with this probe on, and the probe came back clean:
+ * every removal reported {@code REMOVED}, nothing added a row over an empty backing entry. Two
+ * more candidates died with it — the row still clears on a SHIFT tap, so it is not sticky
+ * ({@code ViewList.createSorted} re-adds sticky rows on every rebuild, so a sticky one would
+ * survive), and {@code MutableResourceListImpl.removeCompletely} drops an entry rather than
+ * zeroing it, so a rebuilt view cannot contain a phantom either.
+ *
+ * <p>{@link #rstweaks$audit} therefore stops watching suspected paths and checks the invariant
+ * itself, after every update and every sort: <b>nothing may sit in the view list with an empty
+ * backing entry unless it is sticky.</b> It names whatever violates that and carries a stack
+ * trace, so the search no longer depends on having guessed the right code path. Grep for
+ * {@code PHANTOM ROW}; the lines above it are the context.
  *
  * <p>Gated behind {@code logGridViewDiagnostics}, default off. Registered as a client mixin: the
  * server builds a repository for the grid menu but never populates or updates it, so nothing here
@@ -142,4 +163,145 @@ public abstract class ResourceRepositoryImplDiagnosticMixin {
         }
         RSTweaks.LOGGER.info("[rstweaks][grid] sort() - view list rebuilt from the backing list");
     }
+
+    // ------------------------------------------------------------------ the audit
+    //
+    // Added in 0.2.89, after the probe above came back clean on a session that still showed
+    // the phantom. Every removal reported "REMOVED", no line reported "backing now 0" on a
+    // path that added or kept a row, and the ghost was there anyway. That is this file's own
+    // documented signal that the row is not created by the three paths it watches.
+    //
+    // So this stops watching suspects and checks the invariant directly: no resource may sit
+    // in the view list with nothing behind it in the backing list unless it is sticky, which
+    // is the legitimate "you can craft this" row. It reports whatever violates that, whoever
+    // did it, and takes a stack trace the first few times so the creator names itself.
+    //
+    // Reaching the view list needs reflection. ViewList is package-private in Refined
+    // Storage's own package, so its type cannot be named from here at all, and its index is
+    // the only place the view's ResourceKeys exist -- GridResource exposes an amount and a
+    // name but never its key. A diagnostic is the one place where paying that price is
+    // right, and it is wrapped so a failed lookup degrades to silence.
+
+    @Unique
+    @Nullable
+    private Set<ResourceKey> rstweaks$phantomsReported;
+
+    @Unique
+    private Set<ResourceKey> rstweaks$reported() {
+        // No inline initializer, and not final: Mixin does not reliably carry either onto the
+        // instance. That exact mistake destroyed items for seven versions -- see
+        // AbstractTaskPatternMixin#rstweaks$consumed.
+        Set<ResourceKey> reported = this.rstweaks$phantomsReported;
+        if (reported == null) {
+            reported = new HashSet<>();
+            this.rstweaks$phantomsReported = reported;
+        }
+        return reported;
+    }
+
+    /**
+     * Checks the invariant after every change that could break it.
+     *
+     * <p>Walks the whole view index, so it is O(view size) per grid update and belongs behind
+     * a flag that is off by default — a busy network updates this many times a second.
+     *
+     * @param when which call produced the state being checked, so the log says whether the
+     *     row appeared during an update or survived a full rebuild. A phantom seen right
+     *     after {@code sort()} would be a different bug entirely: {@code createSorted} builds
+     *     from the backing list, and {@code MutableResourceListImpl.removeCompletely} drops
+     *     an entry rather than zeroing it, so a rebuilt view cannot contain one.
+     */
+    @Unique
+    private void rstweaks$audit(final String when) {
+        if (!Config.logGridViewDiagnostics) {
+            return;
+        }
+        try {
+            final Set<ResourceKey> inView = rstweaks$viewKeys(this);
+            if (inView == null) {
+                return;
+            }
+            for (final ResourceKey resource : inView) {
+                if (this.backingList.get(resource) != 0L
+                    || this.stickyResources.contains(resource)) {
+                    continue;
+                }
+                if (!this.rstweaks$reported().add(resource)) {
+                    continue;
+                }
+                RSTweaks.LOGGER.warn("[rstweaks][grid] PHANTOM ROW after {}: {} is in the view "
+                        + "list, the backing list holds none of it, and it is not sticky. This "
+                        + "row will render 0 until the next sort(). Stack trace is where it was "
+                        + "noticed, not necessarily where it was created.", when, resource,
+                    new Throwable("phantom row noticed here"));
+            }
+            // Forget rows that have since been cleaned up, so a phantom that comes back is
+            // reported again rather than silently deduplicated against the first sighting.
+            this.rstweaks$reported().removeIf(resource -> !inView.contains(resource)
+                || this.backingList.get(resource) != 0L);
+        } catch (final RuntimeException | LinkageError e) {
+            RSTweaks.LOGGER.warn("[rstweaks][grid] audit failed", e);
+        }
+    }
+
+    @Inject(method = "update", at = @At("RETURN"), require = 0)
+    private void rstweaks$auditAfterUpdate(final ResourceKey resource,
+                                           final long amount,
+                                           final CallbackInfo ci) {
+        this.rstweaks$audit("update " + resource + " by " + amount);
+    }
+
+    @Inject(method = "sort", at = @At("RETURN"), require = 0)
+    private void rstweaks$auditAfterSort(final CallbackInfo ci) {
+        this.rstweaks$audit("sort()");
+    }
+
+    /**
+     * The view list's resource keys, or null if Refined Storage's shape has moved.
+     *
+     * <p>Cached reflectively rather than shadowed because neither the field's type nor the map
+     * inside it can be named from this package.
+     */
+    @Unique
+    @Nullable
+    private static Set<ResourceKey> rstweaks$viewKeys(final Object repository) {
+        try {
+            if (RSTWEAKS$VIEW_LIST == null || RSTWEAKS$INDEX == null) {
+                final Field viewListField =
+                    ResourceRepositoryImpl.class.getDeclaredField("viewList");
+                viewListField.setAccessible(true);
+                final Field indexField = viewListField.getType().getDeclaredField("index");
+                indexField.setAccessible(true);
+                RSTWEAKS$VIEW_LIST = viewListField;
+                RSTWEAKS$INDEX = indexField;
+            }
+            final Object viewList = RSTWEAKS$VIEW_LIST.get(repository);
+            if (viewList == null) {
+                return null;
+            }
+            final Object index = RSTWEAKS$INDEX.get(viewList);
+            if (!(index instanceof Map<?, ?> map)) {
+                return null;
+            }
+            final Set<ResourceKey> keys = new HashSet<>(map.size());
+            for (final Object key : map.keySet()) {
+                if (key instanceof ResourceKey resource) {
+                    keys.add(resource);
+                }
+            }
+            return keys;
+        } catch (final ReflectiveOperationException | RuntimeException e) {
+            RSTweaks.LOGGER.warn("[rstweaks][grid] cannot read the view list; the audit is off "
+                + "for this session. Refined Storage's ViewList has probably changed shape.", e);
+            return null;
+        }
+    }
+
+    @Unique
+    @Nullable
+    private static Field RSTWEAKS$VIEW_LIST;
+
+    @Unique
+    @Nullable
+    private static Field RSTWEAKS$INDEX;
 }
