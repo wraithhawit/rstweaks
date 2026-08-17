@@ -608,7 +608,11 @@ public final class PlannerExecutabilitySelfTest {
 
     // -------------------------------------------------------------- durability
 
-    private static final int DURABILITY_SCENARIOS = 6;
+    // Kept in step with the run(...) calls in durabilityChecks by hand, and it had drifted
+    // to 6 against 9 actual. It feeds nothing but the reported total, so a stale value makes
+    // "42 scenarios" a number that cannot be used to notice a check has stopped running —
+    // which is why every new check here is confirmed by flipping its expectation once.
+    private static final int DURABILITY_SCENARIOS = 10;
 
     /**
      * Tools that wear out, which Refined Storage cannot express at all today.
@@ -724,6 +728,41 @@ public final class PlannerExecutabilitySelfTest {
                 return crystals > 2
                     ? "crafted " + crystals + " crystals; 2 should cover 25 uses"
                     : null;
+            });
+
+        // Issue #10, reduced from the log. The reported symptom was "durability crafting
+        // sometimes does not use the damaged tool first", and the "sometimes" is this: the
+        // stored tool has FEWER uses left than the request needs, so a replacement genuinely
+        // has to be crafted — and once one is being crafted, the last few uses of the old
+        // tool get stranded. In game: one iron_ore_hammer@93 with 3 uses left, 32 iterations
+        // asked for, and the requisition named iron_block and stick with no hammer at all.
+        //
+        // Crafting the replacement is correct and must stay. What is asserted here is that
+        // the 3 uses already paid for are spent first, which is the whole promise of the
+        // feature. Note both halves: without the crystal count the "fix" of requisitioning
+        // every tool in the network would pass, and without the requisition the plan runs
+        // perfectly while wasting the tool — the same trap the mid-run scenario documents.
+        run(failures, new FakeDurability("crystal", 10),
+            "worn tool with too few uses, replacement crafted anyway",
+            repo -> {
+                repo.add(wearPattern(0), 0);
+                repo.add(pattern("newcrystal", List.of(ing(8, "gem")),
+                    List.of(new ResourceAmount(res(FakeDurability.worn("crystal", 0)), 1L)),
+                    List.of()), 0);
+            },
+            // 3 uses left against 8 wanted, so one replacement is unavoidable.
+            Map.of(FakeDurability.worn("crystal", 7), 1L, "material", 4096L, "gem", 4096L),
+            "product", 8L, true,
+            plan -> {
+                final long crystals = plan.patterns().entrySet().stream()
+                    .filter(e -> e.getKey().layout().outputs().stream()
+                        .anyMatch(o -> String.valueOf(o.resource()).startsWith("crystal@")))
+                    .mapToLong(e -> e.getValue().iterations())
+                    .sum();
+                if (crystals != 1) {
+                    return "crafted " + crystals + " crystals; 8 uses against 3 in stock needs 1";
+                }
+                return requisition(plan, "crystal@7", 1L);
             });
 
         // Prove the ageing half is load-bearing, not just agreeing with itself. This

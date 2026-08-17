@@ -18,6 +18,13 @@ UNRELEASED (in source, not yet in a built jar)
   link is a protobuf payload on bytebin, not a web page.
 
 
+0.2.88  BUG FIX - a worn tool's last few uses were stranded whenever the craft also had to
+        make a replacement. One hammer with 3 uses left, 32 crafts asked for: the plan made
+        a new hammer, took all 32 uses from it, and never touched the old one. The tool
+        class is measured in uses, and netting production against consumption said the
+        network owed nothing, so no hammer was requisitioned at all. It now asks for the
+        uses it will burn, capped at what the network holds, most worn first. (Issue #10)
+
 0.2.87  DIAGNOSTIC - 0.2.86 fixed a real stock-RS bug but NOT the reported one; the phantom
         0 row survived it. Adds logGridViewDiagnostics (default off), which restates Refined
         Storage's own DEBUG-level grid view logging at INFO and adds what the backing list

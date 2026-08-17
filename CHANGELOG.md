@@ -8,6 +8,52 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.88
+
+- **A worn tool's remaining uses were stranded when a replacement was crafted (issue #10).**
+  Reported as "durability crafting sometimes does not use the damaged tool first", and the
+  *sometimes* is the whole of it: the failing case needs the stored tool to hold **fewer** uses
+  than the request, so a replacement genuinely has to be made. From the log — one
+  `iron_ore_hammer@93` with 3 uses left, 64 gold dust wanted:
+
+  ```
+  LP plan for 64x gold_dust: 2 patterns [32x ROOT dust, 1x Pattern[7031...]],
+    initial requirements [raw_gold x32, iron_block x2, stick x3]
+  ```
+
+  `iron_block x2 + stick x3` is a new hammer. The `@93` is not in the requisition at all, so the
+  task never saw it: 32 uses came off the fresh hammer and the old one's last 3 were left behind.
+
+- **Not where the issue thought it was.** The issue proposed a bounded preference in the LP
+  objective, on the reading that the solver was choosing between two equal-cost solutions. There
+  are not two solutions. Both outcomes are the *same* solve — 32 dust iterations, 1 hammer — and
+  they differ only in what the plan then asks the network for, so no objective term could have
+  separated them. `initialRequirements` is downstream of the solver and is where the choice
+  actually lives. The extraction-order and pristine-versus-damaged theories the issue carried are
+  both exonerated by the same reasoning: the requisition never named the tool, so
+  `TaskImpl.extractInitialResourcesAndTryStartRunningTask` and `findWornTool` never had a choice
+  to make.
+
+- **The fix, in `PlanMatrix.netConsumption`.** Netting production against consumption is the right
+  question for an item — craft eight gears, consume eight, ask the network for none. It is the
+  wrong question for a class denominated in *uses*, because a use is not fungible with the item
+  carrying it. 3 uses in stock, 32 burned, 96 produced: the net is zero and the requisition is
+  empty, while the truth is that three of those uses already exist and should be spent first. A
+  tool class now asks for the gross uses the plan will burn; the existing clamp to available stock
+  caps it at what the network actually has, and `toolsCovering` turns that into whole tools, most
+  worn first. When no tool is being crafted, production is zero and the net already equalled
+  consumption — so nothing else changes, which the other nine durability scenarios confirm.
+
+- **Headless coverage: "worn tool with too few uses, replacement crafted anyway".** Written before
+  the fix and watched to fail with the exact reported shape (`initial requirements [material x8,
+  gem x8]`, no crystal). It asserts both halves, because either alone passes something wrong: the
+  crystal count alone would accept requisitioning every tool in the network, and the requisition
+  alone would accept crafting a replacement that was never needed.
+
+- **`DURABILITY_SCENARIOS` corrected from 6 to 10.** It is maintained by hand and had drifted
+  behind the checks it counts, which makes the reported scenario total useless for noticing that a
+  check has silently stopped running — the one failure mode this suite is least able to see.
+
 ## 0.2.87
 
 - **0.2.86 did not fix issue #15.** It fixed a real Refined Storage bug with the same symptom —

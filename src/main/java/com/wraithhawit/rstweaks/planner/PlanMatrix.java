@@ -195,8 +195,10 @@ public final class PlanMatrix {
                                          final int maxSimPasses) {
         final long[] required = netConsumption(graph, iterations, classCount);
         for (int c = 0; c < classCount; c++) {
-            // The program constrains net consumption to what is available, so this only
-            // guards against an arithmetic surprise.
+            // For an ordinary class the program constrains net consumption to what is
+            // available, so this only guards against an arithmetic surprise. For a tool
+            // class it is load-bearing: netConsumption asks for every use the plan will
+            // burn, and this caps that at the uses the network actually holds.
             required[c] = Math.min(required[c], available[c]);
         }
         final int maxRounds = Math.min(64, classCount * 2 + 8);
@@ -278,7 +280,25 @@ public final class PlanMatrix {
         return taken;
     }
 
-    /** Total consumed minus total produced, per class, floored at zero. */
+    /**
+     * Total consumed minus total produced, per class, floored at zero — <b>except for a
+     * tool class, which asks for everything the plan will burn.</b>
+     *
+     * <p>Issue #10. Netting is the right question for an item: a plan that crafts eight
+     * gears and consumes eight needs none from the network. It is the wrong question for a
+     * class denominated in uses, because a use is not fungible with the item that carries
+     * it. A hammer with three uses left, a request needing thirty-two, and a replacement
+     * worth ninety-six nets to zero — so the requisition named no hammer at all, the task
+     * never saw the worn one, and its last three uses were stranded while a fresh tool did
+     * all thirty-two crafts. That is the whole of the reported bug: not extraction order,
+     * not a preference for pristine tools, and not something the objective could fix, since
+     * both outcomes are the <em>same</em> solver solution and differ only here.
+     *
+     * <p>Asking for gross consumption and letting the caller clamp it to stock says the
+     * honest thing instead: spend the uses you have already paid for, and let the tools this
+     * plan crafts cover the rest. It changes nothing when no tool is being crafted, because
+     * then production is zero and the net already equals consumption.
+     */
     private static long[] netConsumption(final Graph graph,
                                          final long[] iterations,
                                          final int classCount) {
@@ -297,7 +317,9 @@ public final class PlanMatrix {
         }
         final long[] net = new long[classCount];
         for (int c = 0; c < classCount; c++) {
-            net[c] = Math.max(0L, consumed[c] - produced[c]);
+            net[c] = graph.classes().get(c).tool()
+                ? consumed[c]
+                : Math.max(0L, consumed[c] - produced[c]);
         }
         return net;
     }
