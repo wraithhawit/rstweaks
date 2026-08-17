@@ -89,6 +89,9 @@ public class RSTweaks {
         if (activeFeatures == null) {
             final List<String> features = new ArrayList<>(8);
             features.add("uncraftable cache");
+            if (Config.waitForRunningCraft) {
+                features.add("duplicate request suppression");
+            }
             features.add("plan copy-on-write");
             features.add("external storage index");
             if (Config.skipEmptyCompositeExtract) {

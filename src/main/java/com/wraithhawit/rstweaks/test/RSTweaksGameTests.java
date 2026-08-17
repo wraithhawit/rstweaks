@@ -1,9 +1,14 @@
 package com.wraithhawit.rstweaks.test;
 
+import com.wraithhawit.rstweaks.ChatReporter;
 import com.wraithhawit.rstweaks.RSTweaks;
+import com.wraithhawit.rstweaks.Stats;
+
+import java.util.List;
 
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.network.chat.Component;
 
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -72,6 +77,47 @@ public final class RSTweaksGameTests {
         final ExtractionSelfTest.Result result = ExtractionSelfTest.run();
         report(helper, "external extraction",
             new CraftingPlanSelfTest.Result(result.scenarios(), result.failures()));
+    }
+
+    /**
+     * How many tasks a repeatedly-asking Exporter really starts — issue #14's open
+     * question, answered by counting rather than by reading the code.
+     */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void repeatedRequestsStartOneTask(final GameTestHelper helper) {
+        report(helper, "autocrafting requests", AutocraftingRequestSelfTest.run());
+    }
+
+    /**
+     * {@code /rstweaks stats} prints one counter per line, and prints them all.
+     *
+     * <p>Cosmetic, and still worth pinning: the counters are the only evidence most people
+     * will ever see that the mixins fired, and the report is assembled by index-splitting
+     * strings, which is the sort of code that throws in front of a player rather than in a
+     * test. Logged as well as asserted, so a run of this suite carries an example of what
+     * the command actually looks like.
+     */
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void statsPrintOnePerLine(final GameTestHelper helper) {
+        // Whatever the suite has already done to these, plus one guaranteed non-zero
+        // counter so the "nothing has fired" branch is not what gets measured.
+        ++Stats.duplicateRequestsSuppressed;
+        final List<Component> lines = ChatReporter.sessionTotals();
+        lines.forEach(line -> RSTweaks.LOGGER.info("[rstweaks] /rstweaks stats | {}",
+            line.getString()));
+
+        if (lines.size() < 2) {
+            helper.fail("expected a header and at least one counter, got " + lines.size()
+                + " line(s): " + lines.stream().map(Component::getString).toList());
+            return;
+        }
+        for (final Component line : lines) {
+            if (line.getString().isBlank()) {
+                helper.fail("blank line in the stats report");
+                return;
+            }
+        }
+        helper.succeed();
     }
 
     private static void report(final GameTestHelper helper,

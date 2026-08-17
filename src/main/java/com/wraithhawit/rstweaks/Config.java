@@ -105,6 +105,38 @@ public final class Config {
         )
         .define("silenceAutocraftingDebugLog", true);
 
+    public static final ModConfigSpec.BooleanValue WAIT_FOR_RUNNING_CRAFT = BUILDER
+        .comment(
+            "Make an Exporter, Interface or Constructor with an autocrafting upgrade wait for",
+            "the craft it already started before starting another one for the same resource.",
+            "",
+            "Refined Storage already refuses a duplicate request when the amount asked for is",
+            "covered by what is running: ensureTask sums the running tasks for the resource and",
+            "answers TASK_ALREADY_RUNNING when that reaches the amount. With a plain exporter",
+            "the amount is a constant 1 (or 64 with a stack upgrade), so one task is started",
+            "and every later request is correctly refused -- tiered exporters included, even",
+            "though they ask several times per tick.",
+            "",
+            "A REGULATOR UPGRADE is what breaks it. The autocrafting quota is then the whole",
+            "outstanding shortfall rather than a transfer quota, so it GROWS whenever the",
+            "destination is drained -- and every increase is larger than what is running, so",
+            "each one starts another task for the difference. Measured: twenty requests against",
+            "a growing shortfall produced twenty separate tasks for one resource.",
+            "",
+            "Each of those runs a full crafting calculation, gets its own internal storage, and",
+            "is stepped every tick, which is why this is a tick-time problem and not only an",
+            "untidy autocrafting monitor.",
+            "",
+            "With this on, anything already being crafted for a resource is enough to refuse a",
+            "further request. The shortfall is then satisfied one task at a time instead of in",
+            "parallel, so a large regulated buffer refills more slowly and far more cheaply.",
+            "Turn it off to get Refined Storage's behaviour back."
+        )
+        .define("waitForRunningCraft", true);
+
+    /** Cached: read on the ensureTask path, which a tiered exporter hits several times a tick. */
+    public static volatile boolean waitForRunningCraft = true;
+
     /** Called on config load and reload to refresh the hot-path caches. */
     public static void refresh() {
         lazyPatternPlanCopy = LAZY_PATTERN_PLAN_COPY.get();
@@ -114,6 +146,7 @@ public final class Config {
         skipMismatchedStorageTypes = SKIP_MISMATCHED_STORAGE_TYPES.get();
         skipEmptyCompositeExtract = SKIP_EMPTY_COMPOSITE_EXTRACT.get();
         durabilityAwarePlanning = DURABILITY_AWARE_PLANNING.get();
+        waitForRunningCraft = WAIT_FOR_RUNNING_CRAFT.get();
         refillContainersInCraftingGrid = REFILL_CONTAINERS_IN_CRAFTING_GRID.get();
         logGridViewDiagnostics = LOG_GRID_VIEW_DIAGNOSTICS.get();
         AutocraftingLogSpam.apply(SILENCE_AUTOCRAFTING_DEBUG_LOG.get());
@@ -365,12 +398,14 @@ public final class Config {
 
     public static final ModConfigSpec.BooleanValue CHAT_NOTIFICATIONS = BUILDER
         .comment(
-            "Report in chat that the optimizations are active and working.",
+            "Announce the mod and its active features in chat when a player joins.",
             "",
-            "Sends a short summary when a player joins, and periodically afterwards if",
-            "anything actually happened. The numbers are counts of work avoided, so they",
-            "are evidence the mixins fired rather than just a 'loaded' message.",
-            "Set false to silence it entirely."
+            "One line: the version and which optimizations are switched on. The version is",
+            "there because a test result has to be attributable to an exact build, and chat",
+            "is the only place that is visible without opening a log.",
+            "",
+            "This does NOT post counters. Run /rstweaks stats for those.",
+            "Set false to silence the join line entirely."
         )
         .define("chatNotifications", true);
 
@@ -402,12 +437,18 @@ public final class Config {
 
     public static final ModConfigSpec.IntValue CHAT_NOTIFICATION_INTERVAL_SECONDS = BUILDER
         .comment(
-            "Seconds between periodic chat summaries. Set to 0 to report only on join.",
+            "Seconds between unprompted chat summaries of the counters.",
             "",
-            "A summary is skipped entirely when nothing changed since the last one, so a",
-            "quiet network stays quiet rather than repeating zeroes."
+            "OFF BY DEFAULT (0). The counters are worth reading when you go looking for them",
+            "and are chat spam when they arrive on their own -- twelve figures on one line,",
+            "every few minutes, whether or not anybody asked. Run /rstweaks stats instead;",
+            "it prints the same numbers one per line, on demand, to whoever asked.",
+            "",
+            "Set a number of seconds to get the old broadcast back, for a server where nobody",
+            "is going to type a command but somebody is watching chat. A summary is still",
+            "skipped entirely when nothing changed since the last one."
         )
-        .defineInRange("chatNotificationIntervalSeconds", 300, 0, 3600);
+        .defineInRange("chatNotificationIntervalSeconds", 0, 0, 3600);
 
     /**
      * A spec value, or the given default when no config file has been loaded.

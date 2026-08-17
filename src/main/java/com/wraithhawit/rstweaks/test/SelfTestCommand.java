@@ -34,8 +34,12 @@ public final class SelfTestCommand {
             // Counters on demand. The periodic summary only fires every few minutes and
             // stays silent when nothing changed, which makes "is this actually running?"
             // an awkward question to answer mid-test.
+            // Counters on demand, one per line. Nothing posts them unprompted any more --
+            // the periodic broadcast is off by default as of 0.2.94 -- so this is the way
+            // to see them.
             .then(Commands.literal("stats").executes(context -> {
-                context.getSource().sendSuccess(ChatReporter::sessionTotals, false);
+                final CommandSourceStack source = context.getSource();
+                ChatReporter.sessionTotals().forEach(line -> source.sendSuccess(() -> line, false));
                 return 1;
             }))
             .then(Commands.literal("selftest").executes(context -> {

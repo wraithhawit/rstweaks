@@ -11,6 +11,23 @@ The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a
 "rstweaks" will miss anyone still running an older build.
 
 
+0.2.94
+------
+  `/rstweaks stats` prints one counter per line under a header, instead of a dozen
+  figures run together on one wrapping line. The periodic chat broadcast is now OFF by
+  default (`chatNotificationIntervalSeconds` 0) and the join message no longer carries
+  counters -- nothing posts them unprompted any more. Both at Wraith's request.
+  The join line still announces version and active features.
+
+0.2.93
+------
+  An autocrafting request waits for the craft already running for that resource (#14),
+  behind `waitForRunningCraft` (default on). Stock RS only refuses a duplicate when the
+  amount asked for is covered by what is running -- fine for a plain or tiered exporter,
+  whose quota is a constant 1 or 64, but a REGULATOR upgrade asks for the whole
+  outstanding shortfall, which grows as the destination drains, so every increase starts
+  another task. Measured: 20 requests, 20 tasks for one resource. Now 1.
+
 0.2.92
 ------
   Gametests for the paths that only fail in game, runnable without a human (issue #2).

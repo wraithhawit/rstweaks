@@ -2,6 +2,7 @@ package com.wraithhawit.rstweaks.mixin;
 
 import com.refinedmods.refinedstorage.api.autocrafting.calculation.CancellationToken;
 import com.refinedmods.refinedstorage.api.network.autocrafting.AutocraftingNetworkComponent;
+import com.refinedmods.refinedstorage.api.network.autocrafting.PatternProvider;
 import com.refinedmods.refinedstorage.api.network.impl.autocrafting.AutocraftingNetworkComponentImpl;
 import com.refinedmods.refinedstorage.api.resource.ResourceKey;
 import com.refinedmods.refinedstorage.api.storage.Actor;
@@ -11,10 +12,13 @@ import com.wraithhawit.rstweaks.Stats;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 import javax.annotation.Nullable;
 
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -77,6 +81,68 @@ public abstract class AutocraftingNetworkComponentImplMixin {
             this.rstweaks$uncraftableUntil = map;
         }
         return map;
+    }
+
+    /**
+     * The providers Refined Storage would sum over itself. Shadowed rather than re-derived
+     * so this can never drift from what {@code ensureTask} sees one line later.
+     */
+    @Shadow
+    @Final
+    private Set<PatternProvider> providers;
+
+    /**
+     * Refuses a request when a craft for that resource is already running (issue #14).
+     *
+     * <p>Stock {@code ensureTask} already suppresses duplicates, and does it correctly for
+     * every case but one. It answers {@code TASK_ALREADY_RUNNING} when the running tasks for
+     * the resource total <em>at least the amount asked for</em>, so a plain Exporter — whose
+     * autocrafting quota is a constant 1, or 64 with a stack upgrade — starts one task and
+     * has every later request refused. That holds on the tiered path too: Cable Tiers builds
+     * its exporter from Refined Storage's own registered factories, and its several calls per
+     * tick each see the previous call's task, because {@code TaskContainer} keeps them in a
+     * {@code CopyOnWriteArrayList} added to synchronously.
+     *
+     * <p><b>A regulator upgrade is what defeats it.</b> The autocrafting quota provider is
+     * built with {@code respectTransferQuotaWhenRegulating = false}, so the amount is the
+     * entire outstanding shortfall rather than a transfer quota — and that shortfall grows
+     * every time the destination is drained. Each larger amount exceeds what is running, so
+     * {@code ensureTask} tops up the difference with <em>another task</em>. Measured in
+     * {@link com.wraithhawit.rstweaks.test.AutocraftingRequestSelfTest}: twenty requests
+     * against a growing shortfall produced twenty tasks for one resource, every one
+     * {@code TASK_CREATED}.
+     *
+     * <p>Those are not free. Each runs a full crafting calculation to build its plan, carries
+     * its own internal storage, and is stepped every tick until it finishes — which is the
+     * same expense the Step Requester backoff and the uncraftable cache exist to avoid, met
+     * from the direction where the request <em>succeeds</em>.
+     *
+     * <p>Deliberately "anything running is enough" rather than a timed cooldown. A cooldown
+     * has to guess a duration and can suppress a request when nothing is running at all; this
+     * cannot, because it reads the same live task list Refined Storage does. When the running
+     * task finishes, the next request is answered normally. The cost is that a large regulated
+     * buffer refills serially instead of in parallel.
+     */
+    @Inject(method = "ensureTask", at = @At("HEAD"), cancellable = true)
+    private void rstweaks$waitForRunningCraft(
+        final ResourceKey resource,
+        final long amount,
+        final Actor actor,
+        final CancellationToken cancellationToken,
+        final CallbackInfoReturnable<AutocraftingNetworkComponent.EnsureResult> cir
+    ) {
+        if (!Config.waitForRunningCraft) {
+            return;
+        }
+        for (final PatternProvider provider : this.providers) {
+            // Short-circuits on the first provider holding one; the sum is never needed,
+            // only whether it is above zero.
+            if (provider.getAmount(resource) > 0L) {
+                ++Stats.duplicateRequestsSuppressed;
+                cir.setReturnValue(AutocraftingNetworkComponent.EnsureResult.TASK_ALREADY_RUNNING);
+                return;
+            }
+        }
     }
 
     @Inject(method = "ensureTask", at = @At("HEAD"), cancellable = true)

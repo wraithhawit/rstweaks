@@ -45,6 +45,7 @@ public final class ChatReporter {
                           long stepFailures,
                           long sidedLookups,
                           long uncraftable,
+                          long duplicateRequests,
                           long indexHits,
                           long indexFallbacks,
                           long indexRebuilds,
@@ -55,7 +56,7 @@ public final class ChatReporter {
                           long planCopies,
                           long emptyExtracts) {
 
-        static final Counts ZERO = new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        static final Counts ZERO = new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
         static Counts now() {
             return new Counts(
@@ -63,6 +64,7 @@ public final class ChatReporter {
                 Stats.stepRequesterFailures,
                 Stats.sidedInputLookups,
                 Stats.uncraftableChecksSkipped,
+                Stats.duplicateRequestsSuppressed,
                 Stats.externalIndexHits,
                 Stats.externalIndexFallbacks,
                 Stats.externalIndexRebuilds,
@@ -80,6 +82,7 @@ public final class ChatReporter {
                 stepFailures - earlier.stepFailures,
                 sidedLookups - earlier.sidedLookups,
                 uncraftable - earlier.uncraftable,
+                duplicateRequests - earlier.duplicateRequests,
                 indexHits - earlier.indexHits,
                 indexFallbacks - earlier.indexFallbacks,
                 indexRebuilds - earlier.indexRebuilds,
@@ -100,18 +103,15 @@ public final class ChatReporter {
         if (!(event.getEntity() instanceof ServerPlayer player)) {
             return;
         }
-        // Version first: every test result needs to be attributable to a build, and chat
-        // is the one place it is visible without opening a log.
+        // Version and features only. Every test result needs to be attributable to a build,
+        // and chat is the one place that is visible without opening a log -- but the
+        // counters are not something to push at somebody who just walked in. They are one
+        // command away.
         player.sendSystemMessage(Component.empty()
             .append(PREFIX)
             .append(Component.literal("v" + RSTweaks.version + " ").withStyle(ChatFormatting.AQUA))
             .append(Component.literal("active: ").withStyle(ChatFormatting.GRAY))
             .append(Component.literal(RSTweaks.activeFeatures()).withStyle(ChatFormatting.WHITE)));
-
-        final Component summary = buildSummary(Counts.now(), "so far this session");
-        if (summary != null) {
-            player.sendSystemMessage(summary);
-        }
     }
 
     @SubscribeEvent
@@ -132,23 +132,64 @@ public final class ChatReporter {
         tickCounter = 0;
 
         final Counts now = Counts.now();
-        final Component summary = buildSummary(now.since(lastReported), "since last report");
+        final List<Component> summary = report(now.since(lastReported), "since last report");
         lastReported = now;
-        if (summary == null) {
+        if (summary.isEmpty()) {
             return;
         }
         final MinecraftServer server = event.getServer();
-        server.getPlayerList().broadcastSystemMessage(summary, false);
+        summary.forEach(line -> server.getPlayerList().broadcastSystemMessage(line, false));
     }
 
-    /** The counters as chat text, or {@code null} when every one of them was zero. */
-    static Component buildSummary(final Counts delta, final String suffix) {
-        final List<String> parts = new ArrayList<>(9);
+    /**
+     * The counters as chat lines — a header, then one stat per line, or empty when every
+     * counter was zero.
+     *
+     * <p>One per line rather than a comma-joined sentence. Twelve figures run together
+     * wrap across the chat box at whatever width the reader happens to have, and the
+     * number you came to look at ends up in the middle of a paragraph. Wraith asked for
+     * this on 2026-08-17 and he was right: these are read one at a time.
+     */
+    static List<Component> report(final Counts delta, final String suffix) {
+        final List<String> parts = describe(delta);
+        if (parts.isEmpty()) {
+            return List.of();
+        }
+        final List<Component> lines = new ArrayList<>(parts.size() + 1);
+        lines.add(Component.empty()
+            .append(PREFIX)
+            .append(Component.literal(suffix + ":").withStyle(ChatFormatting.GRAY)));
+        for (final String part : parts) {
+            // The count is split off and coloured on its own so the eye lands on the
+            // number rather than on the sentence explaining it. Every entry above is
+            // "<number> <words>", but a future one without a space must not throw in the
+            // middle of a chat message -- it just goes out unsplit.
+            final int space = part.indexOf(' ');
+            if (space < 0) {
+                lines.add(Component.literal("  " + part).withStyle(ChatFormatting.GREEN));
+                continue;
+            }
+            lines.add(Component.empty()
+                .append(Component.literal("  " + part.substring(0, space) + " ")
+                    .withStyle(ChatFormatting.GREEN))
+                .append(Component.literal(part.substring(space + 1))
+                    .withStyle(ChatFormatting.GRAY)));
+        }
+        return lines;
+    }
+
+    /** Each non-zero counter as "&lt;count&gt; &lt;what it means&gt;". */
+    private static List<String> describe(final Counts delta) {
+        final List<String> parts = new ArrayList<>(12);
         if (delta.stepScans() > 0) {
             parts.add(String.format("%,d crafting calculations skipped", delta.stepScans()));
         }
         if (delta.uncraftable() > 0) {
             parts.add(String.format("%,d uncraftable rechecks avoided", delta.uncraftable()));
+        }
+        if (delta.duplicateRequests() > 0) {
+            parts.add(String.format("%,d duplicate craft requests refused",
+                delta.duplicateRequests()));
         }
         if (delta.stepFailures() > 0) {
             parts.add(String.format("%,d failed attempts backed off", delta.stepFailures()));
@@ -182,21 +223,18 @@ public final class ChatReporter {
         if (delta.emptyExtracts() > 0) {
             parts.add(String.format("%,d storage walks avoided", delta.emptyExtracts()));
         }
-        if (parts.isEmpty()) {
-            return null;
-        }
-        return Component.empty()
-            .append(PREFIX)
-            .append(Component.literal(String.join(", ", parts)).withStyle(ChatFormatting.GREEN))
-            .append(Component.literal(" " + suffix + ".").withStyle(ChatFormatting.GRAY));
+        return parts;
     }
 
     /** Session totals on demand, for {@code /rstweaks stats}. */
-    public static Component sessionTotals() {
-        final Component summary = buildSummary(Counts.now(), "so far this session");
-        return summary != null ? summary : Component.empty()
+    public static List<Component> sessionTotals() {
+        final List<Component> lines = report(Counts.now(), "session totals");
+        if (!lines.isEmpty()) {
+            return lines;
+        }
+        return List.of(Component.empty()
             .append(PREFIX)
             .append(Component.literal("no optimization has fired yet this session.")
-                .withStyle(ChatFormatting.GRAY));
+                .withStyle(ChatFormatting.GRAY)));
     }
 }

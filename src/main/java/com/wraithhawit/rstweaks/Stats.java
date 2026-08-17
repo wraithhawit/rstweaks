@@ -34,6 +34,16 @@ public final class Stats {
     public static long uncraftableChecksSkipped;
 
     /**
+     * Requests refused because a craft for that resource was already running.
+     *
+     * <p>The positive-answer twin of {@link #uncraftableChecksSkipped}: that one avoids
+     * recalculating a craft that cannot happen, this one avoids starting a second task
+     * for a craft that is already happening. Each suppression saves a full crafting
+     * calculation and a task that would then be stepped every tick until it finished.
+     */
+    public static long duplicateRequestsSuppressed;
+
+    /**
      * Ingredient-map deep copies avoided by sharing during crafting-plan snapshots.
      * This one climbs extremely fast — it counts per ingredient index per plan copy,
      * and a single deep crafting calculation produces many thousands.

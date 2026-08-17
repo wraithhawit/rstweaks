@@ -8,6 +8,85 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.94
+
+- **`/rstweaks stats` prints one counter per line.** A header, then each non-zero counter on
+  its own line with the number coloured separately from the label:
+
+  ```
+  [rstweaks] session totals:
+    84 duplicate craft requests refused
+    32 indexed extractions (56.3% hit, 22 rebuilds)
+    7,765 slot-count lookups avoided
+    61 plan copies avoided
+  ```
+
+  Twelve figures comma-joined into one sentence wrapped at whatever width the reader's chat
+  box happened to be, so the number you came to look at landed in the middle of a paragraph.
+  Wraith asked for this on 2026-08-17.
+
+- **Nothing posts the counters unprompted any more.** `chatNotificationIntervalSeconds`
+  defaults to 0 (was 300), and the join message no longer appends a summary. The counters are
+  worth reading when you go looking for them and are spam when they arrive on their own. The
+  periodic broadcast is still there for a server where nobody will type a command but somebody
+  is watching chat — set a number of seconds to get it back.
+
+- **The join line stays**, carrying the version and the active features. That one is
+  load-bearing: a test result has to be attributable to an exact build, and chat is the only
+  place that is visible without opening a log. `chatNotifications` now describes only that.
+
+- **`statsPrintOnePerLine` gametest**, which logs the real rendered output as well as asserting
+  it. The report is assembled by index-splitting formatted strings, which is exactly the kind
+  of code that throws in front of a player rather than in a test; an entry without a space in
+  it now goes out unsplit instead of taking a chat message down with it.
+
+## 0.2.93
+
+- **An autocrafting request now waits for the craft already running for that resource (issue
+  #14).** `waitForRunningCraft`, default on. Anything already being crafted for a resource is
+  enough to answer `TASK_ALREADY_RUNNING`, where stock Refined Storage only refuses when the
+  running total reaches the amount asked for.
+
+- **The report blamed the tiered exporters, and they are innocent.** Cable Tiers builds its
+  exporter from Refined Storage's own registered factories, so it inherits the
+  `MissingResourcesListeningExporterTransferStrategy` wrapper and therefore the check; and its
+  several calls per `doWork()` each see the previous call's task, because `TaskContainer` keeps
+  tasks in a `CopyOnWriteArrayList` added to synchronously. Step Crafter's Step Requester
+  bypasses `ensureTask` entirely but carries its own per-slot `isAlreadyRunningTask` guard.
+  Measured, not reasoned: eight requests in one tick start one task.
+
+- **The actual culprit is the REGULATOR upgrade, and it is arithmetic rather than a race.**
+  `ensureTask` refuses only when `currentlyCrafting >= amount`. For a plain exporter `amount`
+  is `ExporterTransferQuotaProvider`'s base quota — a constant 1, or 64 with a stack upgrade —
+  so one task covers every later request. But the autocrafting quota provider is built with
+  `respectTransferQuotaWhenRegulating = false`, so with a regulator `amount` is the *entire*
+  outstanding shortfall, `desiredAmount - destination.getAmount(resource)`. Drain the
+  destination faster than it fills — a machine eating from a regulated buffer — and that
+  number grows. Every increase exceeds what is running, so `ensureTask` tops up the difference
+  with **another task**:
+
+  ```
+  amounts   [8, 24, 40, 56, 72, 88, ...]
+  results   [TASK_CREATED, TASK_CREATED, TASK_CREATED, ...]   20 requests -> 20 tasks
+  ```
+
+- **Those tasks are not bookkeeping.** Each builds its plan with a full crafting calculation,
+  carries its own internal storage, and is stepped every tick until it finishes. This is the
+  same expense the Step Requester backoff and the uncraftable cache exist to avoid, met from
+  the direction where the request *succeeds* — which is exactly how the issue framed it.
+
+- **Deliberately not a timed cooldown.** A cooldown has to guess a duration and can suppress a
+  request when nothing is running at all. Reading the live task list cannot: the moment the
+  running task finishes, the next request is answered normally. The cost is that a large
+  regulated buffer refills serially rather than in parallel, which is the trade the config
+  option exists to reverse.
+
+- **`AutocraftingRequestSelfTest` asserts both sides of the flag** across five fixtures, so the
+  suite states the finding rather than only the fix: with `waitForRunningCraft` off it requires
+  the regulator case to produce 20 tasks and the other four to produce 1, and with it on it
+  requires 1 everywhere. A scenario that stopped reproducing would otherwise report the fix
+  working when there was nothing left to fix.
+
 ## 0.2.92
 
 - **Gametests for the three paths that only fail in a running game, and a Gradle task that runs
