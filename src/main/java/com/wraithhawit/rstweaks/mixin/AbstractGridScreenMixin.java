@@ -2,6 +2,7 @@ package com.wraithhawit.rstweaks.mixin;
 
 import com.refinedmods.refinedstorage.api.resource.repository.ResourceRepository;
 import com.refinedmods.refinedstorage.common.api.grid.view.GridResource;
+import com.refinedmods.refinedstorage.common.grid.AbstractGridContainerMenu;
 import com.refinedmods.refinedstorage.common.grid.screen.AbstractGridScreen;
 import com.refinedmods.refinedstorage.common.util.ClientPlatformUtil;
 
@@ -10,7 +11,9 @@ import net.minecraft.client.gui.screens.Screen;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Stops a plain mouse-wheel scroll from switching the grid's sorting off forever.
@@ -125,5 +128,46 @@ public abstract class AbstractGridScreenMixin {
             return false;
         }
         return repository.setPreventSorting(prevent);
+    }
+
+    /**
+     * Ends the latch when the modifier is no longer held, whoever set it.
+     *
+     * <p>0.2.86 assumed above that "holding shift or ctrl means eventually releasing it, and that
+     * release reaches {@code keyReleased}". That is the hole the phantom row kept coming through.
+     * {@code keyReleased} <b>on this screen</b> is the flag's only exit in all of Refined Storage,
+     * so any path that ends the modifier somewhere else leaves it latched for the life of the
+     * screen — and starting an autocraft is exactly such a path, because the autocrafting preview
+     * opens over the grid and takes the key events with it. Release shift there and the grid never
+     * learns. `keyPressed` latches on any key pressed with shift down, which we deliberately left
+     * alone as stock behaviour, so this is reachable without touching the wheel at all.
+     *
+     * <p>Latched, {@code ResourceRepositoryImpl.updateExisting} takes its third arm —
+     * {@code else if (removedFromBackingList)}, which logs "no longer available" and returns
+     * without calling {@code ViewList.remove} — so a resource that leaves the network keeps its
+     * row while the backing entry is gone, and {@code getAmount} renders it as 0. Durability
+     * crafting retires a wear level on every craft, which is what turns a rare stock wart into a
+     * ghost row after every single craft.
+     *
+     * <p>Rather than enumerate the ways a modifier can end elsewhere, this restates the invariant
+     * once a tick: <b>the flag may only be set while a modifier is actually held.</b> The body is
+     * {@code keyReleased}'s, so a healed latch behaves exactly as if the release had arrived. While
+     * a modifier is genuinely down this does nothing and Refined Storage's intended "hold shift to
+     * keep the list still" is untouched.
+     *
+     * @implNote {@code setPreventSorting} returns whether it changed anything, so the common case —
+     *     flag already clear — costs one field compare and no sort.
+     */
+    @Inject(method = "containerTick", at = @At("TAIL"))
+    private void rstweaks$unlatchWhenNoModifierHeld(final CallbackInfo ci) {
+        if (Screen.hasShiftDown() || ClientPlatformUtil.isCommandOrControlDown()) {
+            return;
+        }
+        final ResourceRepository<GridResource> repository =
+            ((AbstractGridContainerMenu) ((AbstractGridScreen<?>) (Object) this).getMenu())
+                .getRepository();
+        if (repository.setPreventSorting(false)) {
+            repository.sort();
+        }
     }
 }

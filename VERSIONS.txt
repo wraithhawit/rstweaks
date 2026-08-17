@@ -18,6 +18,13 @@ UNRELEASED (in source, not yet in a built jar)
   link is a protobuf payload on bytebin, not a web page.
 
 
+0.2.91  BUG FIX - the phantom 0 row is preventSorting after all, the one field no probe ever
+        printed. Latched, updateExisting takes a third arm that removes nothing. 0.2.86 fixed
+        the wheel paths but assumed a held modifier is always released to the grid screen; the
+        autocrafting preview opens over the grid and takes the key events, so it is not.
+        containerTick now clears the flag whenever no modifier is held, healing a latch left
+        by any route. (Issue #15)
+
 0.2.90  DIAGNOSTIC - the 0.2.89 audit caught the phantom row and produced a contradiction:
         the row was logged REMOVED and survived anyway. That can only happen if Refined
         Storage never called ViewList.remove, i.e. the sticky check inside updateExisting

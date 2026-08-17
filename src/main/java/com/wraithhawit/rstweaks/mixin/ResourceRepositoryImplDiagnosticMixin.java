@@ -85,6 +85,10 @@ public abstract class ResourceRepositoryImplDiagnosticMixin {
     @Final
     private Set<ResourceKey> stickyResources;
 
+    /** Not {@code @Final}: Refined Storage flips it from {@code setPreventSorting}. */
+    @Shadow(remap = false)
+    private boolean preventSorting;
+
     /**
      * The incoming delta, before anything has been applied.
      *
@@ -125,10 +129,17 @@ public abstract class ResourceRepositoryImplDiagnosticMixin {
         }
         try {
             final boolean sticky = this.stickyResources.contains(resource);
-            RSTweaks.LOGGER.info("[rstweaks][grid]   existing row: {} (removedFromBacking={}, "
-                    + "sticky={}, backing now {})",
-                removedFromBackingList && !sticky ? "REMOVED" : "KEPT",
-                removedFromBackingList, sticky, this.backingList.get(resource));
+            // preventSorting first, because it outranks the other two and its absence from this
+            // line is what hid the bug for four rounds: with it set, updateExisting takes a third
+            // arm that removes nothing at all, and every prediction made from the other fields is
+            // wrong. Predicted, not observed -- Step Crafter redirects the sticky read inside the
+            // method, so only the ViewList probe reports what actually happened.
+            RSTweaks.LOGGER.info("[rstweaks][grid]   existing row predicted {} (preventSorting={}, "
+                    + "removedFromBacking={}, sticky={}, backing now {})",
+                this.preventSorting ? "KEPT, NOTHING REMOVED - preventSorting is latched"
+                    : (removedFromBackingList && !sticky ? "REMOVED" : "KEPT"),
+                this.preventSorting, removedFromBackingList, sticky,
+                this.backingList.get(resource));
         } catch (final RuntimeException | LinkageError e) {
             RSTweaks.LOGGER.warn("[rstweaks][grid] diagnostic failed", e);
         }
@@ -231,9 +242,12 @@ public abstract class ResourceRepositoryImplDiagnosticMixin {
                 }
                 RSTweaks.LOGGER.warn("[rstweaks][grid] PHANTOM ROW after {}: {} is in the view "
                         + "list, the backing list holds none of it, and it is not sticky. This "
-                        + "row will render 0 until the next sort(). Step Crafter says: {}. "
+                        + "row will render 0 until the next sort(). preventSorting={} (if true, "
+                        + "that is the cause: updateExisting skipped the removal outright). "
+                        + "Step Crafter says: {}. "
                         + "Stack trace is where it was noticed, not necessarily where it was "
-                        + "created.", when, resource, rstweaks$stepCrafterClaim(this, resource),
+                        + "created.", when, resource, this.preventSorting,
+                    rstweaks$stepCrafterClaim(this, resource),
                     new Throwable("phantom row noticed here"));
             }
             // Forget rows that have since been cleaned up, so a phantom that comes back is

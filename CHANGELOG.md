@@ -8,6 +8,46 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.91
+
+- **Fixes the phantom `0` row, and the cause was the one thing four rounds of logging never printed
+  (issue #15).** `preventSorting`. 0.2.86 identified that flag correctly and fixed the two
+  mouse-wheel paths that latched it; the phantom outlived the fix, and every probe since has
+  printed `sticky`, `removedFromBacking` and the backing amount while never once printing the flag
+  that outranks all three.
+
+- **Latched, `updateExisting` has a third arm that removes nothing:**
+
+  ```java
+  boolean canBeSorted = !this.preventSorting;
+  if (canBeSorted) { ...remove or update... }
+  else if (removedFromBackingList) { LOGGER.debug("{} is no longer available"); }  // returns
+  ```
+
+  A resource that left the network keeps its row while its backing entry is gone, and `getAmount`
+  renders it as `0`. That accounts for every observed fact at once: `ViewList.remove` was never
+  called (0 hits from 0.2.90's probe), our own line said `REMOVED` because it predicted the branch
+  from the other two fields, the row was not sticky, Step Crafter was not maintaining it, and any
+  key release calls `sort()` and clears it.
+
+- **What 0.2.86 got wrong was the exit, not the flag.** It reasoned that gating the wheel latch on a
+  held modifier sufficed, because "holding shift means eventually releasing it, and that release
+  reaches `keyReleased`". `keyReleased` **on the grid screen** is the only code in all of Refined
+  Storage that clears the flag, so any path that ends the modifier somewhere else latches it for
+  the life of the screen. Starting an autocraft is exactly such a path: the preview opens over the
+  grid and takes the key events with it, so a shift released there never reaches the grid. Stock
+  `keyPressed` latches on *any* key pressed with shift down, so this needs no wheel at all.
+
+- **So the fix stops enumerating paths and restates the invariant once a tick:** the flag may only
+  be set while a modifier is actually held. `containerTick` now runs `keyReleased`'s own body when
+  neither shift nor ctrl/cmd is down, so a latch left by any route heals within a tick and behaves
+  exactly as if the release had arrived. While a modifier is genuinely held nothing changes and
+  Refined Storage's intended "hold shift to keep the list still" is untouched. One field compare
+  per tick in the common case.
+
+- The diagnostic now logs `preventSorting` on every update and in the phantom report, so if a row
+  ever survives this, the log says so in the first line rather than the fifth build.
+
 ## 0.2.90
 
 - **The audit caught it, and the answer contradicts itself (issue #15).** One craft, one hit:
