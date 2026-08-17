@@ -22,7 +22,10 @@
     "TaskImplMixin",
     "TaskPlanCraftingCalculatorListenerMixin"
   ],
-  "client": [],
+  "client": [
+    "AbstractGridScreenMixin",
+    "ResourceRepositoryImplDiagnosticMixin"
+  ],
   "server": [],
   "injectors": {
     "defaultRequire": 1

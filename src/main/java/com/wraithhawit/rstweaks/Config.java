@@ -115,6 +115,7 @@ public final class Config {
         skipEmptyCompositeExtract = SKIP_EMPTY_COMPOSITE_EXTRACT.get();
         durabilityAwarePlanning = DURABILITY_AWARE_PLANNING.get();
         refillContainersInCraftingGrid = REFILL_CONTAINERS_IN_CRAFTING_GRID.get();
+        logGridViewDiagnostics = LOG_GRID_VIEW_DIAGNOSTICS.get();
         AutocraftingLogSpam.apply(SILENCE_AUTOCRAFTING_DEBUG_LOG.get());
     }
 
@@ -372,6 +373,27 @@ public final class Config {
             "Set false to silence it entirely."
         )
         .define("chatNotifications", true);
+
+    public static final ModConfigSpec.BooleanValue LOG_GRID_VIEW_DIAGNOSTICS = BUILDER
+        .comment(
+            "Log every change the client makes to a Grid's displayed resource list.",
+            "",
+            "A diagnostic for issue #15 - a row left showing 0 for a wear level that is gone",
+            "from the network. Refined Storage's own repository logs this at DEBUG, which a",
+            "pack's log level hides, so this restates the same facts at INFO and adds the one",
+            "thing its messages leave out: what the backing list holds AFTER the change.",
+            "",
+            "A row displaying 0 means it is in the view list while its backing entry is gone,",
+            "so the line that reports 'view row ADDED' or 'view row KEPT' with 'backing now 0'",
+            "is the bug happening, and names the resource and the code path that did it.",
+            "",
+            "Client-side only, and noisy - a line per resource per grid update. Turn it on to",
+            "reproduce, then turn it off."
+        )
+        .define("logGridViewDiagnostics", false);
+
+    /** Read on every grid view update; cached like the other hot-path flags. */
+    public static volatile boolean logGridViewDiagnostics = false;
 
     public static final ModConfigSpec.IntValue CHAT_NOTIFICATION_INTERVAL_SECONDS = BUILDER
         .comment(

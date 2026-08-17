@@ -18,6 +18,19 @@ UNRELEASED (in source, not yet in a built jar)
   link is a protobuf payload on bytebin, not a web page.
 
 
+0.2.87  DIAGNOSTIC - 0.2.86 fixed a real stock-RS bug but NOT the reported one; the phantom
+        0 row survived it. Adds logGridViewDiagnostics (default off), which restates Refined
+        Storage's own DEBUG-level grid view logging at INFO and adds what the backing list
+        holds after each change. Changes no behaviour. (Issue #15)
+
+0.2.86  BUG FIX - a worn tool left a phantom row at 0 in the grid after every durability
+        craft, cleared by tapping SHIFT and back on the next craft. Stock Refined Storage
+        bug, reproducible without this mod: scrolling the grid with the wheel latches
+        preventSorting on forever, and only a key release clears it, so any resource that
+        hits zero keeps its row. We fix it because durability crafting retires a resource
+        every craft and turns a rare wart into a constant one. Reported upstream.
+        (Issue #15)
+
 0.2.85  BUG FIX - fuzzy mode across DIFFERENT tools, the other half of #9. A fuzzy hammer
         slot demanded the copper hammer specifically and declared the craft impossible when
         you held the iron one. Tool grouping was splitting a class the graph had already

@@ -8,6 +8,101 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.87
+
+- **0.2.86 did not fix issue #15.** It fixed a real Refined Storage bug with the same symptom —
+  confirmed in game, both before and after — but the reported phantom outlived it. Recording that
+  plainly because the 0.2.86 entry below reads as a fix for #15 and is not one.
+
+- **What the symptom now pins down.** With 0.2.86 installed, the phantom still clears when a key is
+  tapped, still disappears when the grid is reopened, and appears as a *second* row for the same
+  tool alongside a correct one. So it is client-side only — the server's `GridData` snapshot is
+  right — and it is a row in the view list whose backing-list entry is gone, which is why
+  `AbstractGridResource.getAmount` renders it as zero.
+
+  Reading `ResourceRepositoryImpl`, three paths can leave that state and two are now excluded by
+  the symptom itself: `preventSorting` (fixed in 0.2.86, phantom outlived it) and sticky resources
+  (`ViewList.createSorted` re-adds sticky on every rebuild, so a sticky row would *survive* the
+  re-sort — this one does not). The remaining candidate is `tryAddNewResource` reached on a
+  *removal*: it runs whenever the view list has no row for a resource the backing list did have,
+  and re-adds the row from the mapper without consulting the amount, so if the update that got
+  there was the removal of the last one, the row it creates is backed by nothing.
+
+- **`logGridViewDiagnostics`, default off.** A read-only probe that changes no behaviour. Refined
+  Storage already logs these transitions in `ResourceRepositoryImpl`, but at DEBUG, where a pack's
+  log level buries them; this restates them at INFO and adds the one fact its messages omit — what
+  the backing list holds *after* the change. The line to look for reports `backing now 0` on a path
+  that added or kept a row:
+
+  ```
+  [rstweaks][grid] update alltheores:iron_hammer@34 by -1 (backing had 1, sticky=false)
+  [rstweaks][grid]   no existing row -> tryAddNewResource alltheores:iron_hammer@34 (backing now 0)  <-- PHANTOM
+  ```
+
+  If instead every removal reports `view row REMOVED` and the phantom still appears, it is not
+  coming from this class and the search moves to whatever else mixes into the grid view.
+
+  Written this way deliberately: three theories built by reading this code have now been wrong, two
+  of them at the cost of a build and an in-game test each. The reason string on a decline line
+  answered issue #9 in one line after hours of reasoning had produced two wrong theories, and the
+  same move is overdue here.
+
+## 0.2.86
+
+- **The phantom `0` row after a durability craft (issue #15).** After a craft wore a tool, the grid
+  kept a row at `0` for the wear level that had just been used up. Tapping SHIFT cleared it; the
+  next craft brought it back. Display only — storage was always correct, and nothing was ever lost.
+
+  **This is a stock Refined Storage bug and it reproduces with no addons at all**: open a grid,
+  scroll the item list with the wheel, extract the last of any resource, and its row sits at `0`
+  until you press and release a key. Confirmed in game, and the same code is on Refined Storage's
+  `develop` branch, so 3.x has it too. Reported upstream.
+
+  `preventSorting` exists so the list does not reorder under your cursor mid-interaction, and it is
+  documented and configured as a *while SHIFT is down* behaviour — `keyPressed` sets it only when
+  `hasShiftDown()` and the `preventSortingWhileShiftIsDown` option both agree. The two mouse-scroll
+  handlers honour neither:
+
+  ```java
+  private void mouseScrolledInGrid(boolean up, GridResource resource) {
+      getMenu().getRepository().setPreventSorting(true);   // first statement
+      GridScrollMode scrollMode = getScrollModeWhenScrollingOnGridArea(up);
+      if (scrollMode != null) { ... }                      // null unless shift or ctrl
+  }
+  ```
+
+  The flag is set before anything asks whether a transfer will happen, and with no modifier held
+  `scrollMode` is null and nothing else does. So plain wheel-scrolling — the ordinary way to read a
+  grid — latches sorting off. The only reset in the class is `keyReleased`, which no mouse ever
+  reaches, so it stays latched for the life of the screen.
+
+  With the flag set, `ResourceRepositoryImpl.updateExisting` takes its `else if
+  (removedFromBackingList)` branch, logging "no longer available" and leaving the row in the view
+  list while the backing entry is gone. `AbstractGridResource.getAmount` reads the backing list
+  live, so the orphaned row renders `0`. Any key release calls `sort()`, which rebuilds the view
+  from the backing list — which is why the bug presents as being about SHIFT when it is about the
+  wheel.
+
+  We latch only when shift or ctrl/cmd is actually held. That is deliberately a superset of "a
+  transfer will happen" rather than a copy of the scroll-mode table, which differs by call site and
+  by direction; copying it would mean two more private methods to keep in step with Refined Storage
+  for no behavioural gain. The condition also guarantees an exit — holding a modifier means
+  releasing it, and that release reaches `keyReleased`. A bare wheel had no exit, which is the
+  defect.
+
+  **Why it was ours to fix even though the bug is not ours.** Durability-aware planning retires a
+  `ResourceKey` on every craft: `tool@N` leaves the network and `tool@N+1` is held inside the task
+  by `InternalTaskPatternMixin` until it finishes. Every other pack has the same latch and nothing
+  routinely driving a resource to zero, which is exactly why this only ever showed up here. When
+  Refined Storage ships its own fix, `AbstractGridScreenMixin` becomes a no-op and can be deleted.
+
+  Two hypotheses were ruled out in code first and should not be re-derived: sticky resources
+  (`ViewList.createSorted` re-adds them on every rebuild, so a sticky row would *survive* the
+  SHIFT tap — this one does not), and Step Crafter's `MixinResourceRepositoryImpl`, which widens
+  sticky in `createSorted` as well as `updateExisting` and so fails the same test.
+
+  The check that settled it: run a durability craft **without touching the wheel**. No phantom.
+
 ## 0.2.85
 
 - **Fuzzy mode across different tools.** The other half of issue #9, and the half actually reported
