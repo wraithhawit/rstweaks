@@ -49,19 +49,24 @@ public final class SelfTestCommand {
                 // flips the flag itself and restores it. A planner bug should be
                 // findable before you turn the planner on, not after.
                 final CraftingPlanSelfTest.Result lp = PlannerExecutabilitySelfTest.run();
+                // Real tasks through the real executor. Only meaningful with the mixins
+                // applied, which is true here and false under ./gradlew plannerCheck.
+                final CraftingPlanSelfTest.Result tasks = TaskEngineSelfTest.run();
 
-                final int scenarios =
-                    plans.scenarios() + extraction.scenarios() + lp.scenarios();
+                final int scenarios = plans.scenarios() + extraction.scenarios()
+                    + lp.scenarios() + tasks.scenarios();
                 final List<String> failures = new ArrayList<>(plans.failures());
                 extraction.failures().forEach(f -> failures.add("extraction: " + f));
                 lp.failures().forEach(f -> failures.add("lp planner: " + f));
+                tasks.failures().forEach(f -> failures.add("task engine: " + f));
 
                 if (failures.isEmpty()) {
                     source.sendSuccess(() -> Component.literal(
                         "[rstweaks] PASS - " + scenarios + " scenarios ("
                             + plans.scenarios() + " crafting plans, "
                             + extraction.scenarios() + " extractions, "
-                            + lp.scenarios() + " LP plans)")
+                            + lp.scenarios() + " LP plans, "
+                            + tasks.scenarios() + " crafting tasks)")
                         .withStyle(ChatFormatting.GREEN), false);
                     RSTweaks.LOGGER.info("[rstweaks] self-test PASSED ({} scenarios)", scenarios);
                     return scenarios;

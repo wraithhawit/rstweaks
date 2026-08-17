@@ -9,18 +9,30 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
- * Gametest wrapper around {@link CraftingPlanSelfTest}.
+ * The checks that are worthless outside a running game, and the reason issue #2 exists.
  *
- * <p>Run with {@code /test run rstweaks:crafting_plan_copy_on_write}. Note that
- * NeoForge only registers gametests when the launch flag
- * {@code -Dneoforge.enabledGameTestNamespaces=rstweaks} is present — without it
- * {@link net.neoforged.neoforge.gametest.GameTestHooks#isGametestEnabled()} returns
- * false and nothing here is discoverable. Use {@code /rstweaks selftest} instead if
- * you would rather not add a launch flag; it runs the identical checks.
+ * <p>{@code ./gradlew plannerCheck} runs the solver in a plain JVM in seconds, and it is
+ * the right tool for anything made of arithmetic. It cannot touch a single line of
+ * {@code mixin/}: nothing transforms Refined Storage's bytecode in a bare JVM, so a
+ * headless run of the tests below would exercise stock RS and pass no matter what our
+ * code does. Everything here therefore has to run inside a real game, which used to mean
+ * a human launching Minecraft, doing something by hand and reporting back — nine round
+ * trips in one day over the 0.2.63-0.2.81 bugs.
  *
- * <p>The assertions need no blocks, so this uses an empty 1x1x1 template. Everything
- * under test is plain records from the Refined Storage API — the world is only here
- * because gametests require one.
+ * <p><b>Run them with {@code ./gradlew runGameTestServer}.</b> That boots a dedicated
+ * server with Refined Storage staged into its mods folder, runs every test in this class
+ * and exits non-zero if any fail — no client, no world, no hand actions, about a minute.
+ * {@code /rstweaks selftest} runs the same assertions inside a world you are already in,
+ * for when the question is about a specific pack rather than about our code.
+ *
+ * <p>Registration is gated on {@code -Dneoforge.enabledGameTestNamespaces=rstweaks},
+ * which the Gradle run sets; without it
+ * {@link net.neoforged.neoforge.gametest.GameTestHooks#isGametestEnabled()} is false and
+ * none of this is discoverable.
+ *
+ * <p>None of the assertions need blocks, so they share an empty 1x1x1 template. The
+ * fixtures are built in memory out of Refined Storage's own API; the world is here
+ * because gametests require one, and because being in one is what makes the mixins real.
  */
 @GameTestHolder(RSTweaks.MODID)
 @PrefixGameTestTemplate(false)
@@ -32,15 +44,50 @@ public final class RSTweaksGameTests {
      * Asserts that the copy-on-write pattern-plan optimization produces byte-identical
      * plans to the unoptimized path across every scenario.
      */
-    @GameTest(template = "rstweaks:empty", timeoutTicks = 400)
+    @GameTest(template = "empty", timeoutTicks = 400)
     public static void craftingPlanCopyOnWrite(final GameTestHelper helper) {
-        final CraftingPlanSelfTest.Result result = CraftingPlanSelfTest.run();
+        report(helper, "crafting plan", CraftingPlanSelfTest.run());
+    }
+
+    /**
+     * Runs crafting tasks to completion through Refined Storage's real task engine and
+     * audits the network's contents afterwards.
+     *
+     * <p>The bug this is aimed at destroyed items in every build from 0.2.57 to 0.2.63
+     * and was found by reading a player's log, not by any test. See
+     * {@link TaskEngineSelfTest}.
+     */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void craftingTaskDeliversItsOutput(final GameTestHelper helper) {
+        report(helper, "task engine", TaskEngineSelfTest.run());
+    }
+
+    /**
+     * Extracts from an external inventory that changes underneath the slot index, and
+     * asserts the index never changes the answer — including on the stale-entry exit that
+     * silently deleted items up to 0.2.55.
+     */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void externalExtractionMatchesUnindexed(final GameTestHelper helper) {
+        final ExtractionSelfTest.Result result = ExtractionSelfTest.run();
+        report(helper, "external extraction",
+            new CraftingPlanSelfTest.Result(result.scenarios(), result.failures()));
+    }
+
+    private static void report(final GameTestHelper helper,
+                               final String what,
+                               final CraftingPlanSelfTest.Result result) {
         if (result.passed()) {
-            RSTweaks.LOGGER.info("[rstweaks] gametest passed ({} scenarios)", result.scenarios());
+            RSTweaks.LOGGER.info("[rstweaks] gametest {} passed ({} scenarios)",
+                what, result.scenarios());
             helper.succeed();
             return;
         }
-        helper.fail("crafting plan diverged in " + result.failures().size()
-            + " of " + result.scenarios() + " scenarios: " + String.join(" | ", result.failures()));
+        // Logged as well as thrown: the gametest summary truncates, and a multi-line
+        // ledger of what the network was left holding is the whole diagnostic.
+        result.failures().forEach(failure ->
+            RSTweaks.LOGGER.error("[rstweaks] {} FAILURE: {}", what, failure));
+        helper.fail(what + " diverged in " + result.failures().size() + " of "
+            + result.scenarios() + " scenarios: " + String.join(" | ", result.failures()));
     }
 }

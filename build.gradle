@@ -43,6 +43,45 @@ minecraft {
     }
 }
 
+// Refined Storage is compileOnly, so nothing puts it on a run's classpath and a dev
+// launch would come up without the mod every one of our mixins targets. FML's
+// mods-folder locator reads <runDirectory>/mods in dev exactly as it does in a real
+// instance, so staging the jar there is all that is needed.
+//
+// Only Refined Storage itself, deliberately: the rest of libs/ is optional to us and
+// two of them (the Mekanism integration, ExtraStorage) pull in mods that are not
+// present, which would fail the whole launch for mixins we are not testing.
+// libs/ is gitignored -- it is somebody else's code and this repository is public, so a
+// fresh clone has none of it. Checked in a task of its own rather than in the Sync below:
+// Gradle skips a copy task whose source is empty as NO-SOURCE, so a doFirst on it never
+// runs, and the launch proceeds without Refined Storage and fails with a wall of FML
+// output about a missing dependency that says nothing about what to do next.
+tasks.register('requireRefinedStorageJar') {
+    group = 'build setup'
+    description = 'Fails with something readable when libs/ has no Refined Storage.'
+    doLast {
+        if (fileTree(dir: 'libs', include: ['refinedstorage-neoforge-*.jar']).empty) {
+            throw new GradleException(
+                "No refinedstorage-neoforge-*.jar in libs/, so this run would start "
+                    + "without the mod every mixin targets.\n"
+                    + "Copy Refined Storage 2.0.9 out of a Minecraft instance's mods "
+                    + "folder into ${projectDir}/libs/ and try again. See SETUP.md.")
+        }
+    }
+}
+
+def stageMods(final String runName) {
+    return tasks.register("stage${runName.capitalize()}Mods", Sync) {
+        group = 'build setup'
+        description = "Puts Refined Storage in the ${runName} run's mods folder."
+        // By name, not by the task provider: this is a Groovy script method, and a
+        // script-level `def` variable is not in scope inside one.
+        dependsOn 'requireRefinedStorageJar'
+        from fileTree(dir: 'libs', include: ['refinedstorage-neoforge-*.jar'])
+        into layout.projectDirectory.dir("run/${runName}/mods")
+    }
+}
+
 runs {
     configureEach {
         systemProperty 'forge.logging.markers', 'REGISTRIES'
@@ -56,6 +95,27 @@ runs {
 
     client {}
     server { argument '--nogui' }
+
+    // ./gradlew runGameTestServer — boots a dedicated server, runs every @GameTest in
+    // the rstweaks namespace and exits non-zero if any fail. This is the whole point of
+    // issue #2: the paths below only misbehave with our mixins applied, which no plain
+    // JVM run can reproduce, and until this existed checking them meant a human
+    // launching Minecraft by hand.
+    gameTestServer {
+        systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+        // The gametests build their own storages and tasks in memory; console spam from
+        // a full RS debug log buries the one line that says which scenario diverged.
+        systemProperty 'forge.logging.console.level', 'info'
+    }
+}
+
+// tasks.matching rather than tasks.named: NeoGradle creates the run tasks during its
+// own afterEvaluate, so they do not exist yet at this point in the script.
+['client', 'server', 'gameTestServer'].each { runName ->
+    final stage = stageMods(runName)
+    tasks.matching { it.name == "run${runName.capitalize()}" }.configureEach {
+        dependsOn stage
+    }
 }
 
 dependencies {

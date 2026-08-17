@@ -11,6 +11,15 @@ The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a
 "rstweaks" will miss anyone still running an older build.
 
 
+0.2.92
+------
+  Gametests for the paths that only fail in game, runnable without a human (issue #2).
+  `./gradlew runGameTestServer` boots a dedicated server with Refined Storage staged in,
+  runs six tests with our mixins applied and exits non-zero on failure, in about a minute.
+  Covers a crafting task stepping and delivering its output, the Crafting Grid refill's
+  two payment routes and its decline, and external extraction across a stale slot index.
+  Each suite was confirmed to FAIL with the bug it targets put back.
+
 UNRELEASED (in source, not yet in a built jar)
 ----------------------------------------------
   sparkProfile task. `./gradlew sparkProfile --args="<spark link|code|file>"` decodes a

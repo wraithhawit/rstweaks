@@ -8,6 +8,69 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.92
+
+- **Gametests for the three paths that only fail in a running game, and a Gradle task that runs
+  them without anybody launching Minecraft (issue #2).** `./gradlew runGameTestServer` boots a
+  dedicated server, stages Refined Storage into its mods folder, runs every `@GameTest` in the
+  `rstweaks` namespace with our mixins applied, and exits non-zero if any fail. About a minute,
+  no client, no world, no hand actions. Nine manual round trips in one day over the 0.2.63-0.2.81
+  bugs is what this replaces.
+
+- **Refined Storage is `compileOnly`, so a dev run came up without the mod every mixin targets.**
+  The new `stage<Run>Mods` tasks sync `libs/refinedstorage-neoforge-*.jar` into each run's
+  `mods` folder, where FML's mods-folder locator finds it exactly as it would in a real instance.
+  Only Refined Storage: two other jars in `libs/` depend on mods that are not present, and one
+  missing dependency fails the whole launch.
+
+- **Why these cannot be part of `plannerCheck`.** Nothing transforms Refined Storage's bytecode in
+  a plain JVM, so a headless run of any of the below exercises stock RS and passes no matter what
+  our code does. `ExtractionSelfTest` had been in that position since it was written: it toggles
+  `externalStorageSlotIndex` and compares the two runs, and under `plannerCheck` both runs were
+  the same unmixed code.
+
+- **`TaskEngineSelfTest` — a real `TaskImpl` stepped to completion over a real `RootStorageImpl`,
+  across six fixtures** including a plain two-step craft planned by stock RS, a recycled container,
+  a self-duplicating pattern, and two durability graphs. The step loop reproduces
+  `TaskContainer.step`'s `catch (Exception)` on purpose: RS's answer to a throw in a task step is
+  to mark the task *completed*, fire the finished toast and drop it with its internal storage
+  inside, so a throw has to be reported as the item destruction it is rather than as a harness
+  stack trace. Completion is never accepted on its own — every resource is audited against
+  `stored + made - used`, and durable tools against uses in versus uses out.
+
+- **`ExtractionSelfTest` gained the stale-index path**, which nothing had ever reached. Two
+  extractions run against **one** storage with the inventory rearranged in between, which is what a
+  hopper or a player does and what no fresh index can be. Asserted three ways: what physically left
+  the inventory must equal what was reported, a SIMULATE must move nothing and never promise more
+  than exists, and the whole sequence must answer identically with the index off.
+
+- **`CraftingGridRefillGameTest` builds an actual network out of blocks** — creative controller, 1k
+  storage, 64B fluid storage, Crafting Grid — and drives the real `useIngredientWithRemainingItem`
+  on the real result slot out of a real menu. A stub network would have kept passing through the
+  0.2.79 failure, where this feature was gated on a pattern that only existed because our own fluid
+  substitution registered it: parking that feature switched this one off silently. Both payment
+  routes and the decline are covered, and the decline matters most — without it the other two would
+  keep passing if the refill started declining everything.
+
+- **Every suite was confirmed to fail with the bug it targets reinstated**, which is the only
+  evidence that a passing test means anything:
+  - 0.2.55's stale-entry exit (`partial = 0` instead of the running total) → *"took 808 iron ingots
+    out of the inventory but reported 745 — ITEMS DESTROYED"*. **The first version of these
+    fixtures did not catch it.** They disturbed the *first* candidate slot, where the exit is
+    reached with nothing extracted yet and reporting the total and reporting nothing are the same
+    number. Moving the disturbance later down the candidate list is what gave them teeth.
+  - 0.2.64's throw above the guard in `AbstractTaskPattern.extractAll` → all six task fixtures fail,
+    which also proves all six really reach that code.
+  - The refill declining everything → the two payment tests fail, the decline test still passes.
+
+- **Two mechanical notes for anyone extending this.** `CraftingGridResultSlot` is package-private
+  with a private target method, and Refined Storage is a named module, so `setAccessible` is
+  refused; the seam is a second mixin (`CraftingGridResultSlotTestMixin`) that shadows the method
+  and exposes it. And the menu the slot comes out of is closed the instant the slot is in hand — an
+  open grid menu registers as a network watcher, and the first storage change then pushes a
+  `grid_update` packet at a mock player that has no connection to take one, which NeoForge refuses
+  with an exception our own guard catches and turns into a silent decline.
+
 ## 0.2.91
 
 - **Fixes the phantom `0` row, and the cause was the one thing four rounds of logging never printed

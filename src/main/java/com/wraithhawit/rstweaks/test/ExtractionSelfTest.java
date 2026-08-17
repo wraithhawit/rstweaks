@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Random;
+import java.util.function.Consumer;
 
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -56,6 +57,7 @@ public final class ExtractionSelfTest {
     public static Result run() {
         final List<String> failures = new ArrayList<>();
         final List<Scenario> scenarios = scenarios();
+        final List<StaleScenario> stale = staleScenarios();
         final boolean original = Config.externalStorageSlotIndex;
         try {
             for (final Scenario s : scenarios) {
@@ -65,10 +67,17 @@ public final class ExtractionSelfTest {
                     failures.add(s.name() + ": threw " + e);
                 }
             }
+            for (final StaleScenario s : stale) {
+                try {
+                    compareStale(s, failures);
+                } catch (final RuntimeException e) {
+                    failures.add(s.name() + ": threw " + e);
+                }
+            }
         } finally {
             Config.externalStorageSlotIndex = original;
         }
-        return new Result(scenarios.size(), failures);
+        return new Result(scenarios.size() + stale.size(), failures);
     }
 
     private static void compare(final Scenario s, final List<String> failures) {
@@ -94,15 +103,249 @@ public final class ExtractionSelfTest {
     }
 
     private static long extract(final IItemHandler handler, final Scenario s) {
-        final CapabilityCache cache = new CapabilityCache() {
+        return storageOver(handler).extract(
+            ItemResource.ofItemStack(new ItemStack(s.wanted())), s.request(), s.action(), ACTOR);
+    }
+
+    /**
+     * The real Refined Storage storage over a plain handler.
+     *
+     * <p>{@code CapabilityCache} is an interface of default methods, so this is the
+     * genuine class with our mixin on it rather than a stand-in. Held onto by the stale
+     * scenarios below, because the slot index is per-storage state: a fresh instance per
+     * extraction is a fresh index, which is exactly the case that never goes stale.
+     */
+    private static ItemHandlerExtractableStorage storageOver(final IItemHandler handler) {
+        return new ItemHandlerExtractableStorage(new CapabilityCache() {
             @Override
             public Optional<IItemHandler> getItemHandler() {
                 return Optional.of(handler);
             }
-        };
-        final ItemHandlerExtractableStorage storage = new ItemHandlerExtractableStorage(cache);
-        return storage.extract(
-            ItemResource.ofItemStack(new ItemStack(s.wanted())), s.request(), s.action(), ACTOR);
+        });
+    }
+
+    // ------------------------------------------------------------- stale index
+
+    /**
+     * An inventory that changes behind Refined Storage's back between two extractions on
+     * the same storage.
+     *
+     * @param disturb what happens to the inventory after the index has been built. It
+     *     writes to the handler directly, which is what a hopper, a pipe or a player
+     *     does — none of them tell the storage anything.
+     */
+    private record StaleScenario(String name,
+                                 int slots,
+                                 Item wanted,
+                                 long firstRequest,
+                                 long secondRequest,
+                                 Action action,
+                                 Consumer<ItemStackHandler> disturb) {
+    }
+
+    /**
+     * Two extractions on one storage, with the inventory rearranged in between.
+     *
+     * <p>This is the path that destroyed items up to 0.2.55. The indexed pass walks the
+     * slots it believes hold the resource, extracting as it goes; when it reaches an entry
+     * that no longer matches it gives up and hands the request to Refined Storage's own
+     * scan — and it used to hand it over <em>without saying what it had already taken</em>.
+     * The items were out of the inventory and absent from the returned total, which is
+     * deletion. Nothing about a fresh index can reach that exit, so
+     * {@link #compare} never has.
+     *
+     * <p>Asserted as a differential against the same sequence with the index off: same
+     * amount returned, same inventory left behind. An expectation written by hand would
+     * only cover the disturbance its author imagined.
+     */
+    /**
+     * What one run of the sequence reported, and what physically moved while it did.
+     *
+     * @param heldBeforeSecond how many were in the inventory once the disturbance had
+     *     been applied — the ceiling on what the second extraction may honestly claim.
+     */
+    private record StaleRun(long first,
+                            long firstRemoved,
+                            long second,
+                            long secondRemoved,
+                            long heldBeforeSecond,
+                            String contents) {
+    }
+
+    private static void compareStale(final StaleScenario s, final List<String> failures) {
+        Config.externalStorageSlotIndex = true;
+        final ItemStackHandler indexed = populate(s.slots(), s.name());
+        final StaleRun withIndex = runStale(indexed, s);
+
+        Config.externalStorageSlotIndex = false;
+        final ItemStackHandler plain = populate(s.slots(), s.name());
+        final StaleRun withoutIndex = runStale(plain, s);
+
+        // The invariant that matters, and it is not a comparison at all: whatever leaves
+        // the inventory has to be exactly what Refined Storage is told left it. Every item
+        // 0.2.55 destroyed went out through this gap -- taken from a slot, then omitted
+        // from the total when the indexed pass gave up partway and handed over to the
+        // scan.
+        if (withIndex.firstRemoved() != withIndex.first()) {
+            failures.add(s.name() + ": the first extraction took " + withIndex.firstRemoved()
+                + " " + s.wanted() + " out of the inventory but reported " + withIndex.first()
+                + (withIndex.firstRemoved() > withIndex.first()
+                    ? "  <-- ITEMS DESTROYED" : "  <-- ITEMS CREATED"));
+        }
+        if (s.action() == Action.EXECUTE) {
+            if (withIndex.secondRemoved() != withIndex.second()) {
+                failures.add(s.name() + ": took " + withIndex.secondRemoved() + " "
+                    + s.wanted() + " out of the inventory but reported " + withIndex.second()
+                    + (withIndex.secondRemoved() > withIndex.second()
+                        ? "  <-- ITEMS DESTROYED" : "  <-- ITEMS CREATED"));
+            }
+        } else {
+            // A simulation must move nothing and must never promise more than is there.
+            // Over-reporting under SIMULATE is the quiet failure: nothing breaks now, and
+            // the craft stalls later somewhere with no connection to this code.
+            if (withIndex.secondRemoved() != 0L) {
+                failures.add(s.name() + ": a SIMULATE extraction removed "
+                    + withIndex.secondRemoved() + " " + s.wanted());
+            }
+            if (withIndex.second() > withIndex.heldBeforeSecond()) {
+                failures.add(s.name() + ": promised " + withIndex.second() + " " + s.wanted()
+                    + " when the inventory holds " + withIndex.heldBeforeSecond()
+                    + "  <-- OVER-REPORTING");
+            }
+        }
+
+        // And the differential, which covers everything nobody thought to assert: with the
+        // index off, the same sequence against the same inventory must answer the same.
+        if (withIndex.first() != withoutIndex.first()
+            || withIndex.second() != withoutIndex.second()) {
+            failures.add(s.name() + ": returned " + withIndex.first() + "+" + withIndex.second()
+                + " with index, " + withoutIndex.first() + "+" + withoutIndex.second()
+                + " without");
+        }
+        if (!withIndex.contents().equals(withoutIndex.contents())) {
+            failures.add(s.name() + ": inventory differs after extraction\n      indexed="
+                + withIndex.contents() + "\n      plain  =" + withoutIndex.contents());
+        }
+    }
+
+    /** Extract, disturb, extract again — against one storage, so the index survives. */
+    private static StaleRun runStale(final ItemStackHandler handler, final StaleScenario s) {
+        final ItemHandlerExtractableStorage storage = storageOver(handler);
+        final ItemResource wanted = ItemResource.ofItemStack(new ItemStack(s.wanted()));
+
+        // Always EXECUTE: the index only learns where things are by being used, and a
+        // simulated first pass leaves nothing for the second one to find stale.
+        final long beforeFirst = count(handler, s.wanted());
+        final long first = storage.extract(wanted, s.firstRequest(), Action.EXECUTE, ACTOR);
+        final long afterFirst = count(handler, s.wanted());
+
+        s.disturb().accept(handler);
+
+        final long beforeSecond = count(handler, s.wanted());
+        final long second = storage.extract(wanted, s.secondRequest(), s.action(), ACTOR);
+        final long afterSecond = count(handler, s.wanted());
+
+        return new StaleRun(first, beforeFirst - afterFirst,
+            second, beforeSecond - afterSecond, beforeSecond, contents(handler));
+    }
+
+    private static long count(final IItemHandler handler, final Item item) {
+        long total = 0L;
+        for (int slot = 0; slot < handler.getSlots(); slot++) {
+            final ItemStack stack = handler.getStackInSlot(slot);
+            if (stack.is(item)) {
+                total += stack.getCount();
+            }
+        }
+        return total;
+    }
+
+    /**
+     * The n-th slot holding this item, counting from zero, or -1.
+     *
+     * <p><b>Which one is disturbed decides what the scenario tests, and getting that
+     * wrong makes it test nothing.</b> The indexed pass walks its candidates in slot
+     * order, extracting as it goes, and only carries a running total across the
+     * stale-entry exit if it had already taken something. Disturbing the <em>first</em>
+     * candidate means the exit is reached with zero extracted, where reporting the total
+     * and reporting nothing are the same number — the 0.2.55 bug was reinstated to check
+     * this suite and every scenario still passed until the disturbance moved later down
+     * the list.
+     */
+    private static int nthSlotWith(final ItemStackHandler handler, final Item item, final int n) {
+        int seen = 0;
+        for (int slot = 0; slot < handler.getSlots(); slot++) {
+            if (handler.getStackInSlot(slot).is(item) && seen++ == n) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    private static List<StaleScenario> staleScenarios() {
+        final List<StaleScenario> out = new ArrayList<>();
+        for (final Action action : Action.values()) {
+            final String tag = action == Action.SIMULATE ? "simulate" : "execute";
+
+            // The stale entry is met partway through, after earlier candidates have
+            // already given up items. Under EXECUTE that is exactly 0.2.55: the early
+            // slots are drained, the fallback scan reports only what it finds, and the
+            // difference is gone. Confirmed to fail with that bug put back.
+            out.add(new StaleScenario("later indexed slot emptied behind us, " + tag,
+                200, Items.IRON_INGOT, 5L, 2000L, action, handler -> {
+                    final int slot = nthSlotWith(handler, Items.IRON_INGOT, 2);
+                    if (slot >= 0) {
+                        handler.setStackInSlot(slot, ItemStack.EMPTY);
+                    }
+                }));
+
+            // Same exit, reached with a slot that still has something in it -- the
+            // verification read is what notices, and the candidate list is not shortened
+            // by it. Also confirmed to fail with the 0.2.55 bug put back.
+            out.add(new StaleScenario("later indexed slot now holds something else, " + tag,
+                200, Items.IRON_INGOT, 5L, 2000L, action, handler -> {
+                    final int slot = nthSlotWith(handler, Items.IRON_INGOT, 2);
+                    if (slot >= 0) {
+                        handler.setStackInSlot(slot, new ItemStack(Items.NETHERITE_INGOT, 7));
+                    }
+                }));
+
+            // The first candidate is the stale one, so the exit is taken with nothing
+            // extracted yet. Kept because it is a different arithmetic case, not because
+            // it can catch the loss -- see nthSlotWith.
+            out.add(new StaleScenario("first indexed slot emptied behind us, " + tag,
+                200, Items.IRON_INGOT, 5L, 2000L, action, handler -> {
+                    final int slot = nthSlotWith(handler, Items.IRON_INGOT, 0);
+                    if (slot >= 0) {
+                        handler.setStackInSlot(slot, ItemStack.EMPTY);
+                    }
+                }));
+
+            // Everything the index knew about is gone. The whole request has to come from
+            // the fallback scan, which must not double-count the slots already visited.
+            out.add(new StaleScenario("every indexed slot cleared, " + tag,
+                200, Items.REDSTONE, 5L, 5000L, action, handler -> {
+                    for (int slot = 0; slot < handler.getSlots(); slot++) {
+                        if (handler.getStackInSlot(slot).is(Items.REDSTONE)) {
+                            handler.setStackInSlot(slot, ItemStack.EMPTY);
+                        }
+                    }
+                }));
+
+            // More arrives in a slot the index has never heard of. The index is allowed to
+            // be late here -- but only late: what it does report must still be honest, and
+            // the fallback scan has to find the rest.
+            out.add(new StaleScenario("more appears in an unindexed slot, " + tag,
+                200, Items.GOLD_INGOT, 5L, 9999L, action, handler -> {
+                    for (int slot = handler.getSlots() - 1; slot >= 0; slot--) {
+                        if (handler.getStackInSlot(slot).isEmpty()) {
+                            handler.setStackInSlot(slot, new ItemStack(Items.GOLD_INGOT, 64));
+                            return;
+                        }
+                    }
+                }));
+        }
+        return out;
     }
 
     /** Deterministic contents, so both runs start from an identical inventory. */

@@ -261,9 +261,45 @@ the best remaining action, and it is not a code change.
 
 ## Testing
 
+Three harnesses, in the order you should reach for them.
+
+```
+.\gradlew.bat plannerCheck
+```
+
+The solver, in a plain JVM, in about a second. Everything made of arithmetic belongs
+here: 46 scenarios covering the LP planner and the max-craftable calculation. It cannot
+test a single line of `mixin/` — nothing transforms Refined Storage's bytecode in a bare
+JVM, so anything mixin-dependent run here exercises stock RS and passes regardless.
+
+```
+.\gradlew.bat runGameTestServer
+```
+
+The paths that only fail in a running game. Boots a dedicated server with Refined Storage
+staged into its mods folder, runs every `@GameTest` in the `rstweaks` namespace with the
+mixins applied, and exits non-zero if any fail — about a minute, no client, no world, no
+hand actions. Six tests:
+
+| Test | What it holds down |
+| --- | --- |
+| `craftingTaskDeliversItsOutput` | Six crafting tasks stepped to completion through the real task engine, with every resource audited against `stored + made - used`. A throw in a task step makes Refined Storage call it *completed* and destroy the internal storage, which is what 0.2.57–0.2.63 did to 26 crafts out of 26 in one session. |
+| `externalExtractionMatchesUnindexed` | 24 extractions from an external inventory, including a stale slot index. What physically leaves has to equal what was reported — the gap 0.2.55 lost items through. |
+| `craftingPlanCopyOnWrite` | The copy-on-write plan optimization must not change the plan. |
+| `paysWithAStoredContainer`, `paysWithFluidWhenNoContainerIsStored`, `leavesTheEmptyContainerWhenTheNetworkCannotPay` | The Crafting Grid refill, against a network built from real blocks: both payment routes and the decline. |
+
+Every one of those was confirmed to **fail** with the bug it targets put back into the
+product code. That is the only thing that makes a green run mean anything, and it is not
+a formality — the first version of the stale-index fixtures disturbed the wrong slot and
+passed happily with 0.2.55's item-loss bug reinstated.
+
 ```
 /rstweaks selftest
 ```
+
+The same assertions, inside a world you are already in. Needs no launch flag, so it is
+the one to reach for when the question is about a specific pack rather than about this
+mod's code.
 
 Differential test: runs each crafting calculation twice, once with
 `lazyPatternPlanCopy` enabled and once disabled, and asserts the resulting
@@ -284,9 +320,9 @@ fixtures added the storage source *before* inserting into it, and since
 returned an empty plan — two empty results comparing equal and reporting a confident
 pass while testing nothing.
 
-A gametest wrapper exists at `rstweaks:crafting_plan_copy_on_write`, but NeoForge only
-registers gametests when `-Dneoforge.enabledGameTestNamespaces=rstweaks` is on the
-command line. The command needs no launch flag and runs the identical checks.
+NeoForge only registers gametests when `-Dneoforge.enabledGameTestNamespaces=rstweaks` is
+on the command line, which `runGameTestServer` sets for you. `/rstweaks selftest` needs no
+launch flag and runs the identical checks.
 
 ## In-game reporting
 

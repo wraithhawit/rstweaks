@@ -18,6 +18,7 @@ import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 
 import com.wraithhawit.rstweaks.planner.Durability;
 import com.wraithhawit.rstweaks.storage.ItemDurability;
+import com.wraithhawit.rstweaks.test.CraftingGridRefillGameTest;
 import com.wraithhawit.rstweaks.test.RSTweaksGameTests;
 import com.wraithhawit.rstweaks.test.SelfTestCommand;
 
@@ -66,8 +67,10 @@ public class RSTweaks {
         NeoForge.EVENT_BUS.register(SelfTestCommand.class);
         // Only fires when -Dneoforge.enabledGameTestNamespaces includes this mod;
         // the command above is the version that works without a launch flag.
-        modEventBus.addListener(RegisterGameTestsEvent.class,
-            event -> event.register(RSTweaksGameTests.class));
+        modEventBus.addListener(RegisterGameTestsEvent.class, event -> {
+            event.register(RSTweaksGameTests.class);
+            event.register(CraftingGridRefillGameTest.class);
+        });
         LOGGER.info("[rstweaks] v{} loaded", version);
     }
 

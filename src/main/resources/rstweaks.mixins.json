@@ -11,6 +11,7 @@
     "CraftingCalculatorImplAccessor",
     "CraftingGridBlockEntityMixin",
     "CraftingGridResultSlotMixin",
+    "CraftingGridResultSlotTestMixin",
     "FluidHandlerExternalStorageProviderMixin",
     "InternalTaskPatternMixin",
     "IsCraftableCraftingCalculatorListenerMixin",
