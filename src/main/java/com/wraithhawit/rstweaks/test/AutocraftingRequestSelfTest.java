@@ -148,7 +148,16 @@ public final class AutocraftingRequestSelfTest {
     private record Scenario(String name,
                             int calls,
                             java.util.function.LongUnaryOperator quota,
-                            int stockTasks) {
+                            int stockTasks,
+                            long storedIngots) {
+        Scenario(final String name,
+                 final int calls,
+                 final java.util.function.LongUnaryOperator quota,
+                 final int stockTasks) {
+            // Ingredients for far more than any fixture asks for, so the craftable amount
+            // is never what limits the request.
+            this(name, calls, quota, stockTasks, 4096L);
+        }
     }
 
     public static CraftingPlanSelfTest.Result run() {
@@ -187,7 +196,7 @@ public final class AutocraftingRequestSelfTest {
         final ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
             final StorageImpl source = new StorageImpl();
-            source.insert(res("ingot"), 4096L, Action.EXECUTE, ACTOR);
+            source.insert(res("ingot"), scenario.storedIngots(), Action.EXECUTE, ACTOR);
             final RootStorageImpl storage = new RootStorageImpl();
             storage.addSource(source);
 
@@ -253,7 +262,25 @@ public final class AutocraftingRequestSelfTest {
         out.add(new Scenario("regulator, shortfall shrinking", 20,
             call -> Math.max(1L, 512L - call * 16L), 1));
 
-        // And this is issue #14. Drain the destination faster than it fills -- a machine
+        // NO REGULATOR, and it still floods. This is the shape Wraith actually reported:
+        // a mega exporter into a Dyson-cube rail ejector making 10+ tasks of ONE item each,
+        // same resource, no regulator anywhere.
+        //
+        // The quota is a constant 64 (stack upgrade), but only one craft's worth of
+        // ingredients is in the network. calculatePlan for 64 fails, so ensureTask falls
+        // through to ensureTaskForCraftableAmount, which clamps to what is craftable right
+        // now -- 1 -- and starts a task for 1. currentlyCrafting is then 1, the quota is
+        // still 64, and 1 >= 64 is false, so the very next request starts another task for
+        // 1. And another. The amount asked for never falls and what is running never
+        // catches up.
+        //
+        // Nothing about this needs a regulator: it needs only that the network cannot craft
+        // as many as the exporter asks for, which is the normal state of any autocraft whose
+        // ingredients trickle in.
+        out.add(new Scenario("stack upgrade, only one craftable at a time", 12,
+            call -> 64L, 12, 4L));
+
+        // And this is the regulator path. Drain the destination faster than it fills -- a machine
         // eating from a regulated buffer -- and the shortfall GROWS. Every increase is
         // larger than what is running, so ensureTask tops up the difference with another
         // task, every single time. Twenty requests, twenty tasks, all TASK_CREATED.

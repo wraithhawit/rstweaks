@@ -94,23 +94,34 @@ public abstract class AutocraftingNetworkComponentImplMixin {
     /**
      * Refuses a request when a craft for that resource is already running (issue #14).
      *
-     * <p>Stock {@code ensureTask} already suppresses duplicates, and does it correctly for
-     * every case but one. It answers {@code TASK_ALREADY_RUNNING} when the running tasks for
-     * the resource total <em>at least the amount asked for</em>, so a plain Exporter — whose
-     * autocrafting quota is a constant 1, or 64 with a stack upgrade — starts one task and
-     * has every later request refused. That holds on the tiered path too: Cable Tiers builds
-     * its exporter from Refined Storage's own registered factories, and its several calls per
-     * tick each see the previous call's task, because {@code TaskContainer} keeps them in a
-     * {@code CopyOnWriteArrayList} added to synchronously.
+     * <p>Stock {@code ensureTask} answers {@code TASK_ALREADY_RUNNING} only when the running
+     * tasks for the resource total <em>at least the amount asked for</em>. Where the amount is
+     * constant and achievable that is enough — one task covers every later request, on the
+     * tiered path too, since Cable Tiers builds its exporter from Refined Storage's own
+     * factories and its several calls per tick each see the previous call's task
+     * ({@code TaskContainer} keeps them in a {@code CopyOnWriteArrayList} added to
+     * synchronously). <b>The gap is every case where the running total never catches up.</b>
      *
-     * <p><b>A regulator upgrade is what defeats it.</b> The autocrafting quota provider is
-     * built with {@code respectTransferQuotaWhenRegulating = false}, so the amount is the
-     * entire outstanding shortfall rather than a transfer quota — and that shortfall grows
-     * every time the destination is drained. Each larger amount exceeds what is running, so
-     * {@code ensureTask} tops up the difference with <em>another task</em>. Measured in
-     * {@link com.wraithhawit.rstweaks.test.AutocraftingRequestSelfTest}: twenty requests
-     * against a growing shortfall produced twenty tasks for one resource, every one
-     * {@code TASK_CREATED}.
+     * <p><b>The common one needs no upgrade beyond the ones that make it ask.</b> When the
+     * network cannot craft as many as the exporter wants, {@code calculatePlan} fails and
+     * {@code ensureTaskForCraftableAmount} clamps the request to what is craftable right now.
+     * Quota 64 with ingredients for one craft yields a task for <em>1</em> — and 1 is not 64,
+     * so the next request starts another task for 1, and the next, and the next. Ingredients
+     * trickling in is the normal state of an autocraft, which is why this is the case people
+     * actually hit. Measured in
+     * {@link com.wraithhawit.rstweaks.test.AutocraftingRequestSelfTest}: twelve requests,
+     * twelve tasks, one item each, same resource, no upgrades but the stack one.
+     *
+     * <p><b>A regulator upgrade is the other one.</b> The autocrafting quota provider is built
+     * with {@code respectTransferQuotaWhenRegulating = false}, so the amount is the entire
+     * outstanding shortfall rather than a transfer quota, and that shortfall grows every time
+     * the destination is drained. Twenty requests against a growing shortfall, twenty tasks.
+     *
+     * <p>Both are one defect seen from two directions, which is why the guard below asks only
+     * whether anything is running rather than enumerating the ways an amount can outrun it.
+     * Issue #14 reported the first; this was diagnosed as the second and shipped claiming so,
+     * and the first was only found by taking seriously a report that did not fit the
+     * explanation. The reporter said "no regulator" and he was right.
      *
      * <p>Those are not free. Each runs a full crafting calculation to build its plan, carries
      * its own internal storage, and is stepped every tick until it finishes — which is the

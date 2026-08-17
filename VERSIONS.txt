@@ -11,6 +11,16 @@ The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a
 "rstweaks" will miss anyone still running an older build.
 
 
+0.2.95
+------
+  CORRECTION to 0.2.93's diagnosis, no behaviour change. The duplicate-task flood does NOT
+  need a regulator upgrade, which is what 0.2.93 claimed. The common cause is the network
+  not being able to craft as many as the exporter asks for: RS clamps the request to what
+  is craftable now (say 1), and 1 never reaches the quota (say 64), so every following
+  request starts another one-item task. Measured: 12 requests, 12 tasks, same resource, no
+  regulator. `waitForRunningCraft` already fixed both; only the config text, the mixin
+  comment and the tests were wrong about why.
+
 0.2.94
 ------
   `/rstweaks stats` prints one counter per line under a header, instead of a dozen

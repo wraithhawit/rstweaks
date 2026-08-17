@@ -8,6 +8,47 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.95
+
+**A correction to 0.2.93's diagnosis. No behaviour change — the fix was right and the
+explanation shipped with it was too narrow.**
+
+- **The duplicate-task flood does not need a regulator upgrade.** 0.2.93 said it did, in the
+  config text, the mixin javadoc and the issue comment. Wraith said his original sighting — a
+  mega exporter into a Dyson-cube rail ejector, the autocrafting monitor flooded with 10+
+  tasks crafting one item each, all the same resource — had no regulator on it. Taking that
+  seriously rather than defending the diagnosis is what found the real common case.
+
+- **The general rule is `currentlyCrafting >= amount`, and there are two ordinary ways the
+  running total never catches up.** Only one of them is the regulator.
+
+- **The common one: the network cannot craft as many as the exporter asks for.** Quota 64,
+  ingredients for one craft. `calculatePlan(resource, 64)` fails, so `ensureTask` falls through
+  to `ensureTaskForCraftableAmount`, which clamps to `binarySearchMaxAmount` — 1 — and starts a
+  task for **1**. One is not sixty-four, so the next request starts another task for 1, and the
+  next, and the next. Every task crafts a single item, they are all the same resource, and
+  nothing suppresses any of it. That is the reported symptom exactly, down to the one-item
+  crafts, and ingredients trickling in is the *normal* state of an autocraft — so this is the
+  case people actually hit, and the regulator is the rarer one.
+
+  ```
+  quota     [64, 64, 64, 64, 64, ...]   constant, no regulator
+  results   [TASK_CREATED x12]          12 requests -> 12 tasks, one item each
+  ```
+
+- **`waitForRunningCraft` already covered both**, because it asks only whether anything is
+  running rather than trying to enumerate the ways an amount can outrun it. That is now the
+  stated reason for the design rather than a happy accident.
+
+- **`AutocraftingRequestSelfTest` gains the no-regulator scenario**, asserted on both sides of
+  the flag like the rest: 12 tasks with the flag off, 1 with it on. Six fixtures now.
+
+- **The lesson, since this is the second correction in two days.** 0.2.93 was closed on a
+  headless reproduction of a mechanism that had never been shown to be the reported one, and
+  an in-game report was then read as confirming it without checking which jar was installed.
+  A reproduction proves a mechanism *exists*. It does not prove it is *the* one, and the
+  reporter contradicting your explanation is evidence, not noise.
+
 ## 0.2.94
 
 - **`/rstweaks stats` prints one counter per line.** A header, then each non-zero counter on
