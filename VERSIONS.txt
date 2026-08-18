@@ -11,6 +11,15 @@ The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a
 "rstweaks" will miss anyone still running an older build.
 
 
+0.2.96
+------
+  BUG FIX: some late-game crafts could not be started at all -- Mekanism Teleportation
+  Core and the ATM Star fragment recipe were the reported ones. The list preview said the
+  craft was impossible and greyed out Start; switching the preview to TREE worked around
+  it, because the tree preview is not hooked. Cause: the LP solver returned "no integer
+  solution" when it had only hit its depth, node or pivot cap, and the preview treats that
+  as proof. Budget exhaustion is now a decline, which falls through to stock RS.
+
 0.2.95
 ------
   CORRECTION to 0.2.93's diagnosis, no behaviour change. The duplicate-task flood does NOT

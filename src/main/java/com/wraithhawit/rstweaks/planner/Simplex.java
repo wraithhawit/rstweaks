@@ -19,6 +19,22 @@ import java.util.List;
  * matrices are small enough that the speed difference does not matter.
  */
 public final class Simplex {
+    /**
+     * Thrown when the pivot cap is reached before the tableau settles.
+     *
+     * <p>Distinct from a {@code null} return, which means the constraints are genuinely
+     * contradictory. Both used to be {@code null}, and callers read the pair as one answer --
+     * "no solution" -- which is how a solver that merely ran out of budget came to be reported
+     * to the player as a craft that is impossible.
+     */
+    public static final class PivotLimitExceeded extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        PivotLimitExceeded() {
+            super("pivot cap reached before the tableau settled");
+        }
+    }
+
     /** Sentinel returned when the constraints admit no solution at all. */
     public static final long[] INFEASIBLE = null;
 
@@ -109,7 +125,7 @@ public final class Simplex {
         }
 
         if (!s.pivotToOptimality(artificialBase, maxPivots)) {
-            return null;
+            throw new PivotLimitExceeded();
         }
         // tableau[m][total] now holds w. Non-zero means artificials remain basic at a
         // positive level, so the constraints are contradictory.
@@ -153,7 +169,7 @@ public final class Simplex {
         }
 
         if (!s.pivotToOptimality(artificialBase, maxPivots)) {
-            return null;
+            throw new PivotLimitExceeded();
         }
 
         final Rational[] x = new Rational[n];

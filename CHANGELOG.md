@@ -8,6 +8,47 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.96
+
+**Some late-game crafts could not be started at all.** Reported by LavaSurf on Mekanism's
+Teleportation Core and the ATM Star's star fragment recipe: the request screen said the
+craft was impossible and Start stayed disabled. **Switching the preview from list to tree
+made it work**, which is the clue that unravels it.
+
+- **The preview style is not a display toggle.** It is sent to the server, and RS answers it
+  with a different calculator listener each way. There are **four**, not the three recorded
+  previously: `TaskPlanCraftingCalculatorListener`, `PreviewCraftingCalculatorListener`,
+  `IsCraftableCraftingCalculatorListener`, and `TreePreviewCraftingCalculatorListener`. We
+  hook the first three. Tree preview therefore bypassed the planner entirely and got stock
+  RS's answer, which was correct.
+- **The planner was reporting a budget as a proof.** `BranchAndBound.solve` returned `null`
+  both when it proved no integer solution exists and when it merely stopped looking -- at
+  the depth cap (64), the node budget, a pivot cap inside `Simplex`, or an overflowed
+  branch. Only the node budget was tracked, and that flag was discarded whenever no
+  incumbent was found, which is precisely when it mattered. `PlanMatrix` labelled the lot
+  "no integer solution", `LpCraftingPlanner` promotes exactly that string to `impossible`,
+  and `PreviewCraftingCalculatorListenerMixin` treats `impossible` as authoritative and
+  disables Start.
+- **Big graphs are what hit caps**, so the crafts this made unavailable were the deep
+  late-game ones. Nothing was wrong with those recipes.
+
+The fix: `Simplex` now throws `PivotLimitExceeded` for a pivot cap and keeps `null` for a
+genuine contradiction; `BranchAndBound.Result` carries a `complete` flag cleared by every
+path that abandons work, and is returned even with no solution. Only a complete search that
+found nothing is reported as infeasible. Everything else declines, and a decline falls
+through to stock RS untouched.
+
+**The asymmetry is worth naming**, because it is what turned a solver limitation into a wall:
+`calculatePlan` treats the planner as advisory and ignores a decline, while
+`calculatePreview` treats the same planner as authoritative. One bad verdict there is not a
+worse plan, it is a craft the player cannot attempt.
+
+Four scenarios added to `plannerCheck` (50 total), each confirmed to fail with the old
+behaviour reinstated. One of them asserts a genuinely infeasible program *still* reports a
+complete search -- the obvious over-correction is to stop proving impossibility at all.
+
+**Not yet confirmed in game.** See the note about verifying in game, not just headlessly.
+
 ## 0.2.95
 
 **A correction to 0.2.93's diagnosis. No behaviour change — the fix was right and the

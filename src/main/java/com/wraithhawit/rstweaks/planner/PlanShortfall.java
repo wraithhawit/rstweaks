@@ -96,7 +96,7 @@ public final class PlanShortfall {
         } catch (final ArithmeticException overflow) {
             return null;
         }
-        if (result == null) {
+        if (result.values() == null) {
             return null;
         }
         return describe(graph, target, amount, initial, result.values());

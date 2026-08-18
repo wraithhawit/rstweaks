@@ -108,7 +108,16 @@ public final class PlanMatrix {
             } catch (final ArithmeticException overflow) {
                 return Outcome.failed("exact arithmetic overflowed building the tableau");
             }
-            if (result == null) {
+            if (result.values() == null && !result.complete()) {
+                // Ran out of budget, not out of possibilities. This used to fall into the
+                // branch below and be reported as "no integer solution", which the preview
+                // treats as proof and uses to disable Start -- so a craftable item became
+                // uncraftable purely because its graph was big. Deep trees are exactly the
+                // ones that hit the caps, so the items it hit were the late-game ones.
+                return Outcome.failed("search hit the node, depth or pivot cap before"
+                    + " settling; nothing proved either way");
+            }
+            if (result.values() == null) {
                 // Distinguish the two very different meanings of "no solution":
                 // a first attempt means the recipes genuinely cannot reach the target
                 // from current stock; a later one means our own seed constraint made

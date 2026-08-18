@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Deque;
 import java.util.List;
+import javax.annotation.Nullable;
 
 /**
  * Integer solutions via branch and bound over {@link Simplex}.
@@ -23,7 +24,13 @@ public final class BranchAndBound {
     private BranchAndBound() {
     }
 
-    public record Result(long[] values, boolean optimal) {
+    /**
+     * @param values   the best integer solution found, or {@code null} if none was
+     * @param complete whether the search space was explored to exhaustion. Only a complete
+     *     search that found nothing proves the program infeasible; an incomplete one proves
+     *     nothing at all, and callers must not report it as an impossible request.
+     */
+    public record Result(@Nullable long[] values, boolean complete) {
     }
 
     private record Node(List<Rational[]> extraRows, List<Rational> extraBounds, int depth) {
@@ -32,7 +39,9 @@ public final class BranchAndBound {
     /**
      * @param maxNodes  node budget; exhausting it returns the best solution found so far
      * @param maxPivots per-LP pivot cap handed to {@link Simplex}
-     * @return best integer solution, or {@code null} if none was found
+     * @return never {@code null}. The {@code values} may be {@code null}, and the
+     *     {@code complete} flag is what says whether that means "proved there is none" or
+     *     merely "ran out of budget looking".
      */
     public static Result solve(final Rational[][] a,
                                final Rational[] b,
@@ -47,11 +56,14 @@ public final class BranchAndBound {
         long[] incumbent = null;
         Rational incumbentCost = null;
         int nodes = 0;
-        boolean exhausted = true;
+        // Cleared by every path that abandons work without settling the question: the node
+        // budget, the depth cap, an overflowed branch, and a pivot cap inside Simplex. Miss any
+        // one of them and a search that simply gave up is indistinguishable from a proof.
+        boolean complete = true;
 
         while (!stack.isEmpty()) {
             if (++nodes > maxNodes) {
-                exhausted = false;
+                complete = false;
                 break;
             }
             final Node node = stack.pop();
@@ -70,10 +82,17 @@ public final class BranchAndBound {
             } catch (final ArithmeticException overflow) {
                 // Exact arithmetic ran out of headroom on this branch. Abandoning
                 // the branch is correct: we lose a possible solution, never gain a
-                // wrong one.
+                // wrong one -- but losing one means the search is no longer a proof.
+                complete = false;
+                continue;
+            } catch (final Simplex.PivotLimitExceeded pivotCap) {
+                // Same shape: this branch is unsettled, not refuted.
+                complete = false;
                 continue;
             }
             if (x == null) {
+                // Genuinely contradictory constraints on this branch -- Simplex throws rather
+                // than returning null when it merely ran out of pivots, so pruning is sound.
                 continue;
             }
 
@@ -109,6 +128,7 @@ public final class BranchAndBound {
             }
 
             if (node.depth() >= maxDepth) {
+                complete = false;
                 continue;
             }
 
@@ -125,7 +145,7 @@ public final class BranchAndBound {
             stack.push(child(node, down, Rational.of(-floor)));
         }
 
-        return incumbent == null ? null : new Result(incumbent, exhausted);
+        return new Result(incumbent, complete);
     }
 
     private static Node child(final Node parent, final Rational[] row, final Rational bound) {

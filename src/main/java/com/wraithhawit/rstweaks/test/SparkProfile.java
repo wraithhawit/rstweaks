@@ -94,6 +94,8 @@ public final class SparkProfile {
                 wantedThread = arg.substring(9);
             } else if (arg.startsWith("--top=")) {
                 top = Integer.parseInt(arg.substring(6));
+            } else if (arg.startsWith("--tree=")) {
+                tree = arg.substring(7).toLowerCase(Locale.ROOT);
             } else if (arg.startsWith("--probe=")) {
                 probe = Integer.parseInt(arg.substring(8));
             } else if (arg.startsWith("--grep=")) {
@@ -262,6 +264,83 @@ public final class SparkProfile {
         }
     }
 
+    /**
+     * Inclusive time, counted once per stack even when a frame sits inside itself.
+     *
+     * <p>Frames are pooled by name, so a method that appears twice in one stack would otherwise
+     * be added to its own total twice. {@code NetworkNodeBlockEntityTicker.tick} does exactly
+     * that -- the inherited ticker and the override share a name -- and read naively it claimed
+     * 9.09% of a server thread it actually cost 4.55% of. Only the outermost occurrence on a
+     * path is counted; a name already on the path contributes nothing.
+     */
+    private static void foldInclusive() {
+        final boolean[] referenced = new boolean[POOL.size()];
+        for (final long[] kids : POOL_KIDS) {
+            for (final long kid : kids) {
+                referenced[(int) kid] = true;
+            }
+        }
+        final Map<String, Integer> onPath = new HashMap<>();
+        for (int i = 0; i < POOL.size(); i++) {
+            if (!referenced[i]) {
+                fold(i, onPath);
+            }
+        }
+    }
+
+    private static void fold(final int node, final Map<String, Integer> onPath) {
+        final String name = POOL_NAMES.get(node);
+        final int seen = onPath.getOrDefault(name, 0);
+        if (seen == 0 && !name.isEmpty()) {
+            FRAMES.merge(name, POOL.get(node), Double::sum);
+        }
+        onPath.put(name, seen + 1);
+        for (final long kid : POOL_KIDS.get(node)) {
+            fold((int) kid, onPath);
+        }
+        onPath.put(name, seen);
+    }
+
+    /**
+     * Aggregated direct children of every node whose name matches {@code --tree=}. Frames are
+     * pooled by name across the whole thread, so the ranked tables cannot say whether one frame
+     * sits under another; this can, and it is the only honest way to split a parent's time.
+     */
+    private static void printTree() {
+        double matchedTotal = 0;
+        double matchedSelf = 0;
+        int matches = 0;
+        final Map<String, Double> children = new HashMap<>();
+        for (int i = 0; i < POOL_NAMES.size(); i++) {
+            if (!POOL_NAMES.get(i).toLowerCase(Locale.ROOT).contains(tree)) {
+                continue;
+            }
+            matches++;
+            matchedTotal += POOL.get(i);
+            double kidTotal = 0;
+            for (final long kid : POOL_KIDS.get(i)) {
+                final double kidTime = POOL.get((int) kid);
+                kidTotal += kidTime;
+                children.merge(POOL_NAMES.get((int) kid), kidTime, Double::sum);
+            }
+            matchedSelf += POOL.get(i) - kidTotal;
+        }
+        if (matches == 0) {
+            return;
+        }
+        final List<Map.Entry<String, Double>> ranked = new ArrayList<>(children.entrySet());
+        ranked.sort(Map.Entry.<String, Double>comparingByValue().reversed());
+        System.out.println();
+        System.out.printf("=== children of \"%s\" (%d call sites, %.0f ms total) ===%n",
+            tree, matches, matchedTotal);
+        System.out.printf("  %6.2f%%  %12.0f  [self]%n", matchedSelf * 100.0 / matchedTotal,
+            matchedSelf);
+        for (final Map.Entry<String, Double> child : ranked) {
+            System.out.printf("  %6.2f%%  %12.0f  %s%n",
+                child.getValue() * 100.0 / matchedTotal, child.getValue(), child.getKey());
+        }
+    }
+
     private static void printHeap(final int top, final String grep) {
         long totalSize = 0;
         long totalInstances = 0;
@@ -310,6 +389,8 @@ public final class SparkProfile {
 
     private void readThread(final int end) {
         POOL.clear();
+        POOL_NAMES.clear();
+        POOL_KIDS.clear();
         String name = "?";
         double time = 0;
         while (this.pos < end) {
@@ -335,11 +416,20 @@ public final class SparkProfile {
             }
         }
         THREADS.merge(name, time, Double::sum);
+        if (name.startsWith(wantedThread)) {
+            foldInclusive();
+            if (tree != null) {
+                printTree();
+            }
+        }
     }
 
     private static int probe;
     /** Node inclusive times, indexed by the node's position in the thread's flat pool. */
     private static final List<Double> POOL = new ArrayList<>();
+    private static final List<String> POOL_NAMES = new ArrayList<>();
+    private static final List<long[]> POOL_KIDS = new ArrayList<>();
+    private static String tree;
 
     private java.util.List<Long> packedVarints() {
         final int len = (int) varint();
@@ -398,8 +488,13 @@ public final class SparkProfile {
                 + "  f6=" + line + "  time=" + time + "  f9=" + kids);
         }
         final String name = cls.isEmpty() ? method : cls + "." + method;
+        POOL_NAMES.add(name);
+        final long[] kidIds = new long[kids.size()];
+        for (int i = 0; i < kidIds.length; i++) {
+            kidIds[i] = kids.get(i);
+        }
+        POOL_KIDS.add(kidIds);
         if (!name.isEmpty() && currentThread.startsWith(wantedThread)) {
-            FRAMES.merge(name, time, Double::sum);
             SELF.merge(name, time - childTime, Double::sum);
         }
         return time;

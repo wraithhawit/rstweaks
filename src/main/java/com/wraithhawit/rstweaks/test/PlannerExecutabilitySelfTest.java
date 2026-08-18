@@ -15,9 +15,11 @@ import com.refinedmods.refinedstorage.api.storage.Actor;
 import com.refinedmods.refinedstorage.api.storage.StorageImpl;
 import com.refinedmods.refinedstorage.api.storage.root.RootStorageImpl;
 import com.wraithhawit.rstweaks.Config;
+import com.wraithhawit.rstweaks.planner.BranchAndBound;
 import com.wraithhawit.rstweaks.planner.Durability;
 import com.wraithhawit.rstweaks.planner.LpCraftingPlanner;
 import com.wraithhawit.rstweaks.planner.PlanPreview;
+import com.wraithhawit.rstweaks.planner.Rational;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -143,13 +145,15 @@ public final class PlannerExecutabilitySelfTest {
             Config.keepRecycledResourcesInTask = true;
             durabilityChecks(failures);
             shortfallChecks(failures);
+            searchBudgetChecks(failures);
         } finally {
             Config.lpPlanner = originalPlanner;
             Config.keepRecycledResourcesInTask = originalRecycle;
             Durability.Holder.set(Durability.NONE);
         }
         return new CraftingPlanSelfTest.Result(
-            scenarios.size() + 3 + DURABILITY_SCENARIOS + SHORTFALL_SCENARIOS, failures);
+            scenarios.size() + 3 + DURABILITY_SCENARIOS + SHORTFALL_SCENARIOS + BUDGET_SCENARIOS,
+            failures);
     }
 
     private static LpCraftingPlanner.Attempt attempt(final Scenario scenario) {
@@ -1216,5 +1220,71 @@ public final class PlannerExecutabilitySelfTest {
         }, Map.of("dough", 4096L, "essence", 1024L), "slimeball", 64L, false));
 
         return out;
+    }
+
+    private static final int BUDGET_SCENARIOS = 4;
+
+    /**
+     * The branch-and-bound contract: running out of budget is not a proof.
+     *
+     * <p>{@code solve} reports "no solution" for two unrelated reasons -- the program really has
+     * none, or the search gave up at a cap. Both used to be the same {@code null}, and
+     * {@code PlanMatrix} labelled the pair "no integer solution", which {@code LpCraftingPlanner}
+     * promotes to <em>impossible</em> and the preview mixin turns into a disabled Start button.
+     * Caps are hit by big graphs, so the crafts made unavailable were the late-game ones -- and
+     * only in the list preview, since the tree preview is not hooked at all. Switching the
+     * preview style really did work around it.
+     *
+     * <p>Constraints are {@code a.x >= b} minimising {@code c.x}, so {@code 2x >= 1} relaxes to
+     * {@code x = 1/2} and forces a branch. That is the whole trick: the program needs depth to
+     * solve, so denying it depth separates "found nothing" from "proved nothing".
+     */
+    private static void searchBudgetChecks(final List<String> failures) {
+        final Rational[][] needsBranch = {{Rational.of(2L)}};
+        final Rational[] needsBranchBound = {Rational.ONE};
+        final Rational[] minimise = {Rational.ONE};
+
+        final BranchAndBound.Result starved = BranchAndBound.solve(
+            needsBranch, needsBranchBound, minimise, 5000, 2000, 0);
+        if (starved.values() != null) {
+            failures.add("search budget [depth 0]: expected no solution with no depth to branch");
+        } else if (starved.complete()) {
+            failures.add("search budget [depth 0]: reported a COMPLETE search after the depth cap"
+                + " cut every branch. That is the bug -- a craftable item is then reported"
+                + " impossible and Start is disabled.");
+        }
+
+        final BranchAndBound.Result generous = BranchAndBound.solve(
+            needsBranch, needsBranchBound, minimise, 5000, 2000, 8);
+        if (generous.values() == null) {
+            failures.add("search budget [depth 8]: the same program must solve with room to"
+                + " branch, or the starved case above proves nothing");
+        } else if (generous.values()[0] != 1L) {
+            failures.add("search budget [depth 8]: expected x=1, got " + generous.values()[0]);
+        }
+
+        // x >= 1 and x <= 0 at once. Nothing to find and nothing to give up on, so this must
+        // still come back as a proof -- otherwise the fix has merely stopped the planner ever
+        // reporting a genuinely impossible request, which is its own regression.
+        final Rational[][] contradiction = {{Rational.ONE}, {Rational.ONE.negate()}};
+        final Rational[] contradictionBounds = {Rational.ONE, Rational.ZERO};
+        final BranchAndBound.Result proven = BranchAndBound.solve(
+            contradiction, contradictionBounds, minimise, 5000, 2000, 64);
+        if (proven.values() != null) {
+            failures.add("search budget [contradiction]: solved an unsatisfiable program");
+        } else if (!proven.complete()) {
+            failures.add("search budget [contradiction]: a genuinely infeasible program must still"
+                + " report a complete search, or nothing is ever proved impossible again");
+        }
+
+        // Weaker on purpose: whether zero pivots is enough depends on the tableau, so this
+        // asserts only the invariant that matters -- finding nothing while claiming a complete
+        // search is never allowed on a program that has a solution.
+        final BranchAndBound.Result noPivots = BranchAndBound.solve(
+            needsBranch, needsBranchBound, minimise, 5000, 0, 64);
+        if (noPivots.values() == null && noPivots.complete()) {
+            failures.add("search budget [pivot cap]: claimed a complete search on a solvable"
+                + " program after the pivot cap stopped it");
+        }
     }
 }
