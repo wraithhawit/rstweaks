@@ -8,6 +8,26 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.97
+
+**Test-only. No behaviour change.**
+
+0.2.96's scenarios tested `BranchAndBound.solve` directly, which proves the contract but not
+the coupling that actually broke: `LpCraftingPlanner` decides a craft is impossible by
+matching the literal string `"no integer solution"` out of `PlanMatrix`. Nothing pinned that
+literal, so renaming the failure message would silently unhook the verdict and no test would
+notice.
+
+Two scenarios added (52 total). `PlanMatrix.solve` takes its caps as arguments, so both drive
+the real chain on a graph known to plan -- the recycled-container shape -- once with a node
+budget of zero and once with a real one. The starved run must not produce that string; the
+funded run must produce a plan, so the starved one is a genuine false negative rather than an
+unsolvable graph. Both confirmed red with 0.2.96's bug reinstated, alongside the four from
+0.2.96.
+
+Also verified: `runGameTestServer` is 8/8 with 52 sub-scenarios across four suites, no mixin
+failures and no exceptions.
+
 ## 0.2.96
 
 **Some late-game crafts could not be started at all.** Reported by LavaSurf on Mekanism's

@@ -11,6 +11,14 @@ The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a
 "rstweaks" will miss anyone still running an older build.
 
 
+0.2.97
+------
+  Two more plannerCheck scenarios (52 total), no behaviour change. 0.2.96 tested the
+  BranchAndBound contract directly; these drive PlanMatrix with a starved budget on a graph
+  known to plan, and assert on the literal "no integer solution" string that
+  LpCraftingPlanner matches to set impossible. That coupling is what broke, and nothing was
+  pinning it.
+
 0.2.96
 ------
   BUG FIX: some late-game crafts could not be started at all -- Mekanism Teleportation

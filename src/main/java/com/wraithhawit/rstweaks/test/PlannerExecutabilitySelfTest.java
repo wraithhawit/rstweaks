@@ -16,8 +16,10 @@ import com.refinedmods.refinedstorage.api.storage.StorageImpl;
 import com.refinedmods.refinedstorage.api.storage.root.RootStorageImpl;
 import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.planner.BranchAndBound;
+import com.wraithhawit.rstweaks.planner.CraftingGraph;
 import com.wraithhawit.rstweaks.planner.Durability;
 import com.wraithhawit.rstweaks.planner.LpCraftingPlanner;
+import com.wraithhawit.rstweaks.planner.PlanMatrix;
 import com.wraithhawit.rstweaks.planner.PlanPreview;
 import com.wraithhawit.rstweaks.planner.Rational;
 
@@ -1222,7 +1224,7 @@ public final class PlannerExecutabilitySelfTest {
         return out;
     }
 
-    private static final int BUDGET_SCENARIOS = 4;
+    private static final int BUDGET_SCENARIOS = 6;
 
     /**
      * The branch-and-bound contract: running out of budget is not a proof.
@@ -1277,6 +1279,31 @@ public final class PlannerExecutabilitySelfTest {
                 + " report a complete search, or nothing is ever proved impossible again");
         }
 
+        // The unit assertions above prove the contract; these prove the coupling that actually
+        // broke. PlanMatrix takes its caps as arguments, so the whole chain can be driven with
+        // a starved budget on a graph that is known solvable -- and the assertion is on the
+        // exact string LpCraftingPlanner matches to set `impossible`. A rename there silently
+        // unhooks the verdict, so pinning the literal here is deliberate.
+        final RootStorageImpl budgetStorage = new RootStorageImpl();
+        final CraftingGraph.Graph budgetGraph = budgetGraph(budgetStorage);
+
+        final PlanMatrix.Outcome starvedNodes = PlanMatrix.solve(
+            budgetGraph, res("slimeball"), 64L, 0, 2000, 64, 8, 20_000);
+        if (starvedNodes.plan() != null) {
+            failures.add("search budget [node budget 0]: planned with no node budget at all");
+        } else if (starvedNodes.failure().startsWith("no integer solution")) {
+            failures.add("search budget [node budget 0]: labelled an exhausted node budget"
+                + " \"no integer solution\", which is the exact string LpCraftingPlanner"
+                + " promotes to impossible and the preview turns into a disabled Start");
+        }
+
+        final PlanMatrix.Outcome affordable = PlanMatrix.solve(
+            budgetGraph, res("slimeball"), 64L, 5000, 2000, 64, 8, 20_000);
+        if (affordable.plan() == null) {
+            failures.add("search budget [normal budget]: the same graph must plan with a real"
+                + " budget (" + affordable.failure() + "), or the starved case proves nothing");
+        }
+
         // Weaker on purpose: whether zero pivots is enough depends on the tableau, so this
         // asserts only the invariant that matters -- finding nothing while claiming a complete
         // search is never allowed on a program that has a solution.
@@ -1286,5 +1313,28 @@ public final class PlannerExecutabilitySelfTest {
             failures.add("search budget [pivot cap]: claimed a complete search on a solvable"
                 + " program after the pivot cap stopped it");
         }
+    }
+
+    /**
+     * A byproduct graph that is known to plan -- the recycled-container shape, 64 slimeballs
+     * from a bucket that goes round. Built here rather than reused from the scenario list so a
+     * budget test cannot be quietly invalidated by someone retuning a scenario's stock.
+     */
+    private static CraftingGraph.Graph budgetGraph(final RootStorageImpl storage) {
+        final PatternRepositoryImpl patterns = new PatternRepositoryImpl();
+        patterns.add(recipe("slimeball", 1,
+            List.of(ing(4, "dough"), ing(1, "water_bucket")),
+            List.of(out("bucket", 1))), 0);
+        patterns.add(recipe("water_bucket", 1,
+            List.of(ing(1, "bucket"), ing(1, "essence")), List.of()), 0);
+
+        // Insert before addSource: RootStorageImpl snapshots at addSource time.
+        final StorageImpl source = new StorageImpl();
+        source.insert(res("dough"), 256L, Action.EXECUTE, ACTOR);
+        source.insert(res("essence"), 64L, Action.EXECUTE, ACTOR);
+        source.insert(res("bucket"), 1L, Action.EXECUTE, ACTOR);
+        storage.addSource(source);
+
+        return CraftingGraph.build(patterns, storage, res("slimeball"), 4096);
     }
 }
