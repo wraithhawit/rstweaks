@@ -8,6 +8,71 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.98
+
+**Bug fix.** A hard server crash whenever anything read the storage list — opening any grid,
+starting any autocraft — on a network whose cached total for one resource had overflowed.
+
+Reported by LavaSurf on 2026-08-18. The crash arrived as `IllegalArgumentException: Amount
+must be larger than 0` from `ResourceAmount.validate`, thrown out of
+`MutableResourceListImpl$Entry.toResourceAmount` while `copyState` was building the list,
+reached first through the Step Requester's crafting calculation and then, reproducibly, by
+opening a grid. It survived a relog.
+
+Surviving the relog is what identified it. `CompositeStorageImpl` rebuilds its list from
+scratch on every network build via `addContentOfSourceToList`, which is
+`source.getAll().forEach(this.list::add)` — nothing corrupt is persisted to disk, so the sum
+had to be re-overflowing from the storages themselves on every single load. It was never
+cache drift.
+
+`Entry.increment` is the only unguarded route into an entry's amount:
+
+```java
+private void increment(long amountToIncrement) {
+    CoreValidations.validateLargerThanZero(amountToIncrement, "...");
+    this.amount += amountToIncrement;   // no overflow check
+}
+```
+
+Every other route is guarded — `addNew` validates, `decrement` refuses to reach zero, and
+`remove` deletes the entry rather than let it. So an entry holding a non-positive amount can
+only have got there by wrapping past `Long.MAX_VALUE`, and once one has, the list is a
+landmine: harmless until something calls `getAll()`, and then fatal. `copyState` is a
+terminal stream collect, so it throws part way through and returns nothing at all — the
+symptom is a ticking-block-entity crash, not an empty screen.
+
+Getting there needs a storage reporting an enormous amount. On the reported network the
+sources were Refined Types energy External Storages: `EnergyCapabilityCache` reads Grand
+Power's `ILongEnergyStorage.getAmount()`, a `long` rather than NeoForge's `int`-capped
+`IEnergyStorage.getEnergyStored()`, and reports it under `EnergyResource.ENERGY_RESOURCE` —
+a static singleton, so every energy External Storage on the network sums into one shared
+`Entry`. One large source plus anything else wraps it.
+
+The total now saturates at `Long.MAX_VALUE`. Saturating rather than refusing the addition is
+deliberate: refusing would leave the cached total quietly lower than what the storages hold,
+and that list is what `RootStorage.get` answers from — a silent undercount is the shape of
+bug that makes items unreachable, which is the failure this project has already been bitten
+by once. A saturated total is a number nobody could represent anyway, and every invariant
+downstream holds.
+
+Fixed in Refined Storage's own layer rather than in Refined Types, because that is where the
+invariant lives, it covers every resource type including ones no addon has written yet, and
+it needs no addon to be present. `clampResourceAmountOverflow` turns it off.
+
+**Nothing needs repairing on an affected save.** The bad entry is never written to disk, so
+the first network build after this version loads produces a sane list and the grid opens.
+
+Each clamp is logged once per resource, naming the resource, so the storage causing it can be
+found; the count is in `Stats` but deliberately kept out of the `/rstweaks stats` rotation,
+where every other counter is a saving and this one means something is wrong.
+
+New gametest `resourceTotalsSaturateInsteadOfWrapping` (7 scenarios). With
+`clampResourceAmountOverflow = false` it reproduces the reported crash exactly — the total
+lands on `-9223372036854775808` and `CompositeStorageImpl.getAll` throws `Amount must be
+larger than 0` — and it pins the boundary (a total landing exactly on `Long.MAX_VALUE` is
+representable and must not be clamped), that ordinary addition is untouched, that a saturated
+entry still extracts, and that RS's own rejection of a non-positive addend survives.
+
 ## 0.2.97
 
 **Test-only. No behaviour change.**

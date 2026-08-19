@@ -11,6 +11,16 @@ The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a
 "rstweaks" will miss anyone still running an older build.
 
 
+0.2.98
+------
+  BUG FIX: hard server crash on opening any grid or starting any autocraft, on a network
+  whose cached total for one resource had overflowed past Long.MAX_VALUE and wrapped
+  negative. MutableResourceListImpl.Entry.increment validates the amount being added and
+  never the sum; it is the only unguarded route into that field. The total now saturates
+  instead of wrapping, and is logged once per resource, naming the resource. Reported by
+  LavaSurf 2026-08-18 (crash on the Step Requester, then on every grid open, surviving a
+  relog). New gametest reproduces the exact crash with the clamp disabled.
+
 0.2.97
 ------
   Two more plannerCheck scenarios (52 total), no behaviour change. 0.2.96 tested the

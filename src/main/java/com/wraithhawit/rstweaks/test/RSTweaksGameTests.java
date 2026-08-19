@@ -89,6 +89,20 @@ public final class RSTweaksGameTests {
     }
 
     /**
+     * A network total pushed past {@code Long.MAX_VALUE} saturates instead of wrapping
+     * negative, and nothing else about the resource list changes.
+     *
+     * <p>The scenario this pins crashed LavaSurf's server on every grid open and every
+     * autocraft, and survived a relog. It is also the one test here that would report a pass
+     * for the wrong reason if it ever ran outside a game: without the mixin the first scenario
+     * throws, which is the bug.
+     */
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void resourceTotalsSaturateInsteadOfWrapping(final GameTestHelper helper) {
+        report(helper, "resource list overflow", ResourceListOverflowSelfTest.run());
+    }
+
+    /**
      * {@code /rstweaks stats} prints one counter per line, and prints them all.
      *
      * <p>Cosmetic, and still worth pinning: the counters are the only evidence most people

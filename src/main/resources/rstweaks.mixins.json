@@ -18,6 +18,7 @@
     "ItemHandlerExternalStorageProviderMixin",
     "ItemHandlerExtractableStorageMixin",
     "MutablePatternPlanMixin",
+    "MutableResourceListEntryMixin",
     "PatternResolverFuzzyMixin",
     "PreviewCraftingCalculatorListenerMixin",
     "TaskImplMixin",

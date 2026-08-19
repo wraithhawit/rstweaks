@@ -98,6 +98,17 @@ public final class Stats {
      */
     public static long lpPlannerDeclined;
 
+    /**
+     * Cached resource totals clamped at {@code Long.MAX_VALUE} instead of being allowed to
+     * wrap negative and crash the next read of the storage list.
+     *
+     * <p>Deliberately not in the ChatReporter rotation. Every other counter here is a saving
+     * and reads as good news; this one means a network is reporting an impossible amount, and
+     * folding it into "optimizations firing" would bury the one number that says something is
+     * wrong. It is logged with the offending resource instead, once per resource.
+     */
+    public static long resourceAmountOverflowsClamped;
+
     private Stats() {
     }
 }

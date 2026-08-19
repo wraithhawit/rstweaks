@@ -151,6 +151,7 @@ public final class Config {
         keepRecycledResourcesInTask = KEEP_RECYCLED_RESOURCES_IN_TASK.get();
         skipMismatchedStorageTypes = SKIP_MISMATCHED_STORAGE_TYPES.get();
         skipEmptyCompositeExtract = SKIP_EMPTY_COMPOSITE_EXTRACT.get();
+        clampResourceAmountOverflow = CLAMP_RESOURCE_AMOUNT_OVERFLOW.get();
         durabilityAwarePlanning = DURABILITY_AWARE_PLANNING.get();
         waitForRunningCraft = WAIT_FOR_RUNNING_CRAFT.get();
         refillContainersInCraftingGrid = REFILL_CONTAINERS_IN_CRAFTING_GRID.get();
@@ -376,6 +377,40 @@ public final class Config {
 
     /** Cached like {@link #lazyPatternPlanCopy}; read on every extraction. */
     public static volatile boolean skipEmptyCompositeExtract = false;
+
+    public static final ModConfigSpec.BooleanValue CLAMP_RESOURCE_AMOUNT_OVERFLOW = BUILDER
+        .comment(
+            "Clamp a network's cached total for a resource at Long.MAX_VALUE instead of letting",
+            "it wrap past it into a negative number.",
+            "",
+            "A negative total is a hard server crash, not a display glitch. Refined Storage builds",
+            "the whole storage list with a terminal stream collect, so one bad entry throws",
+            "'Amount must be larger than 0' and the entire list fails to build. That happens on",
+            "the server thread when you open any grid and when any autocraft is planned, so the",
+            "symptom is a ticking-block-entity crash every time you touch the network.",
+            "",
+            "Entry.increment is the only unguarded route into that field -- it validates the",
+            "amount being added and never the sum. Reaching it needs a storage reporting an",
+            "enormous amount: an addon exposing a long-typed resource (energy, source, chemicals)",
+            "under one shared key, summed across every External Storage on the network, will do",
+            "it from a single creative or very large buffer.",
+            "",
+            "Clamping rather than refusing the addition is deliberate. Refusing would leave the",
+            "cached total quietly lower than what the storages actually hold, and that list is",
+            "what RootStorage.get answers from -- a silent undercount is the shape of bug that",
+            "makes items unreachable. A saturated total is a number nobody could represent",
+            "anyway, and everything downstream keeps the invariant it expects.",
+            "",
+            "The clamp is logged once per resource, naming the resource, so the storage causing",
+            "it can be found. Nothing is persisted: the list is rebuilt from the storages on",
+            "every network build, so an affected save needs no repair.",
+            "",
+            "Set false to disable."
+        )
+        .define("clampResourceAmountOverflow", true);
+
+    /** Cached: read on the insert path, but only once an overflow is already certain. */
+    public static volatile boolean clampResourceAmountOverflow = true;
 
     public static final ModConfigSpec.BooleanValue SKIP_MISMATCHED_STORAGE_TYPES = BUILDER
         .comment(
