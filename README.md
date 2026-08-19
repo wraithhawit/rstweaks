@@ -3,6 +3,33 @@
 Mixin mod targeting Refined Storage **and its addons** in All the Mods 10,
 developed against a copy of a live world and driven by spark profiles.
 
+## Download
+
+**[Latest release →](https://github.com/wraithhawit/rstweaks/releases/latest)**
+
+Drop the `.jar` into your `mods` folder. **Delete any older `rstweaks-*.jar` first** —
+do not rely on load order to pick the newest. Install it on the server; in
+singleplayer that means installing it normally, since the integrated server is where
+almost all of this runs.
+
+Confirm it actually loaded before judging any result — the log line is
+`[rstweaks] vX.Y.Z loaded`.
+
+| | |
+|---|---|
+| Requires | Minecraft 1.21.1, NeoForge, **Refined Storage 2.0.9** |
+| Optional | Step Crafter, Cable Tiers, Functional Storage — extra tweaks apply only if these are present, and nothing breaks if they are not |
+| Config | `config/rstweaks-common.toml`, every option documented in the file itself |
+| In game | `/rstweaks stats` shows what has actually fired |
+
+The Refined Storage version range is exact on purpose. Injection points are matched by
+method descriptor against the specific build in `libs/`, so a different Refined Storage
+is refused at load rather than allowed to fail somewhere less obvious.
+
+Bug reports and questions go in [Issues](https://github.com/wraithhawit/rstweaks/issues).
+For anything involving crafting, set `silenceAutocraftingDebugLog=false` and attach the
+log — it saves a round trip.
+
 ## Environment (must stay in sync with the instance)
 
 | | |
