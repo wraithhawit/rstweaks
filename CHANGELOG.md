@@ -8,6 +8,55 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.106
+
+**A fluid the network holds billions of could not be picked up, and the tank was stored
+instead.** (Issue #17.) Reported in game on 0.2.105: an External Storage on a Just Dire Things
+experience holder, ~2.1 MB of XP fluid visible in the grid, left-click and shift-left-click
+both fail and the tank goes into the system.
+
+`FluidGridResource.canExtract` offers the container **the entire network total**:
+
+```java
+ResourceAmount toFill = new ResourceAmount(this.resource, repository.getAmount(this.resource));
+return Platform.INSTANCE.fillContainer(carriedStack, toFill).map(r -> r.amount() > 0L).orElse(false);
+```
+
+and `fillContainer` reaches `VariantUtil.toFluidStack`, which narrows a long to an int -
+warning above `Integer.MAX_VALUE` and then doing it anyway:
+
+```java
+if (amount > 2147483647L) {
+    LOGGER.warn("Truncating too large amount for {} to fit into FluidStack {}", fluidResource, amount);
+}
+return new FluidStack(..., (int) amount, ...);
+```
+
+A displayed "2.1 MB" is 2.10-2.19 billion mB, and above 2.147 billion that cast wraps
+**negative**. The tank is handed a negative `FluidStack`, returns 0, and `canExtract` concludes
+it cannot hold XP fluid. Refined Storage's own tooltip path, `tryFillFluidContainer`, asks the
+same question with **one bucket** and gets it right; only `canExtract` asks "can you take all
+of it".
+
+**The fill decision no longer asks `canExtract`.** It asks whether the container is the right
+*kind* for the row - fluid container and fluid row, chemical container and chemical row - which
+involves no amount and so cannot be broken by one. This is a deliberate loosening: it will now
+attempt a fill on a row the container turns out not to accept, and that click moves nothing.
+**The cost of being too permissive is a click that does nothing; the cost of being too strict
+was storing the player's tank in the network.** Those are not comparable, so it errs the cheap
+way. That the tank was the *consequence* of a failed fill was the real defect here - a fill and
+a store are different intentions and one should never silently become the other.
+
+**Shift-fill above the same line uses bucket-sized transfers.** `ENTIRE_RESOURCE` asks for
+`min(network total, Long.MAX_VALUE)` and that figure goes through the same narrowing on its way
+to the container, so it would fail for exactly the resources this fixes. Above
+`Integer.MAX_VALUE` the fill switches to `SINGLE_RESOURCE` operations, one bucket each, which
+survive the conversion. Slower - and the operation cap will stop short of filling a large tank
+in one click - but it moves something.
+
+The diagnostic line under `logGridViewDiagnostics` now also reports `canHold`, `canExtract` and
+`available`, so the disagreement between the first two is visible directly rather than inferred.
+
 ## 0.2.105
 
 **0.2.104 made this less reliable, not more.** (Issue #17.) Reported in game: *"it's less

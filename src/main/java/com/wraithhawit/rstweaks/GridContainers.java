@@ -48,6 +48,9 @@ public final class GridContainers {
      */
     private static final int MAX_OPERATIONS = 64;
 
+    /** One bucket, the unit a SINGLE_RESOURCE grid transfer moves. */
+    private static final long BUCKET = 1000L;
+
     /**
      * Refined Storage's own Mekanism integration, which is the thing that puts chemicals in
      * a grid in the first place. If it is absent there are no chemical rows to click.
@@ -79,6 +82,43 @@ public final class GridContainers {
         }
         final ItemCapability<?, Void> chemical = chemicalCapability();
         return chemical != null && stack.getCapability(chemical) != null;
+    }
+
+    /**
+     * Whether this container is the kind of thing that holds this resource at all.
+     *
+     * <p>A <b>kind</b> test, not an acceptance test: fluid container and fluid row, or chemical
+     * container and chemical row. It does not ask whether the fluid would fit, is the right
+     * one, or is accepted right now.
+     *
+     * <p>That is deliberate, and it is what {@code GridResource.canExtract} should have been
+     * asked instead of what it is:
+     *
+     * <pre>{@code   ResourceAmount toFill = new ResourceAmount(resource, repository.getAmount(resource));
+     *   return Platform.INSTANCE.fillContainer(carriedStack, toFill).map(r -> r.amount() > 0L)...  }</pre>
+     *
+     * <p>It offers the container the <em>entire network total</em>, and {@code fillContainer}
+     * reaches {@code VariantUtil.toFluidStack}, which narrows a long to an int - warning above
+     * {@code Integer.MAX_VALUE} and then doing it anyway. A network holding more than about
+     * 2.147 billion mB of something therefore hands the tank a negative {@code FluidStack},
+     * gets zero back, and concludes the tank cannot take that fluid. Refined Storage's own
+     * tooltip path asks the same question with one bucket and gets it right; only
+     * {@code canExtract} asks "can you take all of it". Reported in game on 0.2.105 against
+     * ~2.1 MB of XP fluid from a Just Dire Things experience holder.
+     *
+     * <p>Deciding by kind sidesteps the amount entirely. The cost of being too permissive is a
+     * click that moves nothing; the cost of being too strict was storing the player's tank in
+     * the network. Those are not comparable, so this errs the cheap way.
+     */
+    public static boolean canHold(final ItemStack stack, @Nullable final PlatformResourceKey resource) {
+        if (resource == null || stack.isEmpty()) {
+            return false;
+        }
+        if (resource instanceof FluidResource) {
+            return stack.getCapability(Capabilities.FluidHandler.ITEM) != null;
+        }
+        final Chemicals api = chemicals();
+        return api != null && api.isChemicalResource(resource) && chemicalHandler(stack) != null;
     }
 
     /**
@@ -141,6 +181,27 @@ public final class GridContainers {
             return api.operationsToFill(handler, resource);
         }
         return 1;
+    }
+
+    /**
+     * How many bucket-sized transfers this container has room for.
+     *
+     * <p>The fallback for a resource the network holds more than {@code Integer.MAX_VALUE} of,
+     * where a whole-amount transfer cannot survive Refined Storage's narrowing to a
+     * {@code FluidStack} and only bucket-sized ones get through. Slower per click - one bucket
+     * a packet, and the cap will stop it short of a large tank - but it moves something, which
+     * the alternative did not.
+     */
+    public static int bucketsToFill(final ItemStack stack) {
+        final IFluidHandlerItem fluid = stack.getCapability(Capabilities.FluidHandler.ITEM);
+        if (fluid == null) {
+            return 1;
+        }
+        long space = 0;
+        for (int tank = 0; tank < fluid.getTanks(); tank++) {
+            space += fluid.getTankCapacity(tank) - fluid.getFluidInTank(tank).getAmount();
+        }
+        return operations(space, BUCKET);
     }
 
     /**
@@ -291,6 +352,10 @@ public final class GridContainers {
             } catch (final Throwable refused) {
                 return 1;
             }
+        }
+
+        boolean isChemicalResource(final PlatformResourceKey resource) {
+            return chemicalOfResource.getDeclaringClass().isInstance(resource);
         }
 
         private long amountOf(@Nullable final Object chemicalStack) throws Exception {

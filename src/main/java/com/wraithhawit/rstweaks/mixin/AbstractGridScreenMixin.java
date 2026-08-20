@@ -377,11 +377,14 @@ public abstract class AbstractGridScreenMixin {
         if (Config.logGridViewDiagnostics) {
             RSTweaks.LOGGER.info(
                 "[rstweaks][grid] container click button={} shift={} at=({},{}) cells={} "
-                    + "cell={} stale={} resolved={} canExtract={}",
+                    + "cell={} stale={} resolved={} canHold={} canExtract={} available={}",
                 clickedButton, all, (int) mouseX, (int) mouseY, rstweaks$cellCount, cell,
                 staleResource == null ? "none" : staleResource.getName(),
                 resource == null ? "none" : resource.getName(),
-                resource != null && resource.canExtract(carriedStack, menu.getRepository())
+                resource != null
+                    && GridContainers.canHold(carriedStack, resource.getResourceForRecipeMods()),
+                resource != null && resource.canExtract(carriedStack, menu.getRepository()),
+                resource == null ? -1L : resource.getAmount(menu.getRepository())
             );
         }
         if (clickedButton == 1) {
@@ -394,7 +397,8 @@ public abstract class AbstractGridScreenMixin {
             cir.setReturnValue(true);
             return;
         }
-        if (resource != null && resource.canExtract(carriedStack, menu.getRepository())) {
+        if (resource != null
+            && GridContainers.canHold(carriedStack, resource.getResourceForRecipeMods())) {
             rstweaks$fill(menu, carriedStack, resource, all);
             cir.setReturnValue(true);
             return;
@@ -505,14 +509,30 @@ public abstract class AbstractGridScreenMixin {
         final GridResource resource,
         final boolean all
     ) {
-        final int operations = all
-            ? GridContainers.operationsToFill(carried, resource.getResourceForRecipeMods())
-            : 1;
-        final GridExtractMode mode = all
-            ? GridExtractMode.ENTIRE_RESOURCE
-            : GridExtractMode.SINGLE_RESOURCE;
+        if (!all) {
+            resource.onExtract(GridExtractMode.SINGLE_RESOURCE, true, (GridExtractionStrategy) menu);
+            return;
+        }
+        // ENTIRE_RESOURCE asks for min(network total, Long.MAX_VALUE) and the fluid path
+        // narrows that to an int on the way to the container, so a network holding more than
+        // Integer.MAX_VALUE of something hands the tank a negative FluidStack and fills
+        // nothing. Above that line, bucket-sized operations are the only ones that survive the
+        // conversion; below it, one operation per transfer rate is far fewer packets.
+        if (resource.getAmount(menu.getRepository()) > Integer.MAX_VALUE) {
+            final int buckets = GridContainers.bucketsToFill(carried);
+            for (int operation = 0; operation < buckets; operation++) {
+                resource.onExtract(
+                    GridExtractMode.SINGLE_RESOURCE,
+                    true,
+                    (GridExtractionStrategy) menu
+                );
+            }
+            return;
+        }
+        final int operations =
+            GridContainers.operationsToFill(carried, resource.getResourceForRecipeMods());
         for (int operation = 0; operation < operations; operation++) {
-            resource.onExtract(mode, true, (GridExtractionStrategy) menu);
+            resource.onExtract(GridExtractMode.ENTIRE_RESOURCE, true, (GridExtractionStrategy) menu);
         }
     }
 

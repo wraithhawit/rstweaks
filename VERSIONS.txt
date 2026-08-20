@@ -10,6 +10,17 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.106
+-------
+  A fluid the network holds billions of could not be picked up, and the tank got stored instead
+  (#17; ~2.1 MB of XP fluid from a Just Dire Things experience holder). RS's canExtract offers
+  the container the ENTIRE network total and fillContainer narrows it to an int, so past
+  Integer.MAX_VALUE the tank is handed a NEGATIVE FluidStack, returns 0, and is judged unable to
+  hold that fluid. The fill decision no longer asks canExtract at all - it asks whether the
+  container is the right KIND for the row, which does not involve an amount. Shift-fill above
+  that line uses bucket-sized transfers, the only ones that survive the conversion. Being too
+  permissive costs a click that moves nothing; being too strict cost the player their tank.
+
 0.2.105
 -------
   0.2.104 made #17 LESS reliable, so it can no longer be the only answer. The recorded slot
