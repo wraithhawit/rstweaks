@@ -8,6 +8,71 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.100
+
+**Performance.** Functional Storage asks whether an item is on the drawer denylist twice for
+every insert attempt, and the tag lookup underneath was **11.6% of LavaSurf's server thread**
+— the second largest self frame in that profile, after the Sophisticated rescans 0.2.99
+addressed.
+
+`BigInventoryHandler` checks it at the top of `insertItem`, then again inside the `isValid`
+that same call goes on to make:
+
+```java
+public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+    if (stack.is(StorageTags.DRAWER_STORAGE_DENYLIST)) return stack;   // here
+    ...
+    if (this.isValid(slot, stack)) {                                   // and again inside
+```
+
+Same stack, same tag, same answer, and Refined Storage drives that path once per slot per
+returned craft output.
+
+Worth saying why an apparently trivial set lookup costs that much, since "it is just a
+`contains`" is the reason nobody looks twice at it. `stack.is(tag)` resolves to
+`holder.tags.contains(tag)` over what is, for an item in a pack this size, an
+`ImmutableCollections.SetN` holding dozens of entries. Its `probe` does a `Math.floorMod` —
+an integer division — then walks the table comparing `TagKey` records, each comparison
+descending into `ResourceLocation.equals` and two `String.equals` calls. A **miss**, which is
+the overwhelmingly common answer here, probes until it reaches a null slot rather than
+stopping early. So: not one slow call, an enormous number of moderately expensive ones. That
+shape is why it shows up as `SetN.probe` self time rather than anywhere obvious.
+
+The cache is keyed on `Item`, because that is what the answer actually depends on — a tag
+holds items, and no component, count or damage value can change membership. A
+reference-keyed fastutil map makes each lookup an identity hash and one array index, with no
+division and no string comparison. Keying on the stack instead would have reintroduced the
+same hashing cost it is meant to remove.
+
+**Invalidation is total and comes from the game.** Tag contents change on exactly one event —
+`TagsUpdatedEvent`, at datapack load and after every `/reload` — and the whole map is dropped
+there. Between two of those, the answer is immutable, so a cached answer and a fresh lookup
+cannot disagree. There is no expiry to tune and no staleness window, which makes this a
+weaker claim than 0.2.99's per-tick cache needed to make, not a stronger one.
+
+Both call sites are redirected, not just the redundant second one: skipping it would need the
+mixin to know who called `isValid`, and `isValid` is reachable from elsewhere. Caching both is
+simpler and leaves no path uncovered. On the first sighting of an item, or with the toggle
+off, the original `stack.is(tag)` runs and its result is what gets returned and stored.
+
+Verified at bytecode level before shipping, since a `@Redirect` that fails to match is silent
+until runtime: `javap -c` confirms exactly one `ItemStack.is:(Lnet/minecraft/tags/TagKey;)Z`
+invocation in each of `insertItem` and `isValid`, so `defaultRequire = 1` proves both were
+found.
+
+One detail worth recording: `DrawerDenylist` takes the `TagKey` as a parameter rather than
+importing `StorageTags`. It is registered on the NeoForge event bus unconditionally — gating
+that on `ModList` would run before `ModList` is dependable — so the class must not carry a
+reference to a mod that may be absent. The mixin already has the tag in hand.
+
+Config: `cacheDrawerDenylist` (default on). Counter: `drawerDenylistLookupsAvoided`.
+Registered in the existing `rstweaks.functionalstorage.mixins.json`, already gated on
+`functionalstorage`.
+
+**Remaining from that profile:** `InventoryPartitioner.getPartBySlot` calls `parent.getSlots()`
+as a bounds check on every stack read (7.6%). Still deliberately untouched pending a
+re-profile on 0.2.99 — most of it is downstream of rescans that should no longer happen.
+
 ## 0.2.99
 
 **Performance.** Sophisticated Storage ships a cache whose entire job is to stop a barrel

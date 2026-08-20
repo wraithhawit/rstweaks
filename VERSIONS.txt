@@ -10,6 +10,15 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.100
+-------
+  Functional Storage's drawer denylist check cached per item. BigInventoryHandler asks the
+  tag TWICE per insert attempt - insertItem, then again inside the isValid it calls - and
+  the set probe under it was 11.6% of LavaSurf's server thread, the second largest self
+  frame. A tag holds items, so the answer cannot depend on components or count; cached on
+  the item and dropped whole on TagsUpdatedEvent, which is the only thing that changes a
+  tag. No staleness window. Config: cacheDrawerDenylist.
+
 0.2.99
 ------
   Sophisticated Storage's failed-insert cache made able to hit. It remembers rejections

@@ -17,6 +17,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 
 import com.wraithhawit.rstweaks.planner.Durability;
+import com.wraithhawit.rstweaks.storage.DrawerDenylist;
 import com.wraithhawit.rstweaks.storage.ItemDurability;
 import com.wraithhawit.rstweaks.test.CraftingGridRefillGameTest;
 import com.wraithhawit.rstweaks.test.RSTweaksGameTests;
@@ -63,6 +64,10 @@ public class RSTweaks {
         });
         modEventBus.addListener(ModConfigEvent.Reloading.class, event -> Config.refresh());
         NeoForge.EVENT_BUS.register(ServerTicks.class);
+        // Only meaningful when Functional Storage is present, but registering a listener for
+        // an event that never matters is free, and gating it on ModList here would run before
+        // ModList is dependable.
+        NeoForge.EVENT_BUS.register(DrawerDenylist.class);
         NeoForge.EVENT_BUS.register(ChatReporter.class);
         NeoForge.EVENT_BUS.register(SelfTestCommand.class);
         // Only fires when -Dneoforge.enabledGameTestNamespaces includes this mod;

@@ -151,6 +151,7 @@ public final class Config {
         keepRecycledResourcesInTask = KEEP_RECYCLED_RESOURCES_IN_TASK.get();
         skipMismatchedStorageTypes = SKIP_MISMATCHED_STORAGE_TYPES.get();
         cacheFailedInsertsByValue = CACHE_FAILED_INSERTS_BY_VALUE.get();
+        cacheDrawerDenylist = CACHE_DRAWER_DENYLIST.get();
         skipEmptyCompositeExtract = SKIP_EMPTY_COMPOSITE_EXTRACT.get();
         clampResourceAmountOverflow = CLAMP_RESOURCE_AMOUNT_OVERFLOW.get();
         durabilityAwarePlanning = DURABILITY_AWARE_PLANNING.get();
@@ -463,6 +464,30 @@ public final class Config {
 
     /** Cached like {@link #lazyPatternPlanCopy}; read on every insert into a barrel. */
     public static volatile boolean cacheFailedInsertsByValue = true;
+
+    public static final ModConfigSpec.BooleanValue CACHE_DRAWER_DENYLIST = BUILDER
+        .comment(
+            "Cache whether an item is on Functional Storage's drawer denylist, instead of",
+            "looking the tag up on every insert attempt.",
+            "",
+            "BigInventoryHandler consults DRAWER_STORAGE_DENYLIST twice per attempt -- once in",
+            "insertItem, then again inside the isValid it goes on to call. Same stack, same",
+            "tag, same answer. Refined Storage drives that path once per slot per returned",
+            "craft output, and the set probe underneath it measured 11.6% of a whole server",
+            "thread -- the second largest single frame in that profile.",
+            "",
+            "A tag holds items, so the answer depends only on the item: no component, count or",
+            "damage value can change it. The cache is keyed on the item and dropped in full on",
+            "TagsUpdatedEvent, which is the only thing that can change a tag -- datapack load",
+            "and every /reload. Between two of those, a cached answer and a fresh lookup",
+            "cannot disagree, so there is no staleness window and nothing to tune.",
+            "",
+            "Set false to disable."
+        )
+        .define("cacheDrawerDenylist", true);
+
+    /** Cached like {@link #lazyPatternPlanCopy}; read on every drawer insert attempt. */
+    public static volatile boolean cacheDrawerDenylist = true;
 
     public static final ModConfigSpec.BooleanValue CHAT_NOTIFICATIONS = BUILDER
         .comment(

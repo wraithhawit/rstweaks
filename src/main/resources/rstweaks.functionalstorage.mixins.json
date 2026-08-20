@@ -4,6 +4,7 @@
   "package": "com.wraithhawit.rstweaks.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "BigInventoryHandlerMixin",
     "ControllerInventoryHandlerMixin"
   ],
   "client": [],

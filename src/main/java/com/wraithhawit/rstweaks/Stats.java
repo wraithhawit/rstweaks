@@ -95,6 +95,12 @@ public final class Stats {
      * nothing on this path, so any non-zero value here is a scan that used to happen.
      */
     public static long failedInsertScansAvoided;
+    /**
+     * Drawer denylist checks answered from the item cache rather than a tag probe. Expected
+     * to be very large on a network that autocrafts into drawers: two per insert attempt,
+     * one attempt per slot.
+     */
+    public static long drawerDenylistLookupsAvoided;
     /** Crafts the LP planner produced a plan for, rather than declining to stock RS. */
     public static long lpPlannerUsed;
 
