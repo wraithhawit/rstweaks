@@ -150,6 +150,7 @@ public final class Config {
         externalStorageSlotIndex = EXTERNAL_STORAGE_SLOT_INDEX.get();
         keepRecycledResourcesInTask = KEEP_RECYCLED_RESOURCES_IN_TASK.get();
         skipMismatchedStorageTypes = SKIP_MISMATCHED_STORAGE_TYPES.get();
+        cacheFailedInsertsByValue = CACHE_FAILED_INSERTS_BY_VALUE.get();
         skipEmptyCompositeExtract = SKIP_EMPTY_COMPOSITE_EXTRACT.get();
         clampResourceAmountOverflow = CLAMP_RESOURCE_AMOUNT_OVERFLOW.get();
         durabilityAwarePlanning = DURABILITY_AWARE_PLANNING.get();
@@ -436,6 +437,32 @@ public final class Config {
 
     /** Cached like {@link #lazyPatternPlanCopy}; read on every provider probe. */
     public static volatile boolean skipMismatchedStorageTypes = true;
+
+    public static final ModConfigSpec.BooleanValue CACHE_FAILED_INSERTS_BY_VALUE = BUILDER
+        .comment(
+            "Let Sophisticated Storage's failed-insert cache actually hit when Refined",
+            "Storage is the one inserting.",
+            "",
+            "Sophisticated already remembers, for the rest of the tick, that a barrel",
+            "refused an item, so the next attempt can be answered without rescanning the",
+            "whole inventory. It remembers by object identity, though, and Refined Storage",
+            "builds a brand new ItemStack for every attempt -- so the answer is never found",
+            "and every attempt rescans. Measured at 54% of a whole server thread on an",
+            "instance where one autocrafting task was returning outputs into barrels.",
+            "",
+            "This keeps a second record keyed by item and components rather than by object",
+            "identity. It caches rejections only, never contents or free space, it is",
+            "cleared on the same tick edge Sophisticated already uses, and it is cleared",
+            "again on any successful extraction -- which Sophisticated does not do, making",
+            "this strictly tighter than the cache it sits beside. Simulated inserts are",
+            "never answered from it.",
+            "",
+            "Set false to disable."
+        )
+        .define("cacheFailedInsertsByValue", true);
+
+    /** Cached like {@link #lazyPatternPlanCopy}; read on every insert into a barrel. */
+    public static volatile boolean cacheFailedInsertsByValue = true;
 
     public static final ModConfigSpec.BooleanValue CHAT_NOTIFICATIONS = BUILDER
         .comment(

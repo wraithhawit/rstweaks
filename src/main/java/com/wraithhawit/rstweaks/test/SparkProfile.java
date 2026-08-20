@@ -94,6 +94,8 @@ public final class SparkProfile {
                 wantedThread = arg.substring(9);
             } else if (arg.startsWith("--top=")) {
                 top = Integer.parseInt(arg.substring(6));
+            } else if (arg.startsWith("--parents=")) {
+                parents = arg.substring(10).toLowerCase(Locale.ROOT);
             } else if (arg.startsWith("--tree=")) {
                 tree = arg.substring(7).toLowerCase(Locale.ROOT);
             } else if (arg.startsWith("--probe=")) {
@@ -302,6 +304,41 @@ public final class SparkProfile {
     }
 
     /**
+     * Aggregated direct parents of every node whose name matches {@code --parents=}. The children
+     * view answers where a frame's time goes; this answers who is calling it, which is the
+     * question a high self-time frame actually poses.
+     */
+    private static void printParents() {
+        final Map<String, Double> callers = new HashMap<>();
+        double matchedTotal = 0;
+        int matches = 0;
+        for (int i = 0; i < POOL_NAMES.size(); i++) {
+            final String parentName = POOL_NAMES.get(i);
+            for (final long kid : POOL_KIDS.get(i)) {
+                if (!POOL_NAMES.get((int) kid).toLowerCase(Locale.ROOT).contains(parents)) {
+                    continue;
+                }
+                matches++;
+                final double kidTime = POOL.get((int) kid);
+                matchedTotal += kidTime;
+                callers.merge(parentName, kidTime, Double::sum);
+            }
+        }
+        if (matches == 0) {
+            return;
+        }
+        final List<Map.Entry<String, Double>> ranked = new ArrayList<>(callers.entrySet());
+        ranked.sort(Map.Entry.<String, Double>comparingByValue().reversed());
+        System.out.println();
+        System.out.printf("=== callers of \"%s\" (%d call sites, %.0f ms total) ===%n",
+            parents, matches, matchedTotal);
+        for (final Map.Entry<String, Double> caller : ranked) {
+            System.out.printf("  %6.2f%%  %12.0f  %s%n",
+                caller.getValue() * 100.0 / matchedTotal, caller.getValue(), caller.getKey());
+        }
+    }
+
+    /**
      * Aggregated direct children of every node whose name matches {@code --tree=}. Frames are
      * pooled by name across the whole thread, so the ranked tables cannot say whether one frame
      * sits under another; this can, and it is the only honest way to split a parent's time.
@@ -421,6 +458,9 @@ public final class SparkProfile {
             if (tree != null) {
                 printTree();
             }
+            if (parents != null) {
+                printParents();
+            }
         }
     }
 
@@ -430,6 +470,7 @@ public final class SparkProfile {
     private static final List<String> POOL_NAMES = new ArrayList<>();
     private static final List<long[]> POOL_KIDS = new ArrayList<>();
     private static String tree;
+    private static String parents;
 
     private java.util.List<Long> packedVarints() {
         final int len = (int) varint();

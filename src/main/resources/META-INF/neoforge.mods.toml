@@ -41,6 +41,10 @@ requiredMods=["cabletiers"]
 config="${mod_id}.functionalstorage.mixins.json"
 requiredMods=["functionalstorage"]
 
+[[mixins]]
+config="${mod_id}.sophisticatedcore.mixins.json"
+requiredMods=["sophisticatedcore"]
+
 [[dependencies.${mod_id}]]
     modId="neoforge"
     type="required"
@@ -105,5 +109,18 @@ requiredMods=["functionalstorage"]
     modId="functionalstorage"
     type="optional"
     versionRange="[1.21.1-1.5.8,1.21.1-1.6.0)"
+    ordering="AFTER"
+    side="BOTH"
+
+# Sophisticated Core, unlike the three above, declares a PLAIN version in its own
+# mods.toml -- "1.4.80", with no Minecraft prefix -- even though its filename and its
+# MANIFEST both carry the full "1.21.1-1.4.80.2194". The range must match what the
+# loader reads, which is the mods.toml value, so no prefix here.
+# We target sophisticatedcore rather than sophisticatedstorage: the class we mixin
+# into lives in core, and backpacks brings core in on its own.
+[[dependencies.${mod_id}]]
+    modId="sophisticatedcore"
+    type="optional"
+    versionRange="[1.4.80,1.5.0)"
     ordering="AFTER"
     side="BOTH"

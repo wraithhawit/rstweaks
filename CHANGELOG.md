@@ -8,6 +8,90 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.99
+
+**Performance.** Sophisticated Storage ships a cache whose entire job is to stop a barrel
+being rescanned after it has already refused an item. It has never been able to hit when
+Refined Storage is the one inserting.
+
+From LavaSurf's 60-second server-thread profile (`23eSKjSDH2`, 2026-08-20): one autocrafting
+task was **94.5% of the server thread**, and it was not planning or extraction —
+`InternalTaskPattern.returnOutput` alone was 92.5%. The task was returning its crafted
+outputs, every returned stack was reaching External Storage rather than a disk, and **54% of
+the whole thread** (32.6 s of 60 s) was inside
+`CachedFailedInsertInventoryHandler.insertItem`.
+
+The cause is one field:
+
+```java
+private final Set<ItemStack> failedInsertStacks = new HashSet<>();
+```
+
+`ItemStack` declares neither `equals` nor `hashCode` in 1.21.1 — checked by reflection
+against the game jar on the real classpath, because this is exactly the kind of thing that
+is wrong when assumed. So that `HashSet` is an identity set: it can only answer "yes" if
+handed back the very same object. Refined Storage builds a fresh `ItemStack` for every
+insert attempt — `ItemResource.toItemStack`, and `ItemStack.<init>` is itself 3.1% of the
+thread — so `failedInsertStacks.contains(stack)` was false every single time.
+
+The profile shows that shape exactly, and it is the reason to believe the diagnosis rather
+than merely find it plausible: **32.6 s in `insertItem` against 0.1 s in `HashSet.contains`**.
+A cache that was working would look the opposite way round.
+
+So a second record sits beside upstream's, keyed by item and components instead of by
+identity, using the same primitives Sophisticated's own `ItemStackKey` uses for equality
+(`hashItemAndComponents` / `isSameItemSameComponents`). We deliberately do **not** call
+`ItemStackKey.of`: it memoises into a `ConcurrentHashMap<ItemStack, ItemStackKey>`, which is
+identity-keyed too, so feeding it RS's fresh stacks would add an entry per attempt and grow
+without bound.
+
+**This caches rejections, never item data** — the same distinction that justified the Drawer
+Controller fix in 0.2.1. Nothing here reports what a barrel holds or how much room it has.
+The cached answer is only "an insert of this exact item into this exact barrel already came
+back untouched, this tick", and every call that is not short-circuited still reads contents
+live.
+
+Three things bound the staleness. The first two are upstream's own contract:
+
+- **Per tick.** Upstream already clears on every game-tick change — that *is* the assertion
+  "within one tick, a stack that failed will fail again". We keep that clock.
+- **Total failures only.** A rejection is recorded solely when `insertItem` returns the
+  argument object itself, which happens only when *nothing* moved. A partial insert returns
+  a different remainder stack and is never cached.
+- **Cleared on extraction.** Upstream does not do this; we do. Taking items out is the one
+  thing that can make room appear mid-tick, so any successful `extractItem` drops the map.
+  That makes this strictly tighter than the identity cache it sits beside, not looser.
+
+The stored value is the smallest count that has failed, and a later attempt is
+short-circuited only when it is at least that large. A total rejection means the barrel had
+room for zero, so a smaller stack arguably must fail too — but that argument reasons about
+upstream's slot-limit maths from the outside, and a void or compression upgrade is exactly
+the kind of thing that could make a barrel non-monotonic in count. One int comparison is a
+cheap price for not having to be right about it.
+
+Simulated inserts are left alone, exactly as upstream leaves them. A simulation is what a
+caller uses to ask whether room exists, and answering that from a cache is how a planner
+ends up believing something that is no longer true.
+
+Config: `cacheFailedInsertsByValue` (default on). Counter: `failedInsertScansAvoided`.
+New mixin config `rstweaks.sophisticatedcore.mixins.json`, gated on `sophisticatedcore` and
+pinned to `[1.4.80,1.5.0)`. Note that Sophisticated Core, unlike Step Crafter, Cable Tiers
+and Functional Storage, declares a **plain** version in its own `mods.toml` (`1.4.80`) even
+though its filename and MANIFEST carry `1.21.1-1.4.80.2194` — the range must match what the
+loader reads, so it carries no Minecraft prefix.
+
+This is an upstream bug in Sophisticated Core and is worth reporting there.
+
+**Still outstanding from the same profile**, not addressed here:
+
+- Functional Storage's `BigInventoryHandler` runs `ItemStack.is(TagKey)` per insert attempt;
+  `ImmutableCollections$SetN.probe` is 11.6% of the thread.
+- `InventoryPartitioner.getPartBySlot` calls `parent.getSlots()` as a bounds check on every
+  stack read (7.6%). Deliberately left alone until this build is re-profiled — most of that
+  time is downstream of the same rescans and should disappear on its own, and caching a slot
+  count that `changeStorageSize` can move is not worth doing for a win that may already be
+  gone.
+
 ## 0.2.98
 
 **Bug fix.** A hard server crash whenever anything read the storage list — opening any grid,

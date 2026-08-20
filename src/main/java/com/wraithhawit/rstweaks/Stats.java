@@ -89,6 +89,12 @@ public final class Stats {
      * evidence, since no single call is slow enough to see.
      */
     public static long mismatchedProviderCallsAvoided;
+    /**
+     * Full rescans of a Sophisticated barrel skipped because it had already refused that
+     * exact item this tick. Counted because upstream's own identity-keyed cache records
+     * nothing on this path, so any non-zero value here is a scan that used to happen.
+     */
+    public static long failedInsertScansAvoided;
     /** Crafts the LP planner produced a plan for, rather than declining to stock RS. */
     public static long lpPlannerUsed;
 

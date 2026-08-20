@@ -10,6 +10,14 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.99
+------
+  Sophisticated Storage's failed-insert cache made able to hit. It remembers rejections
+  by OBJECT IDENTITY, and RS builds a fresh ItemStack per attempt, so it never found its
+  own entry and every attempt rescanned the whole barrel: 54% of the server thread on
+  LavaSurf's profile, under one autocrafting task returning outputs. Second record keyed
+  by item+components. Rejections only, per-tick, also cleared on any extraction - which
+  upstream does not do. Config: cacheFailedInsertsByValue. Worth reporting upstream.
 
 0.2.98
 ------
