@@ -8,6 +8,74 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.101
+
+**Grid clicks that make sense while you are holding a tank.** (Issue #17.)
+
+The report was that shift-right-clicking a fluid or chemical tank into the grid moves 1 B like
+a plain right-click, instead of the whole tank. Chasing it turned up something better worth
+knowing: **"the whole tank" was never available on any binding.**
+
+Refined Storage's insert modes are `SINGLE_RESOURCE` (one bucket) and `ENTIRE_RESOURCE`, and
+`ENTIRE_RESOURCE` asks the container's own handler for `Long.MAX_VALUE` and takes what it is
+given. A Mekanism tank gives one tier transfer rate per operation:
+
+| Fluid Tank | capacity | per operation |
+|------------|---------:|--------------:|
+| Basic      |    32 B  |          1 B  |
+| Advanced   |    64 B  |          4 B  |
+| Elite      |   128 B  |         16 B  |
+| Ultimate   |   256 B  |         64 B  |
+
+So the observed "left-click moves 64 B" is the Ultimate tank's rate, not a clamp anywhere in
+Refined Storage and not a bug in this mod. **Emptying a tank is not a bigger transfer, it is
+the same transfer repeated.** That is the actual feature, and no amount of mode-picking would
+have produced it.
+
+Stock bindings, with a container on the cursor, were also the wrong way round for one: the
+only precise action was right-click, "everything" was the default on left-click, shift meant
+nothing at all on insert and "put it in my inventory instead" on extract. And because
+`mouseClicked` commits to the extract branch the moment `canExtract` agrees, whichever button
+was pressed, there was no way to dump a tank while pointing at the fluid it holds - you had to
+find blank space in the grid.
+
+New bindings, active **only** while the cursor holds a fluid or chemical container:
+
+```
+  left-click            fill the container by one bucket
+  right-click           empty one bucket of it into the network
+  shift + either        run that direction until it stops moving anything
+```
+
+Left fills, right empties, whichever you clicked. Anything else on the cursor - an ordinary
+item, or nothing - routes exactly as it did, as do ctrl-click, autocrafting, scrolling, and
+the fallback that stores an *empty* tank as an item. Config: `containerGridClicks`.
+
+**Chemicals cost no dependency.** `GridContainers` recognises a chemical container by reading
+one public static field, `ChemicalUtil.ITEM_CAPABILITY`, off Refined Storage's own Mekanism
+integration by reflection. Naming `IChemicalHandler` to build the capability token ourselves
+would have meant compiling against Mekanism to gain nothing: we never call the handler, only
+ask whether the stack has one, and `ItemCapability` is a plain NeoForge type. Absent
+integration, absent Mekanism, and any other failure all answer the same way - no chemical
+support - so the catch is `Throwable` and clicking on fluids is unaffected.
+
+**The repeat stops on an observed effect, not a predicted count.** `driveContainerRepeat`
+re-sends the operation each tick for as long as the cursor stack keeps changing, and gives up
+after 8 unchanged ticks or 64 operations. The alternative was to compute the count up front
+from the container's capacity and rate - two numbers a mod may make dynamic, reachable for
+chemicals only through more reflection, and wrong the moment either assumption slips. Issue
+#15 took five wrong answers because its probes re-evaluated a condition instead of observing
+an effect; this spends that lesson in advance. Eight ticks is chosen against server latency:
+one operation is a packet out and a changed stack back, so a tick or two of "nothing yet" is
+the normal case mid-transfer, not the end of one.
+
+Shift is deliberately not re-checked while the repeat runs. A shift-click released quickly is
+still a shift-click, and requiring the modifier to be held would make the result depend on how
+fast the player let go.
+
+Both injectors are `require = 0`. This is ergonomics; if another mod overwrites either grid
+click path, the right outcome is stock behaviour, not a crash in a stranger's pack.
+
 ## 0.2.100
 
 **Performance.** Functional Storage asks whether an item is on the drawer denylist twice for

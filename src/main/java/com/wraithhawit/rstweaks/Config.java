@@ -157,6 +157,7 @@ public final class Config {
         durabilityAwarePlanning = DURABILITY_AWARE_PLANNING.get();
         waitForRunningCraft = WAIT_FOR_RUNNING_CRAFT.get();
         refillContainersInCraftingGrid = REFILL_CONTAINERS_IN_CRAFTING_GRID.get();
+        containerGridClicks = CONTAINER_GRID_CLICKS.get();
         logGridViewDiagnostics = LOG_GRID_VIEW_DIAGNOSTICS.get();
         AutocraftingLogSpam.apply(SILENCE_AUTOCRAFTING_DEBUG_LOG.get());
     }
@@ -221,6 +222,36 @@ public final class Config {
 
     /** Cached like {@link #lazyPatternPlanCopy}; read once per crafted iteration. */
     public static volatile boolean keepRecycledResourcesInTask = true;
+
+    public static final ModConfigSpec.BooleanValue CONTAINER_GRID_CLICKS = BUILDER
+        .comment(
+            "Grid clicks that make sense while you are holding a tank. (Issue #17.)",
+            "",
+            "Active only when the cursor holds a fluid or chemical container. With anything",
+            "else on the cursor -- an ordinary item, or nothing -- the grid behaves exactly as",
+            "Refined Storage ships it, and so does ctrl-click, autocrafting and scrolling.",
+            "",
+            "  left-click          fill the container by one bucket",
+            "  right-click         empty one bucket of it into the network",
+            "  shift + either      keep going until the transfer stops moving anything",
+            "",
+            "Stock bindings are right-click for one bucket, left-click for 'everything', and",
+            "shift for nothing at all. The problem is that 'everything' is not the whole tank",
+            "and cannot be: Refined Storage asks the container for Long.MAX_VALUE and gets back",
+            "whatever the container is willing to move in one operation, which for a Mekanism",
+            "tank is one tier transfer rate -- 64 B from an Ultimate that holds 256 B. Emptying",
+            "a tank is therefore the same operation several times over, which is what shift now",
+            "does.",
+            "",
+            "Left fills and right empties whatever you clicked, including the fluid's own row,",
+            "so a tank no longer has to be dumped by hunting for blank space in the grid.",
+            "",
+            "Set false for stock Refined Storage behaviour."
+        )
+        .define("containerGridClicks", true);
+
+    /** Read on the client, on a mouse click and on the ticks of a shift-click transfer. */
+    public static volatile boolean containerGridClicks = true;
 
     public static final ModConfigSpec.BooleanValue REFILL_CONTAINERS_IN_CRAFTING_GRID = BUILDER
         .comment(

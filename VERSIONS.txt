@@ -10,6 +10,16 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.101
+-------
+  Grid clicks that make sense while holding a tank (#17). With a fluid or chemical container
+  on the cursor: left-click fills it by one bucket, right-click empties one bucket into the
+  network, shift on either repeats until nothing more moves. Right-click on the fluid's own
+  row now dumps, so a tank no longer has to be emptied by finding blank grid space. Stock
+  "left-click = everything" never emptied a tank and could not: Mekanism hands over one tier
+  transfer rate per operation, 64 B from an Ultimate that holds 256 B, so emptying one is the
+  same operation repeated. Config: containerGridClicks.
+
 0.2.100
 -------
   Functional Storage's drawer denylist check cached per item. BigInventoryHandler asks the

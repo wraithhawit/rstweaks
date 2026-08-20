@@ -1,12 +1,21 @@
 package com.wraithhawit.rstweaks.mixin;
 
+import com.refinedmods.refinedstorage.api.network.node.grid.GridExtractMode;
+import com.refinedmods.refinedstorage.api.network.node.grid.GridInsertMode;
 import com.refinedmods.refinedstorage.api.resource.repository.ResourceRepository;
+import com.refinedmods.refinedstorage.common.api.grid.strategy.GridExtractionStrategy;
 import com.refinedmods.refinedstorage.common.api.grid.view.GridResource;
 import com.refinedmods.refinedstorage.common.grid.AbstractGridContainerMenu;
 import com.refinedmods.refinedstorage.common.grid.screen.AbstractGridScreen;
 import com.refinedmods.refinedstorage.common.util.ClientPlatformUtil;
 
+import com.wraithhawit.rstweaks.Config;
+import com.wraithhawit.rstweaks.GridContainers;
+
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.world.item.ItemStack;
+
+import org.jetbrains.annotations.Nullable;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -169,5 +178,239 @@ public abstract class AbstractGridScreenMixin {
         if (repository.setPreventSorting(false)) {
             repository.sort();
         }
+    }
+
+    // ------------------------------------------------------------------------------------
+    // Holding a tank changes what a grid click means. (Issue #17.)
+    //
+    // With a container on the cursor the carried stack is a DESTINATION, not cargo, and
+    // Refined Storage's stock bindings read badly for it:
+    //
+    //   right-click  -> SINGLE_RESOURCE, one bucket                   (the only precise action)
+    //   left-click   -> ENTIRE_RESOURCE, "give me everything"
+    //   shift        -> nothing at all on insert; "to inventory" on extract
+    //
+    // and ENTIRE_RESOURCE does not mean the whole tank, because it cannot. Refined Storage
+    // asks the container's own handler for Long.MAX_VALUE and takes what it is given, and a
+    // Mekanism tank hands over one tier transfer rate per operation - 64 B on an Ultimate,
+    // against a 256 B capacity (FluidTankTier: BASIC 32 B/1 B, ADVANCED 64/4, ELITE 128/16,
+    // ULTIMATE 256/64). So "dump the whole tank" is not a bigger transfer, it is the same
+    // transfer repeated, which is what rstweaks$driveContainerRepeat does.
+    //
+    // The bindings below, active only while a fluid or chemical container is on the cursor:
+    //
+    //   left-click            fill the container by one bucket
+    //   right-click           empty one bucket of it into the network
+    //   shift + either        run that direction until it stops moving
+    //
+    // Left fills and right empties whichever you clicked, so a tank no longer has to be
+    // dumped by hunting for blank space in the grid: right-clicking the fluid's own row now
+    // does it. Everything else - an ordinary item on the cursor, an empty cursor, ctrl-click,
+    // autocrafting - routes exactly as it did, because both hooks return without touching the
+    // callback unless GridContainers says the cursor holds a tank.
+    // ------------------------------------------------------------------------------------
+
+    /**
+     * Ceiling on repeated operations, so a bug here cannot spin forever.
+     *
+     * <p>Four covers an Ultimate fluid tank; the headroom is for a creative tank
+     * (2,147,483,647 mB capacity against a 1,073,741,823 mB rate, so two) and for whatever
+     * ratio a mod we have never seen picks. Reaching this limit is not an error worth
+     * reporting - the transfer simply stops, and clicking again continues it.
+     */
+    @Unique
+    private static final int RSTWEAKS_REPEAT_LIMIT = 64;
+
+    /**
+     * How many ticks of an unchanged cursor stack end a repeat.
+     *
+     * <p>Each operation is a packet to the server and the changed stack coming back, so a
+     * tick or two of "nothing yet" is the normal case on a real server, not the end of the
+     * transfer. This waits long enough to tell one from the other.
+     */
+    @Unique
+    private static final int RSTWEAKS_REPEAT_IDLE_TICKS = 8;
+
+    /** Operations left in the current repeat; zero when no repeat is running. */
+    @Unique
+    private int rstweaks$repeatsLeft;
+
+    /** Consecutive ticks the cursor stack has not changed. */
+    @Unique
+    private int rstweaks$repeatIdleTicks;
+
+    /** The cursor stack as it was when the last operation was sent. */
+    @Unique
+    private ItemStack rstweaks$repeatCarried = ItemStack.EMPTY;
+
+    /** The row being drained into the container, or null when the repeat is a dump. */
+    @Unique
+    @Nullable
+    private GridResource rstweaks$repeatResource;
+
+    /**
+     * Clicking blank grid space with a container held: empty it into the network.
+     *
+     * <p>Injected at HEAD of the insert entry point rather than at the click router, so
+     * Refined Storage has already decided this is an insert - the storage-area bounds, the
+     * button filter and the empty-cursor check are all upstream of here and are not
+     * restated. The reroute of a right-click on a resource row is the other hook.
+     */
+    @Inject(method = "mouseClickedInGrid(I)V", at = @At("HEAD"), cancellable = true, require = 0)
+    private void rstweaks$containerInsert(final int clickedButton, final CallbackInfo ci) {
+        if (!Config.containerGridClicks) {
+            return;
+        }
+        final AbstractGridContainerMenu menu = rstweaks$menu();
+        final ItemStack carried = menu.getCarried();
+        if (!GridContainers.isBulkContainer(carried)) {
+            return;
+        }
+        rstweaks$insert(menu, carried, clickedButton, Screen.hasShiftDown());
+        ci.cancel();
+    }
+
+    /**
+     * Clicking a resource row with a container held.
+     *
+     * <p>Left fills the container from that row, right empties the container into the
+     * network. The right-click case is the one reroute in all of this: stock Refined Storage
+     * has no way to insert while the cursor is over a row it could extract from, because
+     * {@code mouseClicked} commits to the extract branch as soon as {@code canExtract}
+     * agrees, whichever button was pressed.
+     *
+     * <p>The extract passes {@code cursor = true} unconditionally. Stock derives that from
+     * "is shift down", meaning "put the result in my inventory instead" - a bucket rule that
+     * makes no sense once shift means "fill it up", and one the fluid strategy ignores anyway
+     * when a container is on the cursor. Passing true says the thing being filled is the
+     * thing you are holding, which is the only reading available here.
+     */
+    @Inject(
+        method = "mouseClickedInGrid(ILcom/refinedmods/refinedstorage/common/api/grid/view/GridResource;)V",
+        at = @At("HEAD"),
+        cancellable = true,
+        require = 0
+    )
+    private void rstweaks$containerExtract(
+        final int clickedButton,
+        final GridResource resource,
+        final CallbackInfo ci
+    ) {
+        if (!Config.containerGridClicks) {
+            return;
+        }
+        final AbstractGridContainerMenu menu = rstweaks$menu();
+        final ItemStack carried = menu.getCarried();
+        if (!GridContainers.isBulkContainer(carried)) {
+            return;
+        }
+        final boolean all = Screen.hasShiftDown();
+        if (clickedButton == 1) {
+            rstweaks$insert(menu, carried, clickedButton, all);
+        } else {
+            resource.onExtract(
+                all ? GridExtractMode.ENTIRE_RESOURCE : GridExtractMode.SINGLE_RESOURCE,
+                true,
+                (GridExtractionStrategy) menu
+            );
+            if (all) {
+                rstweaks$armRepeat(resource, carried);
+            }
+        }
+        ci.cancel();
+    }
+
+    /**
+     * One insert operation, arming a repeat when it was a shift-click.
+     *
+     * <p>{@code tryAlternatives} keeps its stock meaning - right-click only - so that the
+     * fallback storing an <em>empty</em> tank as an item behaves as it always did.
+     */
+    @Unique
+    private void rstweaks$insert(
+        final AbstractGridContainerMenu menu,
+        final ItemStack carried,
+        final int clickedButton,
+        final boolean all
+    ) {
+        menu.onInsert(
+            all ? GridInsertMode.ENTIRE_RESOURCE : GridInsertMode.SINGLE_RESOURCE,
+            clickedButton == 1
+        );
+        if (all) {
+            rstweaks$armRepeat(null, carried);
+        }
+    }
+
+    @Unique
+    private void rstweaks$armRepeat(
+        @Nullable final GridResource resource,
+        final ItemStack carried
+    ) {
+        rstweaks$repeatResource = resource;
+        rstweaks$repeatsLeft = RSTWEAKS_REPEAT_LIMIT;
+        rstweaks$repeatIdleTicks = 0;
+        rstweaks$repeatCarried = carried.copy();
+    }
+
+    /**
+     * Repeats a shift-click's operation until the container stops changing.
+     *
+     * <p>The stop condition is the cursor stack itself, not a predicted count. Predicting one
+     * would mean asking the container for its capacity and its per-operation rate and
+     * dividing - two numbers a mod is free to make dynamic, through an API we would have to
+     * reach reflectively for chemicals. Watching the stack instead needs neither: whatever
+     * the container did, the item that came back from the server either differs from the one
+     * we sent or it does not, and only the second is the end of the transfer. Issue #15 was
+     * five wrong answers long because its probes re-evaluated a condition rather than
+     * observing an effect; this is the same lesson spent in advance.
+     *
+     * <p>Shift is deliberately not re-checked. A shift-click released quickly is still a
+     * shift-click, and requiring the modifier to be held for the whole run would make the
+     * result depend on how fast the player let go.
+     */
+    @Inject(method = "containerTick", at = @At("TAIL"), require = 0)
+    private void rstweaks$driveContainerRepeat(final CallbackInfo ci) {
+        if (rstweaks$repeatsLeft <= 0) {
+            return;
+        }
+        final AbstractGridContainerMenu menu = rstweaks$menu();
+        final ItemStack carried = menu.getCarried();
+        if (!GridContainers.isBulkContainer(carried)) {
+            // The container left the cursor - put away, dropped, or swapped mid-transfer.
+            rstweaks$stopRepeat();
+            return;
+        }
+        if (ItemStack.matches(carried, rstweaks$repeatCarried)) {
+            if (++rstweaks$repeatIdleTicks >= RSTWEAKS_REPEAT_IDLE_TICKS) {
+                rstweaks$stopRepeat();
+            }
+            return;
+        }
+        rstweaks$repeatCarried = carried.copy();
+        rstweaks$repeatIdleTicks = 0;
+        --rstweaks$repeatsLeft;
+        if (rstweaks$repeatResource == null) {
+            menu.onInsert(GridInsertMode.ENTIRE_RESOURCE, false);
+        } else {
+            rstweaks$repeatResource.onExtract(
+                GridExtractMode.ENTIRE_RESOURCE,
+                true,
+                (GridExtractionStrategy) menu
+            );
+        }
+    }
+
+    @Unique
+    private void rstweaks$stopRepeat() {
+        rstweaks$repeatsLeft = 0;
+        rstweaks$repeatIdleTicks = 0;
+        rstweaks$repeatResource = null;
+        rstweaks$repeatCarried = ItemStack.EMPTY;
+    }
+
+    @Unique
+    private AbstractGridContainerMenu rstweaks$menu() {
+        return (AbstractGridContainerMenu) ((AbstractGridScreen<?>) (Object) this).getMenu();
     }
 }
