@@ -8,6 +8,43 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.105
+
+**0.2.104 made this less reliable, not more.** (Issue #17.) Reported in game: *"it's less
+reliable than before, I barely got it to work a few times."*
+
+0.2.104 resolved a container click only from slot rectangles recorded during rendering, and
+**returned early when none of them matched**. That made one unproven assumption - that the
+recording is populated and correctly placed - load-bearing for the entire feature, with no way
+to tell from the outside whether it held. If it does not hold, every click falls through to
+stock, which is worse than the stale-hover behaviour it replaced.
+
+Three changes, in order of importance:
+
+**The measured answer is now a preference, not a requirement.** When no rectangle matches, the
+row falls back to the one Refined Storage resolved itself - the stale-hover value 0.2.103 used.
+So the fresh answer can only ever be an improvement: when the rectangles are right the click is
+resolved from its own coordinates, and when they are not, behaviour is exactly 0.2.103's. A
+mechanism that can silently disable a feature should not be the only path to it.
+
+**The blank-area right-click hook is back.** 0.2.104 folded both entry points into the click
+router and lost the case the router cannot answer - "is this inside the storage area", which
+`canInsert` has already decided by the time `mouseClickedInGrid` runs. Emptying a container
+works anywhere in the grid again, including past the end of the list.
+
+**There is now a diagnostic**, under the existing `logGridViewDiagnostics`:
+
+```
+[rstweaks][grid] container click button=0 shift=false at=(112,84) cells=63 cell=14
+                 stale=Water resolved=Water canExtract=true
+```
+
+`cells` is how many rectangles were recorded, `cell` is which one the click hit (-1 for none),
+and `stale` against `resolved` says which of the two answered. That distinguishes "the
+recording is empty", "the recording is misplaced" and "the recording is fine and something else
+is wrong" - three theories that are indistinguishable from the outside and which I would
+otherwise be guessing between. Read the line before theorising about this again.
+
 ## 0.2.104
 
 **Clicking a row faster than the game could draw it put the tank in the network.** (Issue #17.)

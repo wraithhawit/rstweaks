@@ -10,6 +10,15 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.105
+-------
+  0.2.104 made #17 LESS reliable, so it can no longer be the only answer. The recorded slot
+  rectangles are now a preference, not a requirement: when no rectangle matches the click, the
+  row falls back to the one Refined Storage itself resolved, so behaviour is 0.2.103's rather
+  than worse. Restores the blank-area right-click hook 0.2.104 dropped. Adds a diagnostic line
+  under logGridViewDiagnostics reporting cells recorded, cell hit, stale row, resolved row and
+  canExtract - read that before theorising about this again.
+
 0.2.104
 -------
   Fixes "sometimes it won't fill and just inserts if I hover too fast" (#17). RS assigns the

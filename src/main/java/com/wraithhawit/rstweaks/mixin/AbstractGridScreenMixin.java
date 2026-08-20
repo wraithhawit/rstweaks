@@ -14,6 +14,7 @@ import com.refinedmods.refinedstorage.common.util.ClientPlatformUtil;
 
 import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.GridContainers;
+import com.wraithhawit.rstweaks.RSTweaks;
 
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -369,31 +370,105 @@ public abstract class AbstractGridScreenMixin {
             || !GridContainers.isBulkContainer(carriedStack)) {
             return;
         }
-        final int cell = rstweaks$cellAt(mouseX, mouseY);
-        if (cell < 0) {
-            // Not over a slot at all - a gutter, a side button, the search field. Stock.
-            return;
-        }
         final AbstractGridContainerMenu menu = rstweaks$menu();
+        final int cell = rstweaks$cellAt(mouseX, mouseY);
+        final GridResource resource = rstweaks$rowAt(menu, cell, staleResource);
         final boolean all = Screen.hasShiftDown();
+        if (Config.logGridViewDiagnostics) {
+            RSTweaks.LOGGER.info(
+                "[rstweaks][grid] container click button={} shift={} at=({},{}) cells={} "
+                    + "cell={} stale={} resolved={} canExtract={}",
+                clickedButton, all, (int) mouseX, (int) mouseY, rstweaks$cellCount, cell,
+                staleResource == null ? "none" : staleResource.getName(),
+                resource == null ? "none" : resource.getName(),
+                resource != null && resource.canExtract(carriedStack, menu.getRepository())
+            );
+        }
         if (clickedButton == 1) {
+            if (cell < 0 && resource == null) {
+                // Nothing says we are over the grid at all. Let stock route it; if it decides
+                // this is an insert, rstweaks$containerInsert picks it up there.
+                return;
+            }
             rstweaks$insert(menu, carriedStack, all);
             cir.setReturnValue(true);
             return;
         }
-        final List<GridResource> viewList = menu.getRepository().getViewList();
-        final GridResource resource = cell < viewList.size() ? viewList.get(cell) : null;
         if (resource != null && resource.canExtract(carriedStack, menu.getRepository())) {
             rstweaks$fill(menu, carriedStack, resource, all);
             cir.setReturnValue(true);
             return;
         }
+        if (cell < 0) {
+            // No cell under the click and no row to fall back on. Stock decides, which for a
+            // left-click over the grid means storing the container as an item.
+            return;
+        }
         // An empty cell, or a resource this container will not take. Left-click then means
-        // what it means in stock Refined Storage: put the thing you are holding away. Spelled
-        // out rather than left to fall through, because falling through would re-enter the
-        // routing with the stale index and could extract from whatever row it still names.
+        // what it means in stock Refined Storage: put the thing you are holding away.
         menu.onInsert(GridInsertMode.ENTIRE_RESOURCE, false);
         cir.setReturnValue(true);
+    }
+
+    /**
+     * The row this click landed on: measured if we can, Refined Storage's own answer if not.
+     *
+     * <p>The fallback is the point. 0.2.104 trusted the recorded rectangles alone and returned
+     * early when none matched, which made every click worse than 0.2.103 if that recording is
+     * ever empty or misplaced - one unproven assumption silently disabling the feature. Falling
+     * back to {@code staleResource} means the fresh answer can only ever be an improvement on
+     * the stale one: when the rectangles are right the click is resolved from its own
+     * coordinates, and when they are not, behaviour is exactly 0.2.103's.
+     *
+     * <p>Which of the two actually answered is in the diagnostic line above, under
+     * {@code logGridViewDiagnostics}. That is the thing to read before theorising about this
+     * method again.
+     */
+    @Unique
+    @Nullable
+    private GridResource rstweaks$rowAt(
+        final AbstractGridContainerMenu menu,
+        final int cell,
+        @Nullable final GridResource staleResource
+    ) {
+        if (cell < 0) {
+            return staleResource;
+        }
+        final List<GridResource> viewList = menu.getRepository().getViewList();
+        return cell < viewList.size() ? viewList.get(cell) : null;
+    }
+
+    /**
+     * Right-clicking somewhere the router above declined to claim.
+     *
+     * <p>Reached only when {@code rstweaks$containerClick} returned without cancelling and
+     * Refined Storage then decided the click was an insert - which is what it decides for
+     * blank grid space. Emptying a container should work anywhere in the grid, including the
+     * blank area past the end of the list, and this is what covers that.
+     *
+     * <p>Kept as a separate hook rather than folded into the router because it answers a
+     * question the router cannot: "is this inside the storage area", which
+     * {@code AbstractGridScreen.canInsert} has already decided by the time this runs. Left
+     * click is deliberately not handled - over blank space it means store the container, which
+     * is stock behaviour and needs no help from us.
+     */
+    @Inject(method = "mouseClickedInGrid(I)V", at = @At("HEAD"), cancellable = true, require = 0)
+    private void rstweaks$containerInsert(final int clickedButton, final CallbackInfo ci) {
+        if (!Config.containerGridClicks
+            || clickedButton != 1
+            || ClientPlatformUtil.isCommandOrControlDown()) {
+            return;
+        }
+        final AbstractGridContainerMenu menu = rstweaks$menu();
+        final ItemStack carried = menu.getCarried();
+        if (!GridContainers.isBulkContainer(carried)) {
+            return;
+        }
+        if (Config.logGridViewDiagnostics) {
+            RSTweaks.LOGGER.info("[rstweaks][grid] container insert fallback (blank area)");
+        }
+        rstweaks$insert(menu, carried, Screen.hasShiftDown());
+        ci.cancel();
     }
 
     /**
