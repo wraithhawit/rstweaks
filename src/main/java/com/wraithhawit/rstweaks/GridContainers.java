@@ -184,6 +184,34 @@ public final class GridContainers {
     }
 
     /**
+     * Whether a transfer of this size will reach the container intact.
+     *
+     * <p>Not a prediction - it runs the exact conversion the transfer will run and looks at
+     * what comes out. {@code VariantUtil.toFluidStack} narrows a long to an int, and
+     * {@link com.wraithhawit.rstweaks.mixin.VariantUtilMixin} clamps the argument first so the
+     * result stops going negative. That mixin carries {@code require = 0} and will decline
+     * silently if another mod has already claimed the method, so asking whether it worked is
+     * the only honest way to know: with it, one operation can move a container's whole
+     * transfer rate; without it, only bucket-sized operations survive and the fill has to be
+     * done the slow way.
+     *
+     * <p>Chemicals carry {@code long} amounts end to end and have no equivalent narrowing, so
+     * they always survive.
+     */
+    public static boolean survivesLargeTransfer(
+        @Nullable final PlatformResourceKey resource,
+        final long amount
+    ) {
+        if (amount <= Integer.MAX_VALUE) {
+            return true;
+        }
+        if (resource instanceof FluidResource fluidResource) {
+            return VariantUtil.toFluidStack(fluidResource, amount).getAmount() > 0;
+        }
+        return true;
+    }
+
+    /**
      * How many bucket-sized transfers this container has room for.
      *
      * <p>The fallback for a resource the network holds more than {@code Integer.MAX_VALUE} of,

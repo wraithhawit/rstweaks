@@ -10,6 +10,16 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.107
+-------
+  Clamp instead of wrap when a fluid amount will not fit in a FluidStack (#17). RS's
+  VariantUtil.toFluidStack warns above Integer.MAX_VALUE and then casts anyway, so a large
+  amount arrives NEGATIVE - which is why a 2.1 MB fluid could not be bucketed out of a grid even
+  in stock RS. Clamping fixes both the canExtract check and the real ENTIRE_RESOURCE transfer,
+  so shift-fill on such a fluid is back to one operation per transfer rate instead of the 64 B a
+  click the bucket fallback allowed. The client asks whether the clamp actually applied by
+  running the conversion, rather than assuming, and keeps the slow path when it did not.
+
 0.2.106
 -------
   A fluid the network holds billions of could not be picked up, and the tank got stored instead

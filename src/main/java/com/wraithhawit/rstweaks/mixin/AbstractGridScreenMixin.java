@@ -8,6 +8,7 @@ import com.refinedmods.refinedstorage.api.network.node.grid.GridInsertMode;
 import com.refinedmods.refinedstorage.api.resource.repository.ResourceRepository;
 import com.refinedmods.refinedstorage.common.api.grid.strategy.GridExtractionStrategy;
 import com.refinedmods.refinedstorage.common.api.grid.view.GridResource;
+import com.refinedmods.refinedstorage.common.api.support.resource.PlatformResourceKey;
 import com.refinedmods.refinedstorage.common.grid.AbstractGridContainerMenu;
 import com.refinedmods.refinedstorage.common.grid.screen.AbstractGridScreen;
 import com.refinedmods.refinedstorage.common.util.ClientPlatformUtil;
@@ -514,11 +515,14 @@ public abstract class AbstractGridScreenMixin {
             return;
         }
         // ENTIRE_RESOURCE asks for min(network total, Long.MAX_VALUE) and the fluid path
-        // narrows that to an int on the way to the container, so a network holding more than
-        // Integer.MAX_VALUE of something hands the tank a negative FluidStack and fills
-        // nothing. Above that line, bucket-sized operations are the only ones that survive the
-        // conversion; below it, one operation per transfer rate is far fewer packets.
-        if (resource.getAmount(menu.getRepository()) > Integer.MAX_VALUE) {
+        // narrows that to an int on the way to the container. VariantUtilMixin clamps it so
+        // the value stops going negative, but that mixin is require = 0 and may decline, so
+        // this asks whether it actually worked rather than assuming: run the same conversion
+        // and look at the result. Clamped, one operation moves a whole transfer rate. Not
+        // clamped, only bucket-sized operations survive and the fill takes the slow path.
+        final PlatformResourceKey key = resource.getResourceForRecipeMods();
+        final long available = resource.getAmount(menu.getRepository());
+        if (!GridContainers.survivesLargeTransfer(key, available)) {
             final int buckets = GridContainers.bucketsToFill(carried);
             for (int operation = 0; operation < buckets; operation++) {
                 resource.onExtract(
@@ -529,8 +533,7 @@ public abstract class AbstractGridScreenMixin {
             }
             return;
         }
-        final int operations =
-            GridContainers.operationsToFill(carried, resource.getResourceForRecipeMods());
+        final int operations = GridContainers.operationsToFill(carried, key);
         for (int operation = 0; operation < operations; operation++) {
             resource.onExtract(GridExtractMode.ENTIRE_RESOURCE, true, (GridExtractionStrategy) menu);
         }

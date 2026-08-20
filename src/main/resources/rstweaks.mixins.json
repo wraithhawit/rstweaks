@@ -22,7 +22,8 @@
     "PatternResolverFuzzyMixin",
     "PreviewCraftingCalculatorListenerMixin",
     "TaskImplMixin",
-    "TaskPlanCraftingCalculatorListenerMixin"
+    "TaskPlanCraftingCalculatorListenerMixin",
+    "VariantUtilMixin"
   ],
   "client": [
     "AbstractGridScreenMixin",

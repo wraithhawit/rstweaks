@@ -8,6 +8,56 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.107
+
+**Clamp instead of wrap.** (Issue #17.) Follows the question "what would it take for it to move
+more than 64 B?" - and the answer turned out to be "remove the reason it was ever 64".
+
+The cap is 64 **operations**, not 64 buckets, and what an operation moves depends on the regime:
+
+| regime | per operation | 64 operations buys |
+|---|---|---|
+| ordinary | one container transfer rate - 64 B on an Ultimate | 4096 B; an Ultimate fills in four, the cap never binds |
+| network total above `Integer.MAX_VALUE` | 1 B, all that survived the conversion | 64 B - the limit actually being hit |
+
+So the limit was never the cap. It was 0.2.106's bucket fallback, and that existed because of
+this:
+
+```java
+public static FluidStack toFluidStack(FluidResource fluidResource, long amount) {
+    if (amount > 2147483647L) {
+        LOGGER.warn("Truncating too large amount for {} to fit into FluidStack {}", fluidResource, amount);
+    }
+    return new FluidStack(..., (int) amount, ...);
+}
+```
+
+The warning is accurate and the cast is not a truncation - it is a **wrap**. Above
+`Integer.MAX_VALUE` the sign flips, so 2.2 billion mB arrives as roughly -2.1 billion, and every
+consumer reads it as nothing or worse. `VariantUtilMixin` clamps the argument first.
+
+**Clamping is correct wherever truncating was not, which is everywhere.** No caller wants a
+negative amount, and any caller asking for more than an `int` can hold is asking for "as much as
+possible". A transfer is a two-sided negotiation - the container answers with what it will
+actually take - so offering `Integer.MAX_VALUE` instead of the true total loses nothing. Only a
+single operation moving more than 2.147 billion mB would notice, and no container has that
+capacity.
+
+That fixes both halves at once: `canExtract` stops declaring that your tank cannot hold XP
+fluid, and `ENTIRE_RESOURCE` transfers work, so shift-fill on such a fluid is back to one
+operation per transfer rate.
+
+**The client asks whether the clamp actually applied rather than assuming it.**
+`survivesLargeTransfer` runs the exact conversion the transfer will run and looks at the result;
+`VariantUtilMixin` is `require = 0` and would decline silently if another mod claimed the
+method, and a fast path chosen on an unverified assumption is how 0.2.104 went wrong. Clamped,
+the fast path; not clamped, 0.2.106's bucket fallback.
+
+**So: what would move more than 64 B?** After this, an ordinary shift-fill already can - four
+operations of 64 B fill an Ultimate. The cap only binds for a container whose capacity is more
+than 64 transfer rates, which no Mekanism tier is. If one ever turns up, `MAX_OPERATIONS` in
+`GridContainers` is the single number to raise, and the only cost is packets in one tick.
+
 ## 0.2.106
 
 **A fluid the network holds billions of could not be picked up, and the tank was stored
