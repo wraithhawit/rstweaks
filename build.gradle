@@ -37,6 +37,15 @@ tasks.register('sparkProfile', JavaExec) {
     jvmArgs = ['-Xss512m']
 }
 
+// Companion to sparkProfile. Spark says which code owns the tick; Observable says which
+// objects do, with a count and a position each -- which is the half you can act on.
+tasks.register('observableProfile', JavaExec) {
+    group = 'verification'
+    description = 'Decodes an Observable profile: ./gradlew observableProfile --args="<url|id|file>"'
+    classpath = sourceSets.main.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'com.wraithhawit.rstweaks.test.ObservableProfile'
+}
+
 minecraft {
     accessTransformers {
         file('src/main/resources/META-INF/accesstransformer.cfg')
