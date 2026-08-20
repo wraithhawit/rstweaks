@@ -8,6 +8,69 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.104
+
+**Clicking a row faster than the game could draw it put the tank in the network.** (Issue #17.)
+
+Reported in game on 0.2.103: *"sometimes it won't fill and will just insert, I think it's if I
+hover over it too fast."* Exactly right, and the reason is that Refined Storage decides which
+row you clicked while it is **rendering**, not while you are clicking:
+
+```java
+protected void renderRows(...) {
+    this.currentGridSlotIndex = -1;                       // reset each frame
+    ...
+}
+private void renderSlot(GuiGraphics g, int mouseX, int mouseY, int idx, ...) {
+    boolean inBounds = mouseX >= slotX && ... ;
+    if (inBounds && this.isOverStorageArea(mouseX, mouseY)) {
+        if (resource != null) this.currentGridSlotIndex = idx;
+    }
+}
+```
+
+`mouseClicked` then reads `getCurrentGridResource()`, which is whatever the **last drawn
+frame** was hovering. Move onto a row and click before the next frame arrives and the index is
+stale or `-1`, so `canExtract` answers false and the click falls through to the insert branch.
+
+In stock Refined Storage that is nearly harmless: the insert branch inserts the carried stack,
+which is what a left-click over the grid does anyway. Holding a tank it is not — the tank goes
+into the network instead of being filled. **This is a stock race that this feature made
+expensive**, not something the feature introduced.
+
+Clicks made with a container on the cursor are now resolved from **the coordinates the click
+carries**, not from the last frame's hover. The slot rectangles are recorded as Refined
+Storage draws them, at the point where it is already handed `slotX` and `slotY`:
+
+```java
+@Inject(method = "renderSlot(...IIILcom/refinedmods/.../ResourceRepository;II)V", at = @At("HEAD"))
+```
+
+so none of the layout - the seven pixel inset, the eighteen pixel pitch, nine columns, the
+scrollbar offset - is duplicated on our side, and a change to any of it is picked up rather
+than drifted from. The hit test is then RS's own, `mouseX >= slotX && ... <= slotX + 16`,
+against those rectangles.
+
+The hook also moved up from the two entry points to the router itself,
+`mouseClicked(double, double, int, GridResource, ItemStack)`, because **the routing decision
+was the thing that was wrong**. All four outcomes are handled there and the callback is
+cancelled for every one of them - falling through for any would hand that case back to stock,
+reading the same stale index. Clicks that are not over a drawn cell at all, or not carrying a
+container, still return untouched.
+
+Behaviour is unchanged from what 0.2.103 intended:
+
+```
+  left-click          on a row it can accept: fill the container by one bucket
+  left-click          anywhere else in the grid: store the container as an item (stock)
+  right-click         empty one bucket of it into the network, anywhere in the grid
+  shift + either      as many operations as it takes to fill or empty it
+```
+
+All three injectors were checked against the shipped Refined Storage bytecode rather than the
+decompiled source, because they carry `require = 0`: a descriptor that does not match would
+disable the feature silently instead of crashing.
+
 ## 0.2.103
 
 **A shift-click now sends its operations together, in the tick it was made.** (Issue #17.)

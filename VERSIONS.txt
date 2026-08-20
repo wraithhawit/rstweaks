@@ -10,6 +10,15 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.104
+-------
+  Fixes "sometimes it won't fill and just inserts if I hover too fast" (#17). RS assigns the
+  clicked row while RENDERING, so a click that beats the next frame is answered with the last
+  frame's hover - stale or -1 - and falls through to the insert branch, putting the tank in the
+  network. Container clicks are now resolved from the coordinates the click carries, against
+  slot rectangles recorded as RS draws them, so no layout math is duplicated. The hook moved up
+  to the click router because the routing was what was wrong.
+
 0.2.103
 -------
   Shift-click now sends its operations together in one tick instead of one per tick until the

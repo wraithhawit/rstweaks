@@ -1,5 +1,8 @@
 package com.wraithhawit.rstweaks.mixin;
 
+import java.util.Arrays;
+import java.util.List;
+
 import com.refinedmods.refinedstorage.api.network.node.grid.GridExtractMode;
 import com.refinedmods.refinedstorage.api.network.node.grid.GridInsertMode;
 import com.refinedmods.refinedstorage.api.resource.repository.ResourceRepository;
@@ -12,8 +15,11 @@ import com.refinedmods.refinedstorage.common.util.ClientPlatformUtil;
 import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.GridContainers;
 
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.world.item.ItemStack;
+
+import org.jetbrains.annotations.Nullable;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -21,6 +27,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Stops a plain mouse-wheel scroll from switching the grid's sorting off forever.
@@ -205,8 +212,12 @@ public abstract class AbstractGridScreenMixin {
     // Left fills and right empties whichever you clicked, so a tank no longer has to be
     // dumped by hunting for blank space in the grid: right-clicking the fluid's own row now
     // does it. Everything else - an ordinary item on the cursor, an empty cursor, ctrl-click,
-    // autocrafting - routes exactly as it did, because both hooks return without touching the
+    // autocrafting - routes exactly as it did, because the hook returns without touching the
     // callback unless GridContainers says the cursor holds a tank.
+    //
+    // The click is resolved from the coordinates it happened at, not from the row Refined
+    // Storage last DREW as hovered. See rstweaks$containerClick - that distinction is a bug
+    // fix, not a refinement.
     //
     // EVERY insert here passes tryAlternatives = true, and that flag is not optional. Read
     // CompositeGridInsertionStrategy:
@@ -229,82 +240,205 @@ public abstract class AbstractGridScreenMixin {
     // ------------------------------------------------------------------------------------
 
     /**
-     * Right-clicking blank grid space with a container held: empty it into the network.
+     * The slot rectangles Refined Storage drew last frame, so a click can be resolved against
+     * the coordinates it actually happened at.
      *
-     * <p>Injected at HEAD of the insert entry point rather than at the click router, so
-     * Refined Storage has already decided this is an insert - the storage-area bounds, the
-     * button filter and the empty-cursor check are all upstream of here and are not
-     * restated. The reroute of a right-click on a resource row is the other hook.
-     *
-     * <p><b>Left-click is deliberately not handled here.</b> Left means "fill the container",
-     * and blank grid space is not something to fill from - there is no resource under the
-     * cursor to name. Left-clicking away from a row therefore keeps stock behaviour, which
-     * stores the tank as an item; that is the only sensible reading of the gesture and it is
-     * how an empty tank has always been put into the network.
+     * <p>Three parallel arrays rather than objects because this is rebuilt every frame and
+     * read on every click; 63 cells is the usual grid and the arrays grow if a stretched
+     * screen wants more.
      */
-    @Inject(method = "mouseClickedInGrid(I)V", at = @At("HEAD"), cancellable = true, require = 0)
-    private void rstweaks$containerInsert(final int clickedButton, final CallbackInfo ci) {
-        if (!Config.containerGridClicks || clickedButton != 1) {
-            return;
-        }
-        final AbstractGridContainerMenu menu = rstweaks$menu();
-        final ItemStack carried = menu.getCarried();
-        if (!GridContainers.isBulkContainer(carried)) {
-            return;
-        }
-        rstweaks$insert(menu, carried, Screen.hasShiftDown());
-        ci.cancel();
+    @Unique
+    private int[] rstweaks$cellIndex = new int[128];
+
+    @Unique
+    private int[] rstweaks$cellX = new int[128];
+
+    @Unique
+    private int[] rstweaks$cellY = new int[128];
+
+    @Unique
+    private int rstweaks$cellCount;
+
+    /**
+     * Starts a fresh frame's worth of slot rectangles.
+     *
+     * <p>Same place Refined Storage clears {@code currentGridSlotIndex}, for the same reason.
+     */
+    @Inject(method = "renderRows", at = @At("HEAD"), require = 0)
+    private void rstweaks$beginCells(
+        final GuiGraphics graphics,
+        final int x,
+        final int y,
+        final int topHeight,
+        final int rows,
+        final int mouseX,
+        final int mouseY,
+        final CallbackInfo ci
+    ) {
+        rstweaks$cellCount = 0;
     }
 
     /**
-     * Clicking a resource row with a container held.
+     * Records where one grid cell was drawn.
      *
-     * <p>Left fills the container from that row, right empties the container into the
-     * network. The right-click case is the one reroute in all of this: stock Refined Storage
-     * has no way to insert while the cursor is over a row it could extract from, because
-     * {@code mouseClicked} commits to the extract branch as soon as {@code canExtract}
-     * agrees, whichever button was pressed.
-     *
-     * <p>The extract passes {@code cursor = true} unconditionally. Stock derives that from
-     * "is shift down", meaning "put the result in my inventory instead" - a bucket rule that
-     * makes no sense once shift means "fill it up", and one the fluid strategy ignores anyway
-     * when a container is on the cursor. Passing true says the thing being filled is the
-     * thing you are holding, which is the only reading available here.
+     * <p>Hooked here rather than at {@code renderCell} because this method is <em>handed</em>
+     * {@code slotX} and {@code slotY} already computed. Nothing about the layout - the seven
+     * pixel inset, the eighteen pixel pitch, nine columns, the scrollbar offset - is repeated
+     * on our side, so a change to any of it is picked up rather than drifted from.
      */
     @Inject(
-        method = "mouseClickedInGrid(ILcom/refinedmods/refinedstorage/common/api/grid/view/GridResource;)V",
+        method = "renderSlot(Lnet/minecraft/client/gui/GuiGraphics;IIILcom/refinedmods/"
+            + "refinedstorage/api/resource/repository/ResourceRepository;II)V",
+        at = @At("HEAD"),
+        require = 0
+    )
+    private void rstweaks$recordCell(
+        final GuiGraphics graphics,
+        final int mouseX,
+        final int mouseY,
+        final int idx,
+        final ResourceRepository<GridResource> repository,
+        final int slotX,
+        final int slotY,
+        final CallbackInfo ci
+    ) {
+        if (rstweaks$cellCount == rstweaks$cellIndex.length) {
+            rstweaks$cellIndex = Arrays.copyOf(rstweaks$cellIndex, rstweaks$cellCount * 2);
+            rstweaks$cellX = Arrays.copyOf(rstweaks$cellX, rstweaks$cellCount * 2);
+            rstweaks$cellY = Arrays.copyOf(rstweaks$cellY, rstweaks$cellCount * 2);
+        }
+        rstweaks$cellIndex[rstweaks$cellCount] = idx;
+        rstweaks$cellX[rstweaks$cellCount] = slotX;
+        rstweaks$cellY[rstweaks$cellCount] = slotY;
+        ++rstweaks$cellCount;
+    }
+
+    /**
+     * Every grid click made while holding a container, decided from the click's own position.
+     *
+     * <p>This takes over the whole routing decision instead of hooking the two entry points
+     * underneath it, because <b>the routing itself is what was wrong</b>. Refined Storage
+     * resolves the clicked row from {@code currentGridSlotIndex}, which is assigned while
+     * <em>rendering</em>:
+     *
+     * <pre>{@code   protected void renderRows(...) {
+     *       this.currentGridSlotIndex = -1;
+     *       ...
+     *   }
+     *   private void renderSlot(GuiGraphics g, int mouseX, int mouseY, int idx, ...) {
+     *       boolean inBounds = mouseX >= slotX && ...;
+     *       if (inBounds && isOverStorageArea(mouseX, mouseY)) {
+     *           if (resource != null) this.currentGridSlotIndex = idx;
+     *       }
+     *   } }</pre>
+     *
+     * <p>So a click is answered with the row the <em>last drawn frame</em> was hovering. Move
+     * the cursor onto a row and click before the next frame and the index is stale or -1,
+     * {@code canExtract} is false, and the click falls through to the insert branch. In stock
+     * Refined Storage that is nearly harmless - a left-click inserts the carried stack, which
+     * is what a left-click on blank space does anyway. Holding a tank it is not: the tank goes
+     * into the network instead of being filled. Reported in game on 0.2.103 as "sometimes it
+     * won't fill and will just insert, I think it's if I hover over it too fast".
+     *
+     * <p>{@code rstweaks$cellAt} answers from the rectangles recorded above and the
+     * coordinates this click carries, so the outcome no longer depends on whether a frame
+     * happened to land between the mouse moving and the button going down.
+     *
+     * <p>All four outcomes are handled here and the callback is cancelled for every one of
+     * them. Falling through for some would put stock back in charge of those, reading the same
+     * stale index - the bug this exists to avoid.
+     */
+    @Inject(
+        method = "mouseClicked(DDILcom/refinedmods/refinedstorage/common/api/grid/view/"
+            + "GridResource;Lnet/minecraft/world/item/ItemStack;)Z",
         at = @At("HEAD"),
         cancellable = true,
         require = 0
     )
-    private void rstweaks$containerExtract(
+    private void rstweaks$containerClick(
+        final double mouseX,
+        final double mouseY,
         final int clickedButton,
-        final GridResource resource,
-        final CallbackInfo ci
+        @Nullable final GridResource staleResource,
+        final ItemStack carriedStack,
+        final CallbackInfoReturnable<Boolean> cir
     ) {
-        if (!Config.containerGridClicks) {
+        if (!Config.containerGridClicks
+            || (clickedButton != 0 && clickedButton != 1)
+            || ClientPlatformUtil.isCommandOrControlDown()
+            || !GridContainers.isBulkContainer(carriedStack)) {
+            return;
+        }
+        final int cell = rstweaks$cellAt(mouseX, mouseY);
+        if (cell < 0) {
+            // Not over a slot at all - a gutter, a side button, the search field. Stock.
             return;
         }
         final AbstractGridContainerMenu menu = rstweaks$menu();
-        final ItemStack carried = menu.getCarried();
-        if (!GridContainers.isBulkContainer(carried)) {
-            return;
-        }
         final boolean all = Screen.hasShiftDown();
         if (clickedButton == 1) {
-            rstweaks$insert(menu, carried, all);
-        } else {
-            final int operations = all
-                ? GridContainers.operationsToFill(carried, resource.getResourceForRecipeMods())
-                : 1;
-            final GridExtractMode mode = all
-                ? GridExtractMode.ENTIRE_RESOURCE
-                : GridExtractMode.SINGLE_RESOURCE;
-            for (int operation = 0; operation < operations; operation++) {
-                resource.onExtract(mode, true, (GridExtractionStrategy) menu);
+            rstweaks$insert(menu, carriedStack, all);
+            cir.setReturnValue(true);
+            return;
+        }
+        final List<GridResource> viewList = menu.getRepository().getViewList();
+        final GridResource resource = cell < viewList.size() ? viewList.get(cell) : null;
+        if (resource != null && resource.canExtract(carriedStack, menu.getRepository())) {
+            rstweaks$fill(menu, carriedStack, resource, all);
+            cir.setReturnValue(true);
+            return;
+        }
+        // An empty cell, or a resource this container will not take. Left-click then means
+        // what it means in stock Refined Storage: put the thing you are holding away. Spelled
+        // out rather than left to fall through, because falling through would re-enter the
+        // routing with the stale index and could extract from whatever row it still names.
+        menu.onInsert(GridInsertMode.ENTIRE_RESOURCE, false);
+        cir.setReturnValue(true);
+    }
+
+    /**
+     * The index of the grid cell drawn under this point, or -1.
+     *
+     * <p>Refined Storage's own hit test, {@code mouseX >= slotX && ... <= slotX + 16}, against
+     * rectangles it computed itself.
+     */
+    @Unique
+    private int rstweaks$cellAt(final double mouseX, final double mouseY) {
+        for (int cell = 0; cell < rstweaks$cellCount; cell++) {
+            final int x = rstweaks$cellX[cell];
+            final int y = rstweaks$cellY[cell];
+            if (mouseX >= x && mouseY >= y && mouseX <= x + 16 && mouseY <= y + 16) {
+                return rstweaks$cellIndex[cell];
             }
         }
-        ci.cancel();
+        return -1;
+    }
+
+    /**
+     * Fill the carried container from this row.
+     *
+     * <p>{@code cursor = true} unconditionally. Stock derives that from "is shift down",
+     * meaning "put the result in my inventory instead" - a bucket rule that makes no sense
+     * once shift means "fill it up", and one the fluid strategy ignores anyway when a
+     * container is on the cursor. Passing true says the thing being filled is the thing you
+     * are holding, which is the only reading available here.
+     */
+    @Unique
+    private void rstweaks$fill(
+        final AbstractGridContainerMenu menu,
+        final ItemStack carried,
+        final GridResource resource,
+        final boolean all
+    ) {
+        final int operations = all
+            ? GridContainers.operationsToFill(carried, resource.getResourceForRecipeMods())
+            : 1;
+        final GridExtractMode mode = all
+            ? GridExtractMode.ENTIRE_RESOURCE
+            : GridExtractMode.SINGLE_RESOURCE;
+        for (int operation = 0; operation < operations; operation++) {
+            resource.onExtract(mode, true, (GridExtractionStrategy) menu);
+        }
     }
 
     /**
