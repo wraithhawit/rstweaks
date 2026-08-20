@@ -8,6 +8,50 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.103
+
+**A shift-click now sends its operations together, in the tick it was made.** (Issue #17.)
+
+0.2.101 emptied a tank by re-sending one operation per tick for as long as the cursor stack
+kept changing, then stopping after eight quiet ticks. It worked, and it felt like it: a click
+took most of a second, and the last eight ticks of that were spent waiting to discover it was
+already finished.
+
+The count is now known before the first operation leaves. `GridContainers` divides the
+container's contents - or its free space - by what one operation moves:
+
+```java
+long stored = 0;
+for (int tank = 0; tank < fluid.getTanks(); tank++) {
+    stored += fluid.getFluidInTank(tank).getAmount();
+}
+return operations(stored, fluid.drain(Integer.MAX_VALUE, SIMULATE).getAmount());
+```
+
+**Both figures are measured, not assumed.** The divisor is a simulated drain of everything,
+which is exactly the amount a real `ENTIRE_RESOURCE` insert will move, because it is the same
+call with `EXECUTE`. So the tier table in the 0.2.101 notes is documentation, not something
+the code depends on: a config that changes a Mekanism rate, a tier we have not heard of, or a
+tank from another mod entirely all answer correctly without being known about. Anything that
+declines to give a number - full, empty, wrong resource, no opinion - falls back to a single
+operation, which is Refined Storage's own behaviour.
+
+The fill direction needs the resource as well as the container, because an empty tank cannot
+be asked what it would give back, only what it would accept, and what it would accept depends
+on what is offered. It comes from `GridResource.getResourceForRecipeMods()`.
+
+Chemicals get the same arithmetic through `IChemicalHandler`, reached with reflective handles
+resolved once alongside the capability lookup. They are resolved as a group, so a partial API
+change disables the measurement rather than half-performing it. Note that `insertChemical`
+returns the *remainder*, so what fits is the offer minus what comes back - the one place the
+two APIs do not read alike.
+
+Overshooting is harmless and undershooting is unlikely: an operation with nothing left to move
+is a packet the server answers with a zero-length transfer, and the count is capped at 64.
+What the network can accept is deliberately not part of the sum - that is the server's to
+enforce, and having the client predict it would be predicting a condition rather than
+measuring a container.
+
 ## 0.2.102
 
 **Fixes 0.2.101: every container click also put the tank itself into the network.** (Issue #17.)

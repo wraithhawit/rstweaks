@@ -15,8 +15,6 @@ import com.wraithhawit.rstweaks.GridContainers;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.world.item.ItemStack;
 
-import org.jetbrains.annotations.Nullable;
-
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -195,13 +193,14 @@ public abstract class AbstractGridScreenMixin {
     // Mekanism tank hands over one tier transfer rate per operation - 64 B on an Ultimate,
     // against a 256 B capacity (FluidTankTier: BASIC 32 B/1 B, ADVANCED 64/4, ELITE 128/16,
     // ULTIMATE 256/64). So "dump the whole tank" is not a bigger transfer, it is the same
-    // transfer repeated, which is what rstweaks$driveContainerRepeat does.
+    // transfer several times, and the count comes from GridContainers, which measures the
+    // container with a simulated transfer instead of assuming a tier table.
     //
     // The bindings below, active only while a fluid or chemical container is on the cursor:
     //
     //   left-click            on a row it can accept: fill the container by one bucket
     //   right-click           empty one bucket of it into the network, anywhere in the grid
-    //   shift + either        run that direction until it stops moving
+    //   shift + either        as many operations as it takes to fill or empty it
     //
     // Left fills and right empties whichever you clicked, so a tank no longer has to be
     // dumped by hunting for blank space in the grid: right-clicking the fluid's own row now
@@ -228,44 +227,6 @@ public abstract class AbstractGridScreenMixin {
     // that stores an EMPTY tank as an item, because the fluid strategy declines an empty
     // container on its own and the default runs after it.
     // ------------------------------------------------------------------------------------
-
-    /**
-     * Ceiling on repeated operations, so a bug here cannot spin forever.
-     *
-     * <p>Four covers an Ultimate fluid tank; the headroom is for a creative tank
-     * (2,147,483,647 mB capacity against a 1,073,741,823 mB rate, so two) and for whatever
-     * ratio a mod we have never seen picks. Reaching this limit is not an error worth
-     * reporting - the transfer simply stops, and clicking again continues it.
-     */
-    @Unique
-    private static final int RSTWEAKS_REPEAT_LIMIT = 64;
-
-    /**
-     * How many ticks of an unchanged cursor stack end a repeat.
-     *
-     * <p>Each operation is a packet to the server and the changed stack coming back, so a
-     * tick or two of "nothing yet" is the normal case on a real server, not the end of the
-     * transfer. This waits long enough to tell one from the other.
-     */
-    @Unique
-    private static final int RSTWEAKS_REPEAT_IDLE_TICKS = 8;
-
-    /** Operations left in the current repeat; zero when no repeat is running. */
-    @Unique
-    private int rstweaks$repeatsLeft;
-
-    /** Consecutive ticks the cursor stack has not changed. */
-    @Unique
-    private int rstweaks$repeatIdleTicks;
-
-    /** The cursor stack as it was when the last operation was sent. */
-    @Unique
-    private ItemStack rstweaks$repeatCarried = ItemStack.EMPTY;
-
-    /** The row being drained into the container, or null when the repeat is a dump. */
-    @Unique
-    @Nullable
-    private GridResource rstweaks$repeatResource;
 
     /**
      * Right-clicking blank grid space with a container held: empty it into the network.
@@ -333,20 +294,21 @@ public abstract class AbstractGridScreenMixin {
         if (clickedButton == 1) {
             rstweaks$insert(menu, carried, all);
         } else {
-            resource.onExtract(
-                all ? GridExtractMode.ENTIRE_RESOURCE : GridExtractMode.SINGLE_RESOURCE,
-                true,
-                (GridExtractionStrategy) menu
-            );
-            if (all) {
-                rstweaks$armRepeat(resource, carried);
+            final int operations = all
+                ? GridContainers.operationsToFill(carried, resource.getResourceForRecipeMods())
+                : 1;
+            final GridExtractMode mode = all
+                ? GridExtractMode.ENTIRE_RESOURCE
+                : GridExtractMode.SINGLE_RESOURCE;
+            for (int operation = 0; operation < operations; operation++) {
+                resource.onExtract(mode, true, (GridExtractionStrategy) menu);
             }
         }
         ci.cancel();
     }
 
     /**
-     * One insert operation, arming a repeat when it was a shift-click.
+     * One insert operation, or as many as it takes to empty the container on a shift-click.
      *
      * <p>{@code tryAlternatives} is always true. See the block comment above: it is what
      * makes the fluid and chemical strategies eligible at all, and false sends the tank
@@ -358,81 +320,31 @@ public abstract class AbstractGridScreenMixin {
         final ItemStack carried,
         final boolean all
     ) {
-        menu.onInsert(
-            all ? GridInsertMode.ENTIRE_RESOURCE : GridInsertMode.SINGLE_RESOURCE,
-            true
-        );
-        if (all) {
-            rstweaks$armRepeat(null, carried);
+        final int operations = all ? GridContainers.operationsToEmpty(carried) : 1;
+        final GridInsertMode mode = all
+            ? GridInsertMode.ENTIRE_RESOURCE
+            : GridInsertMode.SINGLE_RESOURCE;
+        for (int operation = 0; operation < operations; operation++) {
+            menu.onInsert(mode, true);
         }
     }
 
-    @Unique
-    private void rstweaks$armRepeat(
-        @Nullable final GridResource resource,
-        final ItemStack carried
-    ) {
-        rstweaks$repeatResource = resource;
-        rstweaks$repeatsLeft = RSTWEAKS_REPEAT_LIMIT;
-        rstweaks$repeatIdleTicks = 0;
-        rstweaks$repeatCarried = carried.copy();
-    }
-
-    /**
-     * Repeats a shift-click's operation until the container stops changing.
-     *
-     * <p>The stop condition is the cursor stack itself, not a predicted count. Predicting one
-     * would mean asking the container for its capacity and its per-operation rate and
-     * dividing - two numbers a mod is free to make dynamic, through an API we would have to
-     * reach reflectively for chemicals. Watching the stack instead needs neither: whatever
-     * the container did, the item that came back from the server either differs from the one
-     * we sent or it does not, and only the second is the end of the transfer. Issue #15 was
-     * five wrong answers long because its probes re-evaluated a condition rather than
-     * observing an effect; this is the same lesson spent in advance.
-     *
-     * <p>Shift is deliberately not re-checked. A shift-click released quickly is still a
-     * shift-click, and requiring the modifier to be held for the whole run would make the
-     * result depend on how fast the player let go.
-     */
-    @Inject(method = "containerTick", at = @At("TAIL"), require = 0)
-    private void rstweaks$driveContainerRepeat(final CallbackInfo ci) {
-        if (rstweaks$repeatsLeft <= 0) {
-            return;
-        }
-        final AbstractGridContainerMenu menu = rstweaks$menu();
-        final ItemStack carried = menu.getCarried();
-        if (!GridContainers.isBulkContainer(carried)) {
-            // The container left the cursor - put away, dropped, or swapped mid-transfer.
-            rstweaks$stopRepeat();
-            return;
-        }
-        if (ItemStack.matches(carried, rstweaks$repeatCarried)) {
-            if (++rstweaks$repeatIdleTicks >= RSTWEAKS_REPEAT_IDLE_TICKS) {
-                rstweaks$stopRepeat();
-            }
-            return;
-        }
-        rstweaks$repeatCarried = carried.copy();
-        rstweaks$repeatIdleTicks = 0;
-        --rstweaks$repeatsLeft;
-        if (rstweaks$repeatResource == null) {
-            menu.onInsert(GridInsertMode.ENTIRE_RESOURCE, true);
-        } else {
-            rstweaks$repeatResource.onExtract(
-                GridExtractMode.ENTIRE_RESOURCE,
-                true,
-                (GridExtractionStrategy) menu
-            );
-        }
-    }
-
-    @Unique
-    private void rstweaks$stopRepeat() {
-        rstweaks$repeatsLeft = 0;
-        rstweaks$repeatIdleTicks = 0;
-        rstweaks$repeatResource = null;
-        rstweaks$repeatCarried = ItemStack.EMPTY;
-    }
+    // A shift-click sends its operations together, in the tick it was made, because the count
+    // is known before the first one leaves. GridContainers divides the container's contents -
+    // or its free space - by what one operation moves, and both figures come from simulating
+    // that very operation against the container on the cursor, so the count is measured and
+    // not derived from a tier table we would have to keep in step with Mekanism.
+    //
+    // 0.2.101 and 0.2.102 instead re-sent one operation per tick for as long as the cursor
+    // stack kept changing, and stopped after eight quiet ticks. That needed no measurement at
+    // all, which is why it was tried first, but it spread a click over most of a second and
+    // spent its last eight ticks waiting to find out it was finished.
+    //
+    // Overshooting is harmless and undershooting is unlikely: an operation with nothing left
+    // to move is a packet the server answers with a zero-length transfer, and the count is
+    // capped. What the network can accept is deliberately not part of the sum - it is the
+    // server's to enforce, and asking the client to predict it would be predicting a
+    // condition rather than measuring a container.
 
     @Unique
     private AbstractGridContainerMenu rstweaks$menu() {
