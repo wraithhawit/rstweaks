@@ -199,8 +199,8 @@ public abstract class AbstractGridScreenMixin {
     //
     // The bindings below, active only while a fluid or chemical container is on the cursor:
     //
-    //   left-click            fill the container by one bucket
-    //   right-click           empty one bucket of it into the network
+    //   left-click            on a row it can accept: fill the container by one bucket
+    //   right-click           empty one bucket of it into the network, anywhere in the grid
     //   shift + either        run that direction until it stops moving
     //
     // Left fills and right empties whichever you clicked, so a tank no longer has to be
@@ -208,6 +208,25 @@ public abstract class AbstractGridScreenMixin {
     // does it. Everything else - an ordinary item on the cursor, an empty cursor, ctrl-click,
     // autocrafting - routes exactly as it did, because both hooks return without touching the
     // callback unless GridContainers says the cursor holds a tank.
+    //
+    // EVERY insert here passes tryAlternatives = true, and that flag is not optional. Read
+    // CompositeGridInsertionStrategy:
+    //
+    //   if (tryAlternatives) {
+    //       for (GridInsertionStrategy alt : alternativeStrategies) {
+    //           if (alt.onInsert(insertMode, true)) return true;
+    //       }
+    //   }
+    //   return this.defaultStrategy.onInsert(insertMode, tryAlternatives);
+    //
+    // The fluid and chemical strategies are the ALTERNATIVES; the default is the item
+    // strategy, which inserts the carried stack itself and never declines. So the flag does
+    // not mean "try harder after failing" - it means "consider fluids at all", and passing
+    // false does not fall back to storing the tank, it goes straight there. 0.2.101 passed
+    // Refined Storage's own (clickedButton == 1) through and put the tank in the network on
+    // every left-click and on every tick of a shift-repeat. Passing true keeps the fallback
+    // that stores an EMPTY tank as an item, because the fluid strategy declines an empty
+    // container on its own and the default runs after it.
     // ------------------------------------------------------------------------------------
 
     /**
@@ -249,16 +268,22 @@ public abstract class AbstractGridScreenMixin {
     private GridResource rstweaks$repeatResource;
 
     /**
-     * Clicking blank grid space with a container held: empty it into the network.
+     * Right-clicking blank grid space with a container held: empty it into the network.
      *
      * <p>Injected at HEAD of the insert entry point rather than at the click router, so
      * Refined Storage has already decided this is an insert - the storage-area bounds, the
      * button filter and the empty-cursor check are all upstream of here and are not
      * restated. The reroute of a right-click on a resource row is the other hook.
+     *
+     * <p><b>Left-click is deliberately not handled here.</b> Left means "fill the container",
+     * and blank grid space is not something to fill from - there is no resource under the
+     * cursor to name. Left-clicking away from a row therefore keeps stock behaviour, which
+     * stores the tank as an item; that is the only sensible reading of the gesture and it is
+     * how an empty tank has always been put into the network.
      */
     @Inject(method = "mouseClickedInGrid(I)V", at = @At("HEAD"), cancellable = true, require = 0)
     private void rstweaks$containerInsert(final int clickedButton, final CallbackInfo ci) {
-        if (!Config.containerGridClicks) {
+        if (!Config.containerGridClicks || clickedButton != 1) {
             return;
         }
         final AbstractGridContainerMenu menu = rstweaks$menu();
@@ -266,7 +291,7 @@ public abstract class AbstractGridScreenMixin {
         if (!GridContainers.isBulkContainer(carried)) {
             return;
         }
-        rstweaks$insert(menu, carried, clickedButton, Screen.hasShiftDown());
+        rstweaks$insert(menu, carried, Screen.hasShiftDown());
         ci.cancel();
     }
 
@@ -306,7 +331,7 @@ public abstract class AbstractGridScreenMixin {
         }
         final boolean all = Screen.hasShiftDown();
         if (clickedButton == 1) {
-            rstweaks$insert(menu, carried, clickedButton, all);
+            rstweaks$insert(menu, carried, all);
         } else {
             resource.onExtract(
                 all ? GridExtractMode.ENTIRE_RESOURCE : GridExtractMode.SINGLE_RESOURCE,
@@ -323,19 +348,19 @@ public abstract class AbstractGridScreenMixin {
     /**
      * One insert operation, arming a repeat when it was a shift-click.
      *
-     * <p>{@code tryAlternatives} keeps its stock meaning - right-click only - so that the
-     * fallback storing an <em>empty</em> tank as an item behaves as it always did.
+     * <p>{@code tryAlternatives} is always true. See the block comment above: it is what
+     * makes the fluid and chemical strategies eligible at all, and false sends the tank
+     * itself into the network instead of what is inside it.
      */
     @Unique
     private void rstweaks$insert(
         final AbstractGridContainerMenu menu,
         final ItemStack carried,
-        final int clickedButton,
         final boolean all
     ) {
         menu.onInsert(
             all ? GridInsertMode.ENTIRE_RESOURCE : GridInsertMode.SINGLE_RESOURCE,
-            clickedButton == 1
+            true
         );
         if (all) {
             rstweaks$armRepeat(null, carried);
@@ -391,7 +416,7 @@ public abstract class AbstractGridScreenMixin {
         rstweaks$repeatIdleTicks = 0;
         --rstweaks$repeatsLeft;
         if (rstweaks$repeatResource == null) {
-            menu.onInsert(GridInsertMode.ENTIRE_RESOURCE, false);
+            menu.onInsert(GridInsertMode.ENTIRE_RESOURCE, true);
         } else {
             rstweaks$repeatResource.onExtract(
                 GridExtractMode.ENTIRE_RESOURCE,

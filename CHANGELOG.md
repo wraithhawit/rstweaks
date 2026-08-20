@@ -8,6 +8,49 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.102
+
+**Fixes 0.2.101: every container click also put the tank itself into the network.** (Issue #17.)
+
+Left-clicking a fluid row put a bucket in the tank *and* stored the tank; right-clicking put a
+bucket in the network *and* stored the tank. One cause for both, and it is worth writing down
+because the flag is named for the opposite of what it does.
+
+`CompositeGridInsertionStrategy`:
+
+```java
+public boolean onInsert(GridInsertMode insertMode, boolean tryAlternatives) {
+    if (tryAlternatives) {
+        for (GridInsertionStrategy alt : this.alternativeStrategies) {
+            if (alt.onInsert(insertMode, true)) return true;
+        }
+    }
+    return this.defaultStrategy.onInsert(insertMode, tryAlternatives);
+}
+```
+
+The **default** strategy is `ItemGridInsertionStrategy`, which inserts the carried stack and
+never declines. The fluid and chemical strategies are the **alternatives**. So
+`tryAlternatives` does not mean "try harder if the normal thing fails" — it means *consider
+fluids at all*, and passing false does not fall back to storing the tank, it goes straight to
+storing the tank.
+
+0.2.101 passed Refined Storage's own `clickedButton == 1` through, so every left-click and
+every tick of a shift-repeat took the item path. Every insert now passes `true`. The fallback
+that stores an **empty** tank as an item is unaffected — the fluid strategy declines an empty
+container on its own, and the default runs after it.
+
+**Left-click no longer inserts at all.** Left means "fill the container", and blank grid space
+is not something to fill from, so left-clicking away from a resource row now keeps stock
+behaviour rather than being intercepted. The bindings, with a fluid or chemical container on
+the cursor:
+
+```
+  left-click          on a row it can accept: fill the container by one bucket
+  right-click         empty one bucket of it into the network, anywhere in the grid
+  shift + either      keep going until the transfer stops moving anything
+```
+
 ## 0.2.101
 
 **Grid clicks that make sense while you are holding a tank.** (Issue #17.)

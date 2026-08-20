@@ -10,6 +10,16 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.102
+-------
+  Fixes 0.2.101, which also stored the tank itself on every container click (#17).
+  CompositeGridInsertionStrategy's tryAlternatives does not mean "try harder after failing" -
+  the fluid and chemical strategies ARE the alternatives and the default is the item strategy,
+  so passing false goes straight to putting the tank in the network. Every insert now passes
+  true; storing an EMPTY tank as an item still works, because the fluid strategy declines it
+  and the default runs after. Left-click also no longer inserts at all - it only fills the
+  container from a row it can accept.
+
 0.2.101
 -------
   Grid clicks that make sense while holding a tank (#17). With a fluid or chemical container
