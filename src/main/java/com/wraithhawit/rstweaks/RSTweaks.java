@@ -13,9 +13,11 @@ import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.config.ModConfigEvent;
+import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 
+import com.wraithhawit.rstweaks.mekanism.MekanismQio;
 import com.wraithhawit.rstweaks.planner.Durability;
 import com.wraithhawit.rstweaks.storage.DrawerDenylist;
 import com.wraithhawit.rstweaks.storage.ItemDurability;
@@ -72,6 +74,17 @@ public class RSTweaks {
         NeoForge.EVENT_BUS.register(SelfTestCommand.class);
         // Only fires when -Dneoforge.enabledGameTestNamespaces includes this mod;
         // the command above is the version that works without a launch flag.
+        // Common setup rather than here: Refined Storage installs its API delegate and registers
+        // its own external storage providers in its mod constructor, and constructor order
+        // between two mods is not something to rely on. ModList is only dependable this late too.
+        modEventBus.addListener(FMLCommonSetupEvent.class, event -> {
+            // enqueueWork, not the listener body: common setup is dispatched in parallel across
+            // mods, and RS keeps its factories in a plain ArrayList. The enqueued work runs on
+            // the main thread, one mod at a time.
+            if (MekanismQio.isAvailable()) {
+                event.enqueueWork(MekanismQio::register);
+            }
+        });
         modEventBus.addListener(RegisterGameTestsEvent.class, event -> {
             event.register(RSTweaksGameTests.class);
             event.register(CraftingGridRefillGameTest.class);
@@ -110,6 +123,9 @@ public class RSTweaks {
             }
             if (ModList.get().isLoaded("functionalstorage")) {
                 features.add("drawer controller cache");
+            }
+            if (MekanismQio.isAvailable()) {
+                features.add("QIO external storage");
             }
             if (Config.lpPlanner) {
                 features.add("LP planner");

@@ -10,6 +10,16 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.108
+-------
+  A Refined Storage External Storage pointed at a Mekanism QIO Dashboard now reads and
+  writes the QIO (#12). Stock cannot: External Storage attaches to an IItemHandler
+  capability and a QIO's contents live in a frequency, not in the block, so the storage
+  reads as empty. Registered through RS's public addExternalStorageProviderFactory and
+  Mekanism's published IQIOComponent/IQIOFrequency - no mixin either side, Mekanism
+  optional. Two-way; use the External Storage's own Access Mode for read-only. Config:
+  mekanismQioExternalStorage.
+
 0.2.107
 -------
   Clamp instead of wrap when a fluid amount will not fit in a FluidStack (#17). RS's

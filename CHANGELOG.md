@@ -8,6 +8,57 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.108
+
+**An External Storage can read a Mekanism QIO.** (Issue #12.)
+
+Point an External Storage at a QIO Dashboard and stock Refined Storage shows nothing. The
+reason is not a bug in either mod: External Storage works through capabilities — it asks the
+block in front of it for an `IItemHandler` and wraps it — and a QIO's contents are not in the
+block at all. They live in a *frequency*, shared by every dashboard, drive array, importer and
+exporter tuned to the same name. There is no handler on the dashboard to attach to, so there is
+nothing for RS to see.
+
+The issue proposed writing a provider against "the QIO frequency API" and warned this might be
+larger than anything else in the mod. It is not, because both halves are already public:
+
+- Refined Storage's `RefinedStorageApi.INSTANCE.addExternalStorageProviderFactory` is a
+  documented extension point — the same one RS uses for its own item and fluid providers.
+- Mekanism publishes the frequency in `mekanism.api`, not in `common`: a QIO block entity is an
+  `IQIOComponent`, and the `IQIOFrequency` it returns offers `forAllHashedStored`, `massInsert`
+  and `massExtract` — which map one-to-one onto `ExternalStorageProvider`'s `iterator`, `insert`
+  and `extract`, including the simulate/execute split and the "amount actually moved" return.
+
+So there is **no mixin on either side**, and nothing here reaches into internals. Mekanism is an
+optional dependency; without it the class is never loaded.
+
+**Checked first, as the issue asked:** `refinedstorage-mekanism-integration` does *not* cover
+this. Every class in it is `Chemical*` — chemical storage disks, a chemical external storage
+provider, chemical grid strategies. QIO is not mentioned anywhere in the jar. So this does not
+belong upstream in that mod as it stands today.
+
+**Two-way, deliberately.** The issue asked whether read-only would be simpler, and it would be —
+but the External Storage already has an Access Mode in its own GUI. Hard-coding read-only here
+would take that choice away from the player *and* stop autocrafting from ever using the QIO as
+a destination. The QIO's own limits still apply: a frequency at its type or count capacity
+accepts nothing, which arrives as an ordinary partial insert.
+
+Three details that are easy to get wrong and are worth recording:
+
+- **The provider is handed out for every External Storage, not only for dashboards.** RS builds
+  the provider list once, when the External Storage loads, and rebuilds it only on a block state
+  change. A factory that checked for a dashboard at creation time would answer "not QIO" forever
+  for a dashboard placed afterwards. The check therefore happens per call, exactly as the
+  capability lookup does in RS's own providers.
+- **The block entity is cached, the frequency is not.** A dashboard's frequency changes when the
+  player retunes it, and caching it would silently keep reading the old network.
+- **It declares itself item-only** through `TypedExternalStorageProvider`, so a network pulling
+  fluids or chemicals never pays for it.
+
+Config: `mekanismQioExternalStorage`, default on, ignored when Mekanism is absent. The startup
+line reports `QIO external storage` when it is live.
+
+
 ## 0.2.107
 
 **Clamp instead of wrap.** (Issue #17.) Follows the question "what would it take for it to move

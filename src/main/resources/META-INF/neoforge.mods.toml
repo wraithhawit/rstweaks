@@ -124,3 +124,20 @@ requiredMods=["sophisticatedcore"]
     versionRange="[1.4.80,1.5.0)"
     ordering="AFTER"
     side="BOTH"
+
+# Mekanism, for the QIO external storage provider. OPTIONAL, and gated in code on
+# ModList rather than on a mixin config, because this one is not a mixin: it registers
+# a provider through Refined Storage's own public addExternalStorageProviderFactory,
+# and reads QIO through mekanism.api -- IQIOComponent and IQIOFrequency, both published
+# interfaces rather than internals.
+#
+# So the tight pinning above does not apply here. There is no method descriptor to
+# match; an API break would be a compile-level change Mekanism does not make inside a
+# major line, and refusing to load against 10.8 would cost the feature for no reason.
+# Widened to the 10.x line and no further.
+[[dependencies.${mod_id}]]
+    modId="mekanism"
+    type="optional"
+    versionRange="[10.7.19,11.0.0)"
+    ordering="AFTER"
+    side="BOTH"

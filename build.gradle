@@ -154,6 +154,12 @@ dependencies {
     //   refinedstorage-quartz-arsenal-neoforge-1.0.8
     //   refinedstorage-mekanism-integration-1.1.1
     //   EdivadLib-1.21-3.0.0                       ExtraStorage/DimStorage support lib
+    //
+    // Mekanism is the one entry here that is not a Refined Storage addon. It is on the
+    // classpath for mekanism.api alone -- IQIOComponent and IQIOFrequency, for the QIO
+    // external storage provider -- so unlike the rest it is not tied to a build: any
+    // 10.x jar out of the pack will compile this.
+    //   Mekanism-1.21.1-10.7.19.85
     compileOnly fileTree(dir: 'libs', include: ['*.jar'])
 }
 

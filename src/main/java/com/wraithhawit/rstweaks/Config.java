@@ -154,6 +154,7 @@ public final class Config {
         cacheDrawerDenylist = CACHE_DRAWER_DENYLIST.get();
         skipEmptyCompositeExtract = SKIP_EMPTY_COMPOSITE_EXTRACT.get();
         clampResourceAmountOverflow = CLAMP_RESOURCE_AMOUNT_OVERFLOW.get();
+        mekanismQioExternalStorage = MEKANISM_QIO_EXTERNAL_STORAGE.get();
         durabilityAwarePlanning = DURABILITY_AWARE_PLANNING.get();
         waitForRunningCraft = WAIT_FOR_RUNNING_CRAFT.get();
         refillContainersInCraftingGrid = REFILL_CONTAINERS_IN_CRAFTING_GRID.get();
@@ -410,6 +411,30 @@ public final class Config {
 
     /** Cached like {@link #lazyPatternPlanCopy}; read on every extraction. */
     public static volatile boolean skipEmptyCompositeExtract = false;
+
+    public static final ModConfigSpec.BooleanValue MEKANISM_QIO_EXTERNAL_STORAGE = BUILDER
+        .comment(
+            "Let a Refined Storage External Storage read and write a Mekanism QIO system by",
+            "pointing it at a QIO Dashboard.",
+            "",
+            "Stock RS cannot: External Storage attaches to an IItemHandler capability, and a QIO's",
+            "contents are not in the block at all -- they live in a frequency shared by every",
+            "dashboard, drive array and importer tuned to it, so there is nothing to attach to and",
+            "the storage reads as empty. This registers a provider backed by Mekanism's own",
+            "published frequency API instead.",
+            "",
+            "Two-way, because the External Storage's own Access Mode already offers insert-only",
+            "and extract-only; set it there rather than here. The QIO's type and count limits are",
+            "respected -- a full QIO simply accepts nothing.",
+            "",
+            "Ignored entirely when Mekanism is not installed.",
+            "",
+            "Set false to leave a dashboard looking empty as it does in stock."
+        )
+        .define("mekanismQioExternalStorage", true);
+
+    /** Read at common setup, and again on a reload only to keep the reported feature list true. */
+    public static volatile boolean mekanismQioExternalStorage = true;
 
     public static final ModConfigSpec.BooleanValue CLAMP_RESOURCE_AMOUNT_OVERFLOW = BUILDER
         .comment(

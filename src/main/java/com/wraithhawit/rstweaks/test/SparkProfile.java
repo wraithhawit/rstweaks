@@ -70,6 +70,7 @@ public final class SparkProfile {
     private static String currentThread = "?";
     private static String wantedThread = "Server thread";
     private static int failures;
+    private static boolean dumpMeta;
 
     private SparkProfile(final int pos) {
         this.pos = pos;
@@ -84,7 +85,7 @@ public final class SparkProfile {
     public static void main(final String[] args) throws IOException, InterruptedException {
         if (args.length == 0) {
             System.out.println("usage: <spark url | bytebin code | file> "
-                + "[--thread=Server] [--top=30] [--grep=text]");
+                + "[--thread=Server] [--top=30] [--grep=text] [--meta]");
             return;
         }
         int top = 30;
@@ -100,6 +101,8 @@ public final class SparkProfile {
                 tree = arg.substring(7).toLowerCase(Locale.ROOT);
             } else if (arg.startsWith("--probe=")) {
                 probe = Integer.parseInt(arg.substring(8));
+            } else if (arg.equals("--meta")) {
+                dumpMeta = true;
             } else if (arg.startsWith("--grep=")) {
                 grep = arg.substring(7).toLowerCase(Locale.ROOT);
             }
@@ -404,12 +407,93 @@ public final class SparkProfile {
         }
     }
 
+    /**
+     * Dumps the sampler's metadata message as a nested tree of fields.
+     *
+     * <p>Spark ships a {@code SamplerMetadata} alongside the samples, and the part worth having
+     * is {@code world_statistics}: every world, its chunk count, and a count per entity type.
+     * A profile says which code burned the tick; this says <em>how many of what</em> were
+     * there to burn it, which is the half you can act on in game.
+     *
+     * <p>Deliberately generic rather than a typed reader of spark's schema. Field numbers are
+     * spark's to change, this tool is not built against its protobuf definitions, and a
+     * hand-written reader that silently mislabels a field is worse than one that prints the
+     * number and lets the reader judge. Every field is printed with its number, so a layout
+     * change shows up as an unfamiliar shape rather than as a wrong answer.
+     */
+    private void dumpMessage(final int end, final int depth) {
+        final String indent = "  ".repeat(depth + 1);
+        while (this.pos < end) {
+            final long key = varint();
+            final int field = (int) (key >>> 3);
+            final int wire = (int) (key & 7);
+            if (wire == 0) {
+                System.out.printf("%s#%d = %d%n", indent, field, varint());
+            } else if (wire == 2) {
+                final int len = (int) varint();
+                if (len < 0 || this.pos + len > end) {
+                    throw new Desync("bad length " + len);
+                }
+                final int stop = this.pos + len;
+                final int start = this.pos;
+                if (looksLikeText(start, len)) {
+                    System.out.printf("%s#%d = \"%s\"%n",
+                        indent, field, new String(data, start, len, StandardCharsets.UTF_8));
+                } else if (len == 0) {
+                    System.out.printf("%s#%d = {}%n", indent, field);
+                } else {
+                    System.out.printf("%s#%d {%n", indent, field);
+                    try {
+                        dumpMessage(stop, depth + 1);
+                    } catch (final RuntimeException notAMessage) {
+                        System.out.printf("%s  <%d bytes>%n", indent, len);
+                    }
+                    System.out.printf("%s}%n", indent);
+                }
+                this.pos = stop;
+            } else {
+                skip(wire);
+            }
+        }
+    }
+
+    /**
+     * Whether these bytes are printable text rather than a nested message.
+     *
+     * <p>A length-delimited protobuf field is a string, a submessage or raw bytes, and the wire
+     * format does not say which. Printable ASCII throughout is a good enough tell for this
+     * payload - world names, entity type ids and mod versions are all plain text, and a
+     * submessage almost always carries a field key byte outside that range.
+     */
+    private static boolean looksLikeText(final int start, final int len) {
+        if (len == 0) {
+            return false;
+        }
+        for (int at = start; at < start + len; at++) {
+            final int b = data[at] & 0xFF;
+            if (b < 0x20 || b > 0x7E) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private void readSamplerData(final int end) {
         while (this.pos < end) {
             final long key = varint();
             final int field = (int) (key >>> 3);
             final int wire = (int) (key & 7);
-            if (field == 2 && wire == 2) {
+            if (field == 1 && wire == 2 && dumpMeta) {
+                final int len = (int) varint();
+                final int stop = this.pos + len;
+                System.out.println("=== sampler metadata ===");
+                try {
+                    dumpMessage(stop, 0);
+                } catch (final RuntimeException e) {
+                    System.out.println("metadata parse stopped: " + e);
+                }
+                this.pos = stop;
+            } else             if (field == 2 && wire == 2) {
                 final int len = (int) varint();
                 final int stop = this.pos + len;
                 try {
