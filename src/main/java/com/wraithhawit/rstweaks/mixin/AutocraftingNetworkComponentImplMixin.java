@@ -193,6 +193,9 @@ public abstract class AutocraftingNetworkComponentImplMixin {
             resource,
             now + Config.UNCRAFTABLE_RECHECK_TICKS.getAsInt()
         );
+        // Name it, so /rstweaks stats can say what the network keeps failing to make. Finding the
+        // exporter that wants it is the only thing that actually ends the cost.
+        Stats.recordUncraftable(resource.toString());
         // Bounded by the number of distinct resources ever requested, which is
         // small in practice, but a long-lived network with a wandering exporter
         // filter should not accumulate entries forever.

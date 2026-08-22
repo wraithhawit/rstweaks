@@ -34,6 +34,34 @@ public final class Stats {
     public static long uncraftableChecksSkipped;
 
     /**
+     * What the network keeps trying, and failing, to autocraft.
+     *
+     * <p>Not a counter, because a counter cannot answer the question this is for. A single Exporter
+     * with an autocrafting upgrade, asking for something that cannot be made, will run a full
+     * recursive crafting calculation every time the uncraftable cache lets it retry -- and on a
+     * network with many patterns one of those calculations can take seconds. It is the single most
+     * expensive thing that can quietly be wrong with a base, and it is close to impossible to find by
+     * hand: nothing in game says which exporter is asking, or for what.
+     *
+     * <p>So the resource names go here, most recently refused first. Finding the exporter that wants
+     * one of these ends the problem outright, which no amount of making the calculation faster can.
+     */
+    public static final java.util.LinkedHashMap<String, Long> uncraftableResources =
+        new java.util.LinkedHashMap<>() {
+            @Override
+            protected boolean removeEldestEntry(final java.util.Map.Entry<String, Long> eldest) {
+                // A handful is all anyone can act on, and this is read by a chat command.
+                return this.size() > 8;
+            }
+        };
+
+    /** Records a resource the network has just decided it cannot craft. */
+    public static synchronized void recordUncraftable(final String name) {
+        uncraftableResources.remove(name);
+        uncraftableResources.put(name, uncraftableResources.getOrDefault(name, 0L) + 1L);
+    }
+
+    /**
      * Requests refused because a craft for that resource was already running.
      *
      * <p>The positive-answer twin of {@link #uncraftableChecksSkipped}: that one avoids

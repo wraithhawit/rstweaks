@@ -8,6 +8,30 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.110
+
+**`/rstweaks stats` now names what the network keeps failing to autocraft.**
+
+A profile of a badly lagging world: **92.4% of the server thread** was one Exporter with an
+autocrafting upgrade, through
+`MissingResourcesListeningExporterTransferStrategy -> scheduleAutocrafting -> ensureTask ->
+CraftingCalculatorImpl.calculate`. Below that, 32% `HashMap.hash` and 14% `ItemResource.equals` --
+map traffic proportional to the size of the crafting tree, not any single hot spot.
+
+The uncraftable cache was working. It just cannot help enough: it suppresses the retry for
+`uncraftableRecheckTicks` (60 by default), and on a network with a lot of patterns a single
+calculation can take seconds. Sixty ticks between multi-second calculations is still most of the
+server thread.
+
+**So the fix is not a faster calculation, it is finding the exporter.** Which is close to
+impossible by hand -- nothing in game says which exporter is asking, or for what. The names now
+appear in `/rstweaks stats`, most recent first, with how many times each has been refused.
+
+This is the third variation on one defect: something asks for a craft that cannot happen, and
+Refined Storage re-derives the whole answer every time. The Step Requester backoff and the
+uncraftable cache each bound how *often*; nothing bounds how *expensive*. Naming the resource is
+what lets a player remove the cause rather than pay for it more slowly.
+
 ## 0.2.109
 
 **Pattern plan copying: the outer map is shared too.** `lazyPatternPlanCopy` already shared the

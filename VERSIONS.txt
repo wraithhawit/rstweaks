@@ -10,6 +10,13 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.110
+-------
+  /rstweaks stats now NAMES the resources the network keeps failing to autocraft. A profile
+  showed 92.4% of the server thread was one autocrafting Exporter re-running a full crafting
+  calculation; the uncraftable cache bounds how often, never how expensive. Finding that
+  exporter is the only real fix, and nothing in game said what it was asking for.
+
 0.2.109
 -------
   lazyPatternPlanCopy now shares the OUTER ingredients map as well as the inner ones. The first

@@ -2,6 +2,7 @@ package com.wraithhawit.rstweaks.test;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.wraithhawit.rstweaks.ChatReporter;
+import com.wraithhawit.rstweaks.Stats;
 import com.wraithhawit.rstweaks.RSTweaks;
 
 import java.util.ArrayList;
@@ -40,6 +41,21 @@ public final class SelfTestCommand {
             .then(Commands.literal("stats").executes(context -> {
                 final CommandSourceStack source = context.getSource();
                 ChatReporter.sessionTotals().forEach(line -> source.sendSuccess(() -> line, false));
+                // The names, not just the count. A single exporter asking for something
+                // uncraftable runs a full recursive crafting calculation every recheck, which on a
+                // network with many patterns can take seconds -- and nothing in game otherwise says
+                // what is being asked for. Finding and fixing that exporter is the only thing that
+                // ends the cost; making the calculation faster only makes it hurt less often.
+                synchronized (Stats.class) {
+                    if (!Stats.uncraftableResources.isEmpty()) {
+                        source.sendSuccess(() -> Component.literal(
+                            "[rstweaks] cannot be autocrafted (something keeps asking):")
+                            .withStyle(ChatFormatting.YELLOW), false);
+                        Stats.uncraftableResources.forEach((name, count) -> source.sendSuccess(
+                            () -> Component.literal("  " + name + "  x" + count)
+                                .withStyle(ChatFormatting.GRAY), false));
+                    }
+                }
                 return 1;
             }))
             .then(Commands.literal("selftest").executes(context -> {
