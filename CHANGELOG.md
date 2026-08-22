@@ -8,6 +8,39 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.109
+
+**Pattern plan copying: the outer map is shared too.** `lazyPatternPlanCopy` already shared the
+inner ingredient maps, which took `MutablePatternPlan.copy` from 46.5% of the server thread to
+6.7%. This finishes the job.
+
+The remaining cost was the part the first pass left behind. `copy()` still allocated a fresh outer
+map and put every ingredient index into it, one at a time. A breakdown of the method on a busy
+network says so exactly:
+
+| inside `MutablePatternPlan.copy` | share |
+|---|---|
+| the loop itself (self) | **66.9%** |
+| `HashMap.put` | **29.2%** |
+| `HashMap$EntryIterator.next` | 3.8% |
+| our existing inner-map share | **0.05%** |
+
+So the inner-map optimisation was working perfectly and everything left was rebuilding the outer
+map. On the profile it was drawn from, `copy` was 39% of the whole server thread.
+
+Now `copy()` hands the new plan this plan's outer map and skips the loop -- the iteration is
+emptied rather than the method rewritten, because `MutablePatternPlan` is package-private and this
+mixin cannot so much as name its return type. `addUsedIngredient` takes a private copy of the
+outer map before its first write, exactly as it already did for the inner ones.
+
+**The invariant is unchanged and still the whole argument:** no plan ever mutates a map another
+plan can observe. The class makes that checkable -- it is forty lines, `ingredients` is written in
+exactly one place (`addUsedIngredient`), and `getPlan` only reads.
+
+Found while profiling rsmc, which turned out not to be the problem: a multiblock crafter puts a lot
+of patterns on a network, and every pattern is another branch the calculator explores on every
+craft.
+
 ## 0.2.108
 
 **An External Storage can read a Mekanism QIO.** (Issue #12.)

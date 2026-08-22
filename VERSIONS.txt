@@ -10,6 +10,13 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.109
+-------
+  lazyPatternPlanCopy now shares the OUTER ingredients map as well as the inner ones. The first
+  pass left copy() still rebuilding the outer map entry by entry - 66.9% of the method was its
+  own loop and 29.2% HashMap.put, while the existing share cost 0.05%. copy was 39% of the
+  server thread on the profile this came from. Same invariant, same kill switch.
+
 0.2.108
 -------
   A Refined Storage External Storage pointed at a Mekanism QIO Dashboard now reads and

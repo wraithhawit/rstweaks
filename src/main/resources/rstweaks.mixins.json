@@ -17,6 +17,7 @@
     "IsCraftableCraftingCalculatorListenerMixin",
     "ItemHandlerExternalStorageProviderMixin",
     "ItemHandlerExtractableStorageMixin",
+    "MutablePatternPlanAccessor",
     "MutablePatternPlanMixin",
     "MutableResourceListEntryMixin",
     "PatternResolverFuzzyMixin",
