@@ -154,6 +154,7 @@ public final class Config {
         cacheDrawerDenylist = CACHE_DRAWER_DENYLIST.get();
         skipEmptyCompositeExtract = SKIP_EMPTY_COMPOSITE_EXTRACT.get();
         clampResourceAmountOverflow = CLAMP_RESOURCE_AMOUNT_OVERFLOW.get();
+        boundCraftableSearch = BOUND_CRAFTABLE_SEARCH.get();
         mekanismQioExternalStorage = MEKANISM_QIO_EXTERNAL_STORAGE.get();
         durabilityAwarePlanning = DURABILITY_AWARE_PLANNING.get();
         waitForRunningCraft = WAIT_FOR_RUNNING_CRAFT.get();
@@ -435,6 +436,31 @@ public final class Config {
 
     /** Read at common setup, and again on a reload only to keep the reported feature list true. */
     public static volatile boolean mekanismQioExternalStorage = true;
+
+
+    public static final ModConfigSpec.BooleanValue BOUND_CRAFTABLE_SEARCH = BUILDER
+        .comment(
+            "Let the craftable-amount search be cancelled by the timeout the request already has.",
+            "",
+            "When a craft cannot start, Refined Storage works out the largest amount that COULD be",
+            "made: it doubles from 1 until the amount is no longer craftable, then binary-searches",
+            "the gap. Every probe is another complete recursive crafting calculation.",
+            "",
+            "It runs that search with CancellationToken.NONE, discarding the TimeoutableCancellationToken",
+            "the caller built two lines earlier -- so the single most expensive step of a craft request",
+            "is the one step that cannot time out. Measured at 98% of a server thread on one Cable",
+            "Tiers exporter asking for something it could not make.",
+            "",
+            "Passing the real token through changes nothing for a search that finishes quickly: a token",
+            "that has not timed out answers exactly as NONE does. It only ends the ones that were never",
+            "going to finish, which then report MISSING_RESOURCES and are cached like any other refusal.",
+            "",
+            "Set false for stock behaviour."
+        )
+        .define("boundCraftableSearch", true);
+
+    /** Cached: read inside the redirect, on the crafting calculation path. */
+    public static volatile boolean boundCraftableSearch = true;
 
     public static final ModConfigSpec.BooleanValue CLAMP_RESOURCE_AMOUNT_OVERFLOW = BUILDER
         .comment(

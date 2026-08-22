@@ -10,6 +10,13 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.111
+-------
+  boundCraftableSearch: RS runs binarySearchMaxAmount with CancellationToken.NONE, discarding
+  the caller's timeout at the most expensive step of a craft request - every probe is a full
+  recursive calculation. Measured at 98% of a server thread from one Cable Tiers exporter. Now
+  passes the real token. First rstweaks fix that bounds COST rather than frequency.
+
 0.2.110
 -------
   /rstweaks stats now NAMES the resources the network keeps failing to autocraft. A profile

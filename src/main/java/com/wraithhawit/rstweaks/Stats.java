@@ -34,6 +34,15 @@ public final class Stats {
     public static long uncraftableChecksSkipped;
 
     /**
+     * Craftable-amount searches given the caller's timeout instead of CancellationToken.NONE.
+     *
+     * <p>Counts opportunities, not rescues: a search that would have finished quickly is unaffected.
+     * It rises whenever the path is taken at all, which is what makes it useful for confirming the
+     * redirect is live.
+     */
+    public static long craftableSearchesBounded;
+
+    /**
      * What the network keeps trying, and failing, to autocraft.
      *
      * <p>Not a counter, because a counter cannot answer the question this is for. A single Exporter

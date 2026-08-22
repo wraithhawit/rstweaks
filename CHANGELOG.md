@@ -8,6 +8,38 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.111
+
+**The craftable-amount search can be cancelled now.** This is the fix the 0.2.110 notes were
+describing without implementing.
+
+When a craft cannot start, RS works out the largest amount that *could* be made: it doubles from 1
+until the amount is no longer craftable, then binary-searches the gap. **Every probe is another
+complete recursive crafting calculation.** And it runs that search like this:
+
+```java
+binarySearchMaxAmount(calculator, resource, CancellationToken.NONE)
+```
+
+The caller's `TimeoutableCancellationToken` is sitting in a parameter two lines above and is
+thrown away. So the single most expensive step of a craft request is the one step that cannot time
+out.
+
+Measured: **98% of the server thread**, all of it inside that search, from one Cable Tiers exporter
+asking for something it could not make. `ensureTaskForCraftableAmount` was 98.07% of the 98.09%
+spent in `ensureTask` -- essentially all of it.
+
+**Passing the real token through changes nothing for a search that finishes.** A token that has not
+timed out answers exactly as `NONE` does. It only ends the ones that were never going to finish,
+which then report `MISSING_RESOURCES` and get cached like any other refusal -- so the uncraftable
+cache finally has something to cache.
+
+Config: `boundCraftableSearch`, default on.
+
+This is the fourth face of one defect, and the first fix that bounds *cost* rather than frequency.
+The Step Requester backoff and the uncraftable cache both limit how often a doomed request runs.
+Neither could limit how long it ran, because RS had discarded the mechanism for that.
+
 ## 0.2.110
 
 **`/rstweaks stats` now names what the network keeps failing to autocraft.**

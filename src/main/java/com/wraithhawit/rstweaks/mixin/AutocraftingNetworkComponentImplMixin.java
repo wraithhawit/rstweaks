@@ -1,6 +1,7 @@
 package com.wraithhawit.rstweaks.mixin;
 
 import com.refinedmods.refinedstorage.api.autocrafting.calculation.CancellationToken;
+import com.refinedmods.refinedstorage.api.autocrafting.calculation.CraftingCalculator;
 import com.refinedmods.refinedstorage.api.network.autocrafting.AutocraftingNetworkComponent;
 import com.refinedmods.refinedstorage.api.network.autocrafting.PatternProvider;
 import com.refinedmods.refinedstorage.api.network.impl.autocrafting.AutocraftingNetworkComponentImpl;
@@ -16,12 +17,15 @@ import java.util.Set;
 
 import javax.annotation.Nullable;
 
+import org.objectweb.asm.Opcodes;
+
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
@@ -174,6 +178,52 @@ public abstract class AutocraftingNetworkComponentImplMixin {
             return;
         }
         rstweaks$uncraftable().remove(resource);
+    }
+
+
+    /**
+     * Gives the craftable-amount search the timeout the caller already created.
+     *
+     * <p>Refined Storage builds a {@code TimeoutableCancellationToken} for a craft request and then,
+     * at the single most expensive step, ignores it:
+     *
+     * <pre>{@code
+     * binarySearchMaxAmount(calculator, resource, CancellationToken.NONE)
+     * }</pre>
+     *
+     * <p>That search doubles from 1 until the amount is no longer craftable and then binary-searches
+     * the gap, and <strong>every probe is another complete recursive crafting calculation</strong>.
+     * So the one piece of work that most needs a bound is the one piece that cannot be interrupted,
+     * while the caller's timeout sits unused in a parameter two lines above.
+     *
+     * <p>Measured on a Cable Tiers exporter asking for something it could not make: 98% of the
+     * server thread, all of it inside this search. The uncraftable cache upstream limits how often
+     * that happens; nothing limited how long it ran.
+     *
+     * <p>Passing the caller's token through changes nothing about a search that finishes quickly --
+     * a token that has not timed out answers exactly as {@code NONE} does. It only ends the ones
+     * that were never going to finish, which then fail as {@code MISSING_RESOURCES} and are cached
+     * by {\@link #rstweaks$recordOutcome} like any other refusal.
+     */
+    @Redirect(
+        method = "ensureTaskForCraftableAmount",
+        at = @At(
+            value = "FIELD",
+            target = "Lcom/refinedmods/refinedstorage/api/autocrafting/calculation/CancellationToken;"
+                + "NONE:Lcom/refinedmods/refinedstorage/api/autocrafting/calculation/CancellationToken;",
+            opcode = Opcodes.GETSTATIC
+        )
+    )
+    private CancellationToken rstweaks$boundCraftableSearch(final ResourceKey resource,
+                                                            final Actor actor,
+                                                            final long amount,
+                                                            final CraftingCalculator calculator,
+                                                            final CancellationToken cancellationToken) {
+        if (!Config.boundCraftableSearch) {
+            return CancellationToken.NONE;
+        }
+        ++Stats.craftableSearchesBounded;
+        return cancellationToken;
     }
 
     @Inject(method = "ensureTask", at = @At("RETURN"))
