@@ -8,6 +8,28 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.112
+
+**The five-second freeze has a number, and now it has a config.** 0.2.111 took the doubling
+search out of the calculation budget; this is the budget itself.
+
+`TimeoutableCancellationToken.TIMEOUT_MS = 5000`. That is five seconds *of the server thread* —
+a hundred ticks in which nothing else in the world happens — and a request that is going to
+fail spends all of it before saying so. Profile `o7HhlSJezm` shows 0.2.111 working exactly as
+intended (`ensureTaskForCraftableAmount` 98.07% → 0.30%) and shows what it leaves behind: the
+*first* calculation, `ensureTask` → `calculatePlan`, at 50% of the thread, bounded by nothing
+but this constant.
+
+`craftingCalculationTimeoutMs` makes it configurable via `@ModifyConstant` on the comparison
+in `isCancelled`.
+
+**The default is RS's own 5000 and changes nothing, deliberately.** A cancelled calculation
+reports `MISSING_RESOURCES`, which is indistinguishable from "cannot be made" — so a value
+below what a legitimate large craft needs will silently refuse crafts that would have worked.
+rstweaks has made that mistake before (0.2.96, where a solver cap quietly blocked late-game
+crafts and a passing proxy test was mistaken for a proof), so this ships as a lever rather
+than as a change. 1000 is a reasonable first try where the freeze is worse than the risk.
+
 ## 0.2.111
 
 **The craftable-amount search can be cancelled now.** This is the fix the 0.2.110 notes were

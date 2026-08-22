@@ -155,6 +155,7 @@ public final class Config {
         skipEmptyCompositeExtract = SKIP_EMPTY_COMPOSITE_EXTRACT.get();
         clampResourceAmountOverflow = CLAMP_RESOURCE_AMOUNT_OVERFLOW.get();
         boundCraftableSearch = BOUND_CRAFTABLE_SEARCH.get();
+        craftingCalculationTimeoutMs = CRAFTING_CALCULATION_TIMEOUT_MS.get();
         mekanismQioExternalStorage = MEKANISM_QIO_EXTERNAL_STORAGE.get();
         durabilityAwarePlanning = DURABILITY_AWARE_PLANNING.get();
         waitForRunningCraft = WAIT_FOR_RUNNING_CRAFT.get();
@@ -461,6 +462,28 @@ public final class Config {
 
     /** Cached: read inside the redirect, on the crafting calculation path. */
     public static volatile boolean boundCraftableSearch = true;
+
+    public static final ModConfigSpec.IntValue CRAFTING_CALCULATION_TIMEOUT_MS = BUILDER
+        .comment(
+            "How long one crafting calculation may run, in milliseconds.",
+            "",
+            "Refined Storage's own limit is 5000, and it is five seconds OF THE SERVER THREAD -- a",
+            "hundred ticks in which nothing else in the world happens. A request that is going to fail",
+            "spends all of it before saying so, which is what a multi-second freeze on a network with",
+            "an impossible craft request actually is.",
+            "",
+            "THE DEFAULT MATCHES REFINED STORAGE AND CHANGES NOTHING. Lowering this is a real trade:",
+            "a cancelled calculation reports MISSING_RESOURCES, which is indistinguishable from",
+            "'cannot be made', so a value below what a legitimate large craft needs will silently",
+            "refuse crafts that would have worked. Lower it a step at a time and watch for a craft",
+            "that stops being offered.",
+            "",
+            "1000 is a reasonable first try on a pack where the freeze is worse than the risk."
+        )
+        .defineInRange("craftingCalculationTimeoutMs", 5000, 50, 60000);
+
+    /** Cached: read on every isCancelled, which is checked throughout the calculation. */
+    public static volatile long craftingCalculationTimeoutMs = 5000L;
 
     public static final ModConfigSpec.BooleanValue CLAMP_RESOURCE_AMOUNT_OVERFLOW = BUILDER
         .comment(

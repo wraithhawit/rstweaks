@@ -10,6 +10,16 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.112
+-------
+  craftingCalculationTimeoutMs: RS's TimeoutableCancellationToken allows 5000ms per crafting
+  calculation, and that is five seconds of the SERVER THREAD - a doomed request freezes the
+  world for a hundred ticks before reporting failure. Now configurable. DEFAULT IS RS'S 5000
+  AND CHANGES NOTHING: a cancelled calculation is indistinguishable from an impossible one,
+  so lowering it can silently refuse legitimate large crafts. Lower deliberately, a step at
+  a time. Confirmed by profile o7HhlSJezm, where 0.2.111 dropped ensureTaskForCraftableAmount
+  from 98.07% to 0.30% and left the first calculation itself at 50%, bounded only by the 5s.
+
 0.2.111
 -------
   boundCraftableSearch: RS runs binarySearchMaxAmount with CancellationToken.NONE, discarding
