@@ -10,6 +10,16 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.121
+-------
+  Two fixes the first real traces exposed. (1) Percentages were computed against the TOTAL node
+  count while the counts only cover nodes after the detail threshold, so a calculation that had
+  just crossed the line reported its dominant resource as "4%" when it was ~99% of everything
+  actually seen. Now relative to observed nodes, and the header says when the breakdown is
+  partial. (2) The threshold drops 100,000 -> 20,000 and becomes traceDetailThresholdNodes:
+  real stalls of 91,807 and 97,967 nodes got no breakdown at all while a 104,327-node one that
+  did turned out to be the identical problem. A threshold set above the thing you are trying to
+  see is worse than no threshold. traceCheck 14 -> 17.
 0.2.120
 -------
   traceSlowCalculations: breaks down a stalled crafting calculation instead of only timing it.

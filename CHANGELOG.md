@@ -8,6 +8,50 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.121
+
+**Two fixes the first real traces exposed within minutes of shipping 0.2.120.**
+
+**1. The percentages were against the wrong denominator.** Counts only cover nodes visited after
+the detail threshold, but the percentage was computed against the *total* node count. A
+calculation that had just crossed the line reported:
+
+```
+104,327 tree nodes
+  4,315 nodes (4%) making allthemodium:allthemodium_nugget
+```
+
+That resource was not 4% of anything — it was ~99% of the 4,328 nodes the breakdown actually
+saw. The number was arithmetically correct and completely misleading, which is the worst kind.
+Percentages are now relative to observed nodes, and the header says so when the breakdown is
+partial: `948,510 tree nodes (breakdown covers the last 12,004)`.
+
+**2. The threshold was set above the thing it was meant to show.** The same session produced
+stalls of **91,807** and **97,967** nodes that got no breakdown at all, sitting either side of a
+104,327-node one that did — and all three turned out to be the identical problem. A threshold
+above what you are trying to see is worse than no threshold.
+
+Now `traceDetailThresholdNodes`, default **20,000**, down from a hardcoded 100,000.
+
+`traceCheck` 14 → **17**, with the new case pinning the denominator specifically.
+
+### What the traces found
+
+Worth recording, because it is the first thing in this investigation that points at a fix inside
+Refined Storage rather than around it:
+
+```
+1,243ms wasted calculating 64x kubejs:allthemodium_beam_package -- 948,510 tree nodes
+  822,202 nodes (87%) making allthemodium:allthemodium_nugget
+   23,330 nodes  (2%) making allthemodium:allthemodium_ingot
+        0 nodes  (0%) making mysticalagriculture:allthemodium_essence  -- ran out 736,899 times
+```
+
+`ingredientsExhausted` fires only when `patternRepository.getByOutput(resource)` is **empty** —
+no pattern in the network produces it at all. That is a static fact for the whole calculation.
+Refined Storage rediscovers it **736,899 times in a single request**, re-walking the nugget
+subtree each time, because `CraftingTree` memoises nothing between branches.
+
 ## 0.2.120
 
 **Breaking down the five-second stall, instead of only timing it.**

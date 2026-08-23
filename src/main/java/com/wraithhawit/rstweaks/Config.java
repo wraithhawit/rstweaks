@@ -224,6 +224,23 @@ public final class Config {
         )
         .define("waitForRunningCraft", true);
 
+    public static final ModConfigSpec.IntValue TRACE_DETAIL_THRESHOLD_NODES = BUILDER
+        .comment(
+            "Crafting-tree nodes a calculation must visit before the per-resource breakdown",
+            "starts being recorded.",
+            "",
+            "The breakdown costs a map write per node, so it is not free; this keeps an ordinary",
+            "craft paying only a counter increment. Below it a slow calculation still reports its",
+            "node count, which is itself a finding: time spent outside tree search means the",
+            "branching-factor explanation does not apply to that one.",
+            "",
+            "LOWERED 100,000 -> 20,000 in 0.2.121. The first real traces contained calculations of",
+            "91,807 and 97,967 nodes that got no breakdown at all, while a 104,327-node one that",
+            "did turned out to be the same problem. A threshold set above the thing you are trying",
+            "to see is worse than no threshold."
+        )
+        .defineInRange("traceDetailThresholdNodes", 20000, 1, 10000000);
+
     public static final ModConfigSpec.BooleanValue TRACE_SLOW_CALCULATIONS = BUILDER
         .comment(
             "Break down a crafting calculation that stalls, instead of only timing it.",
@@ -304,6 +321,8 @@ public final class Config {
         durabilityAwarePlanning = DURABILITY_AWARE_PLANNING.get();
         waitForRunningCraft = WAIT_FOR_RUNNING_CRAFT.get();
         traceSlowCalculations = TRACE_SLOW_CALCULATIONS.get();
+        com.wraithhawit.rstweaks.pattern.CalculationTrace.detailThreshold =
+            TRACE_DETAIL_THRESHOLD_NODES.getAsInt();
         sortPatternsByPriority = SORT_PATTERNS_BY_PRIORITY.get();
         refillContainersInCraftingGrid = REFILL_CONTAINERS_IN_CRAFTING_GRID.get();
         containerGridClicks = CONTAINER_GRID_CLICKS.get();

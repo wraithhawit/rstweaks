@@ -27,6 +27,7 @@ public final class HeadlessTraceCheck {
         breakdownRanksByNodeCount();
         exhaustedCountsAreReported();
         beginResetsEverything();
+        percentagesAreRelativeToWhatWasObserved();
 
         System.out.printf("scenarios: %d%n", checks);
         if (FAILURES.isEmpty()) {
@@ -52,7 +53,7 @@ public final class HeadlessTraceCheck {
 
     private static void detailStartsAtTheThreshold() {
         CalculationTrace.begin("minecraft:redstone", 1);
-        for (long i = 0; i < CalculationTrace.DETAIL_THRESHOLD - 1; i++) {
+        for (long i = 0; i < CalculationTrace.detailThreshold - 1; i++) {
             CalculationTrace.noteNode(() -> "a");
         }
         expect("still off one node short", !CalculationTrace.isDetailed());
@@ -116,9 +117,34 @@ public final class HeadlessTraceCheck {
             CalculationTrace.describe(1, true).get(1).contains("no breakdown"));
     }
 
+
+    /**
+     * The flaw the first real traces exposed. Counts only cover nodes after the threshold, but
+     * percentages were computed against the TOTAL node count -- so a calculation that just
+     * crossed the line reported its dominant resource as "4%" when it was 99% of everything
+     * actually seen. The header now says how much the breakdown covers.
+     */
+    private static void percentagesAreRelativeToWhatWasObserved() {
+        CalculationTrace.begin("target", 1);
+        pushPast();
+        for (int i = 0; i < 1000; i++) {
+            CalculationTrace.noteNode(() -> "dominant");
+        }
+        final long observed = CalculationTrace.observed();
+        expect("observed is the post-threshold window, not the total",
+            observed < CalculationTrace.nodes());
+        final List<String> lines = CalculationTrace.describe(500, false);
+        expect("the header says the breakdown is partial",
+            lines.get(0).contains("breakdown covers the last"));
+        final String dominant = lines.stream()
+            .filter(line -> line.contains("dominant")).findFirst().orElse("");
+        // 1000 of ~1001 observed is 100%, not 1000 of 21001 which would round to 5%.
+        expect("the percentage is against observed nodes", dominant.contains("(100%)"));
+    }
+
     /** Drives the trace past the detail threshold with filler nodes. */
     private static void pushPast() {
-        for (long i = 0; i <= CalculationTrace.DETAIL_THRESHOLD; i++) {
+        for (long i = 0; i <= CalculationTrace.detailThreshold; i++) {
             CalculationTrace.noteNode(() -> "filler");
         }
     }

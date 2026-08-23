@@ -47,7 +47,7 @@ public final class CalculationTrace {
      * single-digit milliseconds, and a millisecond is worth roughly a thousand nodes. A
      * calculation past a hundred thousand nodes is already in trouble.
      */
-    public static final long DETAIL_THRESHOLD = 100_000L;
+    public static volatile long detailThreshold = 20_000L;
 
     /** Distinct resources to keep. A stall has a handful of real culprits, not hundreds. */
     private static final int KEEP = 6;
@@ -56,6 +56,7 @@ public final class CalculationTrace {
     private static long rootAmount;
     private static long nodes;
     private static boolean detailed;
+    private static long detailFrom;
     private static final Map<String, long[]> BY_RESOURCE = new HashMap<>();
 
     private CalculationTrace() {
@@ -67,6 +68,7 @@ public final class CalculationTrace {
         rootAmount = amount;
         nodes = 0L;
         detailed = false;
+        detailFrom = 0L;
         if (!BY_RESOURCE.isEmpty()) {
             BY_RESOURCE.clear();
         }
@@ -83,10 +85,11 @@ public final class CalculationTrace {
     public static void noteNode(final java.util.function.Supplier<String> resourceName) {
         ++nodes;
         if (!detailed) {
-            if (nodes < DETAIL_THRESHOLD) {
+            if (nodes < detailThreshold) {
                 return;
             }
             detailed = true;
+            detailFrom = nodes;
         }
         BY_RESOURCE.computeIfAbsent(resourceName.get(), k -> new long[2])[0]++;
     }
@@ -107,6 +110,11 @@ public final class CalculationTrace {
         return detailed;
     }
 
+    /** Nodes the breakdown actually saw, which is not the same as the nodes visited. */
+    public static long observed() {
+        return detailed ? nodes - detailFrom + 1 : 0L;
+    }
+
     /**
      * The trace as readable lines, most expensive first, or empty when there is nothing to say.
      *
@@ -117,14 +125,17 @@ public final class CalculationTrace {
      */
     public static List<String> describe(final long elapsedMs, final boolean started) {
         final List<String> lines = new ArrayList<>(KEEP + 2);
-        lines.add(String.format("%,dms %s calculating %,dx %s -- %,d tree nodes",
+        final long observed = observed();
+        lines.add(String.format("%,dms %s calculating %,dx %s -- %,d tree nodes%s",
             elapsedMs,
             started ? "spent" : "wasted",
             rootAmount,
             rootResource,
-            nodes));
+            nodes,
+            !detailed || observed >= nodes ? ""
+                : String.format(" (breakdown covers the last %,d)", observed)));
         if (!detailed) {
-            lines.add("  no breakdown: fewer than " + String.format("%,d", DETAIL_THRESHOLD)
+            lines.add("  no breakdown: fewer than " + String.format("%,d", detailThreshold)
                 + " nodes, so the time went somewhere other than tree search");
             return lines;
         }
@@ -136,7 +147,7 @@ public final class CalculationTrace {
             final long exhausted = entry.getValue()[1];
             lines.add(String.format("  %,d nodes (%.0f%%) making %s%s",
                 visits,
-                nodes == 0 ? 0.0 : visits * 100.0 / nodes,
+                observed == 0 ? 0.0 : visits * 100.0 / observed,
                 entry.getKey(),
                 exhausted == 0 ? "" : String.format("  -- ran out %,d times", exhausted)));
         }
