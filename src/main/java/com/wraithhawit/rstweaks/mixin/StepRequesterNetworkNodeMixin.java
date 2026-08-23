@@ -9,8 +9,10 @@ import com.ultramega.stepcrafter.common.steprequester.StepRequesterNetworkNode;
 import com.ultramega.stepcrafter.common.support.ResourceMinMaxAmount;
 import com.ultramega.stepcrafter.common.support.patternresource.PatternResourceContainerImpl;
 import com.wraithhawit.rstweaks.Config;
+import com.wraithhawit.rstweaks.RSTweaks;
 import com.wraithhawit.rstweaks.Stats;
 import com.wraithhawit.rstweaks.backoff.SlotBackoff;
+import com.wraithhawit.rstweaks.pattern.CalculationTrace;
 
 import java.util.Arrays;
 import java.util.Optional;
@@ -180,6 +182,9 @@ public abstract class StepRequesterNetworkNodeMixin {
                                                   final Actor actor,
                                                   final boolean notifyListeners,
                                                   final CancellationToken cancellationToken) {
+        if (Config.traceSlowCalculations) {
+            CalculationTrace.begin(resource.toString(), amount);
+        }
         final long startedAt = System.nanoTime();
         final Optional<TaskId> result =
             component.startTask(resource, amount, actor, notifyListeners, cancellationToken);
@@ -205,6 +210,16 @@ public abstract class StepRequesterNetworkNodeMixin {
         final long budgetMs = Config.craftingCalculationTimeoutMs;
         if (budgetMs > 0 && elapsedMs >= budgetMs - TIMEOUT_TOLERANCE_MS) {
             ++Stats.stepRequesterTimeouts;
+        }
+
+        // Log the breakdown for anything slow enough to have been noticed. Gated on the same
+        // threshold that triggers a backoff, so a build tuned to ignore a cost also stays quiet
+        // about it, and one line per slow calculation rather than one per tick because the slot
+        // is about to be put to sleep anyway.
+        final int slowMsForLog = Config.STEP_REQUESTER_SLOW_CALCULATION_MS.getAsInt();
+        if (Config.traceSlowCalculations && slowMsForLog > 0 && elapsedMs >= slowMsForLog) {
+            CalculationTrace.describe(elapsedMs, result.isPresent())
+                .forEach(line -> RSTweaks.LOGGER.info("[rstweaks] {}", line));
         }
 
         // Every branch below lives in SlotBackoff, which plannerCheck can exercise. All that

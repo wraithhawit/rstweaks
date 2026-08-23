@@ -10,6 +10,18 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.120
+-------
+  traceSlowCalculations: breaks down a stalled crafting calculation instead of only timing it.
+  RS reports MISSING_RESOURCES and nothing else -- no resource, no indication where the time
+  went, and identical to "cannot be made" -- so acting on a 5s stall has meant guessing, three
+  times wrongly this session. The listener RS already drives carries both facts:
+  childCalculationStarted fires once per tree node, ingredientsExhausted names what a branch ran
+  out of. Logs the root resource and amount, the node count, and the resources the search spent
+  itself on and kept exhausting. The per-resource map only starts after 100,000 nodes, so a
+  normal craft pays one increment and only a pathological one pays for detail; the resource name
+  is a supplier so it is never even formatted below that. New traceCheck (14), wired into build,
+  confirmed to fail 5 of 14 with the threshold guard removed.
 0.2.119
 -------
   The timeout counter added in 0.2.118 never counted anything. It tested elapsed >= the

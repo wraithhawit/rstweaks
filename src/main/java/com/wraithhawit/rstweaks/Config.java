@@ -224,6 +224,30 @@ public final class Config {
         )
         .define("waitForRunningCraft", true);
 
+    public static final ModConfigSpec.BooleanValue TRACE_SLOW_CALCULATIONS = BUILDER
+        .comment(
+            "Break down a crafting calculation that stalls, instead of only timing it.",
+            "",
+            "A calculation that burns RS's whole budget reports MISSING_RESOURCES and nothing",
+            "else -- no resource, no indication of where the time went. That answer is also",
+            "identical to 'this cannot be made', so the only way to act on a stall has been to",
+            "guess. This counts the crafting tree instead.",
+            "",
+            "RS already calls childCalculationStarted once per tree node and ingredientsExhausted",
+            "whenever a branch runs out, so the counting itself costs one increment. The",
+            "PER-RESOURCE breakdown does cost a map write per node, so it does not begin until a",
+            "calculation has already visited 100,000 nodes -- an ordinary craft finishes far",
+            "below that and pays only the increment, and anything past it is already pathological.",
+            "",
+            "Reported to the log when a calculation exceeds stepRequesterSlowCalculationMs,",
+            "naming the resource asked for, the node count, and which resources the search spent",
+            "itself on and kept running out of."
+        )
+        .define("traceSlowCalculations", true);
+
+    /** Cached: read once per crafting-tree node. */
+    public static volatile boolean traceSlowCalculations = true;
+
     /** Cached: read on the ensureTask path, which a tiered exporter hits several times a tick. */
     public static volatile boolean waitForRunningCraft = true;
 
@@ -279,6 +303,7 @@ public final class Config {
         mekanismQioExternalStorage = MEKANISM_QIO_EXTERNAL_STORAGE.get();
         durabilityAwarePlanning = DURABILITY_AWARE_PLANNING.get();
         waitForRunningCraft = WAIT_FOR_RUNNING_CRAFT.get();
+        traceSlowCalculations = TRACE_SLOW_CALCULATIONS.get();
         sortPatternsByPriority = SORT_PATTERNS_BY_PRIORITY.get();
         refillContainersInCraftingGrid = REFILL_CONTAINERS_IN_CRAFTING_GRID.get();
         containerGridClicks = CONTAINER_GRID_CLICKS.get();

@@ -8,6 +8,49 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.120
+
+**Breaking down the five-second stall, instead of only timing it.**
+
+Refined Storage answers a stalled calculation with `MISSING_RESOURCES` and nothing else. No
+resource, no indication of where the time went, and the same answer it gives for "this genuinely
+cannot be made". Acting on a stall has therefore meant guessing — three times, wrongly, in this
+session alone.
+
+The information was already there. `CraftingCalculatorListener` — which RS drives on every
+calculation — calls `childCalculationStarted` exactly once per node the tree visits, and
+`ingredientsExhausted` whenever a branch gives up, naming the resource it ran out of. Counting
+those needs no new work, only somewhere to put the numbers.
+
+`traceSlowCalculations` (default on) logs, for any calculation past
+`stepRequesterSlowCalculationMs`:
+
+```
+[rstweaks] 4,999ms wasted calculating 64x alltheores:tin_ingot -- 1,412,880 tree nodes
+[rstweaks]   903,114 nodes (64%) making alltheores:tin_ingot  -- ran out 12,044 times
+[rstweaks]   288,410 nodes (20%) making alltheores:raw_tin
+[rstweaks]   ... and 9 more resources
+```
+
+That turns an unactionable stall into a named resource and a place to look.
+
+**What makes it safe to leave on.** The node counter is one `long` increment on a path RS
+already runs. The *per-resource* breakdown is a map write per node, which is not free — so it
+does not begin until a calculation has visited **100,000 nodes**. An ordinary craft finishes far
+below that and pays only the increment. Past it, the calculation is already pathological and the
+overhead is irrelevant against the seconds it is about to burn. The resource name is passed as a
+supplier rather than a string, so an `ItemResource` is never even formatted below the threshold.
+
+That guard is the whole reason this ships enabled, and it is exactly the kind of thing that
+breaks later without anyone noticing — the feature keeps working, it just quietly starts costing
+a map write on every craft. So `traceCheck` pins it: **14 assertions**, wired into `build`,
+confirmed to fail **5 of 14** with the threshold removed, including the one asserting the name
+supplier is never invoked.
+
+A stall that reports *fewer* than 100,000 nodes is itself a finding, and says so explicitly
+rather than printing an empty table: it means the time went somewhere other than tree search,
+and every branching-factor theory is wrong for that case.
+
 ## 0.2.119
 
 **The timeout counter added one version ago never counted anything.**
