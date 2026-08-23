@@ -196,7 +196,9 @@ public abstract class StepRequesterNetworkNodeMixin {
             elapsedMs,
             Config.STEP_REQUESTER_FAILURE_BACKOFF_TICKS.getAsInt(),
             Config.STEP_REQUESTER_MAX_BACKOFF_TICKS.getAsInt(),
-            Config.STEP_REQUESTER_SLOW_CALCULATION_MS.getAsInt());
+            Config.STEP_REQUESTER_SLOW_CALCULATION_MS.getAsInt(),
+            Config.STEP_REQUESTER_BUDGET_PERCENT.getAsInt(),
+            Config.STEP_REQUESTER_COST_CAP_TICKS.getAsInt());
 
         switch (outcome) {
             case FAILED -> ++Stats.stepRequesterFailures;

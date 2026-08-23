@@ -80,6 +80,50 @@ public final class Config {
         )
         .defineInRange("stepRequesterSlowCalculationMs", 1, 0, 5000);
 
+    public static final ModConfigSpec.IntValue STEP_REQUESTER_BUDGET_PERCENT = BUILDER
+        .comment(
+            "The share of the server thread one Step Requester slot may occupy. 0 disables.",
+            "",
+            "The fixed ladder above cannot bound a variable cost, and measurement is what showed",
+            "it. Three Step Requesters spent 60,434ms of a 110-second window inside startTask",
+            "across 156 calls: a 387ms MEAN, with the worst pinned at exactly 5,000ms -- which is",
+            "RS's TimeoutableCancellationToken.TIMEOUT_MS, so those calculations burned the entire",
+            "crafting budget on the server thread and then reported failure.",
+            "",
+            "A slot whose calculation costs five seconds and then sleeps the ladder's ten-second",
+            "cap is still eating a third of the tick. At the ladder's 20-tick base it eats 83%.",
+            "No fixed number answers that, because the cost is not fixed.",
+            "",
+            "So the sleep is derived from the cost: at 5%, a calculation that took N ms is",
+            "followed by N * 20 ms of silence. A 5,000ms timeout sleeps 100 seconds. A 70ms",
+            "calculation sleeps 1.4 seconds. A 1ms calculation sleeps one tick. Cheap slots are",
+            "barely affected; expensive ones are bounded by arithmetic instead of by a guess.",
+            "",
+            "THE TRADE-OFF IS REAL AND IT IS YOURS TO SET. A slot that keeps hitting the 5s",
+            "timeout will sleep for minutes, so whatever stock it maintains refills that much",
+            "later. That is the point -- it was previously spending half the server thread to",
+            "fail -- but if you would rather it retried sooner, raise this. 10 halves every",
+            "sleep, 25 quarters it. Lower it to be stricter.",
+            "",
+            "Applied as a FLOOR on top of the ladder, never a ceiling, so repeated failures",
+            "still escalate and a slot can only ever sleep longer than before, never shorter."
+        )
+        .defineInRange("stepRequesterBudgetPercent", 5, 0, 100);
+
+    public static final ModConfigSpec.IntValue STEP_REQUESTER_COST_CAP_TICKS = BUILDER
+        .comment(
+            "Hard ceiling on a cost-derived sleep, so no slot can be silenced indefinitely.",
+            "",
+            "stepRequesterBudgetPercent multiplies a cost that RS itself bounds at 5,000ms, so",
+            "the worst case at 5% is 100 seconds -- 2,000 ticks. This exists so that a future",
+            "higher crafting timeout, or a stricter budget, cannot turn into an effectively",
+            "permanent silence without somebody choosing it. 6000 ticks = 5 minutes.",
+            "",
+            "A slot at the ceiling still wakes, retries, and re-derives its sleep from what that",
+            "retry actually costs. Nothing here is permanent."
+        )
+        .defineInRange("stepRequesterCostCapTicks", 6000, 1, 72000);
+
     public static final ModConfigSpec.IntValue UNCRAFTABLE_RECHECK_TICKS = BUILDER
         .comment(
             "How long the network remembers that a resource is not craftable.",

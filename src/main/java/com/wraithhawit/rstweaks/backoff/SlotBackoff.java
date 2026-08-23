@@ -92,12 +92,15 @@ public final class SlotBackoff {
                                  final long elapsedMs,
                                  final int baseTicks,
                                  final int maxTicks,
-                                 final int slowMs) {
+                                 final int slowMs,
+                                 final int budgetPercent,
+                                 final int costCapTicks) {
         if (!this.inRange(slot)) {
             return Outcome.RESET;
         }
         if (!success) {
             this.escalate(slot, baseTicks, maxTicks);
+            this.applyCostFloor(slot, elapsedMs, budgetPercent, costCapTicks);
             return Outcome.FAILED;
         }
         // The branch this class was written for. The original mixin reset unconditionally
@@ -106,6 +109,7 @@ public final class SlotBackoff {
         // the next tick — 34.8% of the server thread against 45 failures in 100 seconds.
         if (slowMs > 0 && elapsedMs >= slowMs) {
             this.escalate(slot, baseTicks, maxTicks);
+            this.applyCostFloor(slot, elapsedMs, budgetPercent, costCapTicks);
             return Outcome.SLOW;
         }
         this.remaining[slot] = 0;
@@ -129,6 +133,46 @@ public final class SlotBackoff {
         final int next = previous <= 0 ? base : Math.min(previous * 2, cap);
         this.interval[slot] = next;
         this.remaining[slot] = next;
+    }
+
+    /**
+     * Raises a slot's sleep to whatever its own cost demands, on top of the fixed ladder.
+     *
+     * <p>The ladder alone cannot bound an expensive slot, and measurement on 2026-08-23 is
+     * what showed it. Three Step Requesters spent 60,434ms of a 110-second window inside
+     * {@code startTask} across 156 calls — a 387ms mean with the worst pinned at exactly
+     * 5,000ms, which is {@code TimeoutableCancellationToken.TIMEOUT_MS}. A slot whose single
+     * calculation costs five seconds and then sleeps the ladder's ten-second cap is still
+     * eating a third of the server thread, and at the ladder's 20-tick base it eats 83%.
+     * A fixed sleep cannot answer a variable cost.
+     *
+     * <p>So the sleep is expressed as a budget instead: a slot may occupy at most
+     * {@code budgetPercent} of the server thread, therefore a calculation costing
+     * {@code elapsedMs} must be followed by {@code elapsedMs * (100 / budgetPercent)}
+     * milliseconds of silence. At 5% a 5,000ms timeout sleeps 100 seconds; a 70ms calculation
+     * sleeps 1.4 seconds. Cheap slots are barely touched, and the expensive ones are bounded
+     * by arithmetic rather than by a guess.
+     *
+     * <p>Taken as a floor, never a ceiling — {@code Math.max} against the ladder — so repeated
+     * failures still escalate normally and a slot can only ever sleep longer than before, not
+     * shorter. {@code budgetPercent} of 0 disables this and restores pure ladder behaviour.
+     */
+    private void applyCostFloor(final int slot,
+                                final long elapsedMs,
+                                final int budgetPercent,
+                                final int costCapTicks) {
+        if (budgetPercent <= 0 || elapsedMs <= 0) {
+            return;
+        }
+        final long silenceMs = elapsedMs * (100L / Math.min(100, budgetPercent));
+        // 50ms per tick. Rounded up so a sub-tick calculation still yields at least one tick.
+        final long ticks = Math.min((silenceMs + 49L) / 50L, Math.max(1, costCapTicks));
+        if (ticks > this.remaining[slot]) {
+            this.remaining[slot] = (int) ticks;
+        }
+        if (ticks > this.interval[slot]) {
+            this.interval[slot] = (int) ticks;
+        }
     }
 
     private boolean inRange(final int slot) {

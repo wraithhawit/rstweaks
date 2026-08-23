@@ -10,6 +10,19 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.116
+-------
+  The expensive calculations FAIL, they do not succeed - 0.2.113 had it backwards, and the
+  direct measurement it added is what proved it. "slow crafts backed off" never appeared once,
+  while the mean hit 387ms and the slowest pinned at exactly 5,000ms = RS's
+  TimeoutableCancellationToken.TIMEOUT_MS. So the original failure-only premise was right; what
+  was wrong is the ladder, which cannot bound a variable cost. A slot that burns 5s and then
+  sleeps the 200-tick cap still eats a third of the thread. stepRequesterBudgetPercent (default
+  5) derives the sleep from the cost instead: a slot may occupy at most 5% of the server thread,
+  so a 5,000ms timeout sleeps 100s and a 70ms call sleeps 1.4s. Applied as a floor on the ladder,
+  never a ceiling. stepRequesterCostCapTicks (6000) stops it becoming permanent silence.
+  CONFIG TRAP: NeoForge does not rewrite an existing config when a default changes, so
+  0.2.115's 10 -> 1 never reached the live file. Edit it by hand or delete it to regenerate.
 0.2.115
 -------
   0.2.113's threshold was wrong by two orders of magnitude and this measures instead of

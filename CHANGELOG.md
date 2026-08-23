@@ -8,6 +8,63 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.116
+
+**The expensive calculations fail. They do not succeed. 0.2.113 had it backwards, and the
+measurement 0.2.115 added is what proved it.**
+
+`slow crafts backed off` never appeared in a single report — not once across the whole session,
+with the threshold at 10ms and the world in its worst state. Meanwhile the new line said:
+
+```
+148 craft calculations (112.81ms mean, 4,999ms slowest, 16,696ms total)
+156 craft calculations (387.39ms mean, 5,000ms slowest, 60,434ms total)
+311 craft calculations (194.79ms mean, 5,000ms slowest, 60,580ms total)
+```
+
+Two things fall out of that. First, **0.2.113's original ~400ms estimate was right** and
+0.2.115's "correction" to it was wrong; the distribution is heavy-tailed, not uniformly small,
+and a quiet network genuinely does read 0.99ms mean while a busy one reads 387ms. Second, and
+decisively: **4,999 and 5,000ms is `TimeoutableCancellationToken.TIMEOUT_MS`.** Those
+calculations burn RS's entire crafting budget on the server thread and then return empty — which
+is the *failure* path. `slow crafts backed off` is zero because nothing expensive ever reaches
+the success branch.
+
+So the mixin's original premise — that it is the failed attempt that repeats — was correct all
+along. What is wrong is the **ladder**, and it is wrong in a way no amount of tuning fixes: a
+fixed sleep cannot answer a variable cost. A slot whose calculation costs 5,000ms and then
+sleeps the 200-tick cap is still spending a third of the server thread. At the 20-tick base it
+spends 83%.
+
+`stepRequesterBudgetPercent` (default **5**) derives the sleep from the cost instead. A slot may
+occupy at most that share of the server thread, so a calculation costing N ms is followed by
+`N * (100 / percent)` ms of silence:
+
+| calculation | sleep at 5% |
+| --- | --- |
+| 1ms | 1 tick |
+| 70ms | 1.4s |
+| 387ms (measured mean) | 7.7s |
+| 5,000ms (the timeout) | 100s |
+
+Applied as a **floor on the ladder, never a ceiling**, so repeated failures still escalate and a
+slot can only ever sleep longer than it used to, never shorter. `stepRequesterCostCapTicks`
+(6,000 = 5 minutes) stops an extreme budget or a raised crafting timeout turning into permanent
+silence; a capped slot still wakes, retries, and re-derives its sleep from what the retry costs.
+
+**The trade-off is real.** A slot that keeps hitting the 5s timeout will now sleep for minutes,
+so whatever stock it maintains refills that much later. That is the intended exchange — it was
+previously spending half the server thread to fail — but raise the percentage if you would
+rather it retried sooner.
+
+**Config trap worth knowing:** NeoForge does not rewrite an existing config file when a default
+changes in code, so 0.2.115's `stepRequesterSlowCalculationMs` 10 → 1 never reached the live
+config, which still read 10. Changing a default only affects fresh installs. Edit the file or
+delete it to regenerate.
+
+`backoffCheck` grows to **73 assertions**; the seven new cost-floor cases were confirmed to fail
+with the floor removed.
+
 ## 0.2.115
 
 **0.2.113 set its threshold from an inference instead of a measurement, and the inference was

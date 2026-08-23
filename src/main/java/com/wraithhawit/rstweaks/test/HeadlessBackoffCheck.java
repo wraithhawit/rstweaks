@@ -28,6 +28,8 @@ public final class HeadlessBackoffCheck {
     private static final int BASE = 20;
     private static final int CAP = 200;
     private static final int SLOW_MS = 10;
+    /** Existing scenarios pass budgetPercent=0 so they still test the ladder in isolation. */
+    private static final int CAP_TICKS = 6000;
 
     private static final List<String> FAILURES = new ArrayList<>();
     private static int checks;
@@ -54,6 +56,14 @@ public final class HeadlessBackoffCheck {
         capacityGrowsWithoutLosingState();
         outOfRangeSlotIsInert();
 
+        costFloorScalesWithTheCalculation();
+        costFloorBoundsTheFiveSecondTimeout();
+        costFloorIsAFloorNotACeiling();
+        costFloorAppliesToFailuresToo();
+        costFloorRespectsItsCap();
+        costFloorOfZeroLeavesTheLadderAlone();
+        costFloorGivesAtLeastOneTick();
+
         System.out.printf("scenarios: %d%n", checks);
         if (FAILURES.isEmpty()) {
             System.out.println("PASS");
@@ -68,7 +78,7 @@ public final class HeadlessBackoffCheck {
 
     private static void failureArmsTheLadder() {
         final SlotBackoff backoff = slots(4);
-        final Outcome outcome = backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS);
+        final Outcome outcome = backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         expect("a failure reports FAILED", outcome == Outcome.FAILED);
         expect("a failure sleeps the slot", backoff.isSleeping(0));
         expect("a failure starts at the base interval", backoff.intervalOf(0) == BASE);
@@ -76,26 +86,26 @@ public final class HeadlessBackoffCheck {
 
     private static void consecutiveFailuresDouble() {
         final SlotBackoff backoff = slots(4);
-        backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS);
-        backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS);
+        backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
+        backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         expect("two failures double the interval", backoff.intervalOf(0) == BASE * 2);
-        backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS);
+        backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         expect("three failures double again", backoff.intervalOf(0) == BASE * 4);
     }
 
     private static void escalationStopsAtTheCap() {
         final SlotBackoff backoff = slots(4);
         for (int i = 0; i < 20; i++) {
-            backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS);
+            backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         }
         expect("escalation stops at the cap", backoff.intervalOf(0) == CAP);
     }
 
     private static void fastSuccessResetsTheLadder() {
         final SlotBackoff backoff = slots(4);
-        backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS);
-        backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS);
-        final Outcome outcome = backoff.recordOutcome(0, true, 1, BASE, CAP, SLOW_MS);
+        backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
+        backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
+        final Outcome outcome = backoff.recordOutcome(0, true, 1, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         expect("a fast success reports RESET", outcome == Outcome.RESET);
         expect("a fast success clears the interval", backoff.intervalOf(0) == 0);
         expect("a fast success wakes the slot", !backoff.isSleeping(0));
@@ -106,7 +116,7 @@ public final class HeadlessBackoffCheck {
     private static void slowSuccessArmsTheLadder() {
         final SlotBackoff backoff = slots(4);
         // The exact shape measured on 2026-08-23: the calculation SUCCEEDED and cost ~400ms.
-        final Outcome outcome = backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS);
+        final Outcome outcome = backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         expect("a slow success reports SLOW", outcome == Outcome.SLOW);
         expect("a slow success sleeps the slot", backoff.isSleeping(0));
         expect("a slow success starts at the base interval", backoff.intervalOf(0) == BASE);
@@ -114,22 +124,22 @@ public final class HeadlessBackoffCheck {
 
     private static void slowSuccessAtExactlyThresholdArms() {
         final SlotBackoff backoff = slots(4);
-        final Outcome atThreshold = backoff.recordOutcome(0, true, SLOW_MS, BASE, CAP, SLOW_MS);
+        final Outcome atThreshold = backoff.recordOutcome(0, true, SLOW_MS, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         expect("elapsed == threshold counts as slow", atThreshold == Outcome.SLOW);
 
         final SlotBackoff other = slots(4);
-        final Outcome below = other.recordOutcome(0, true, SLOW_MS - 1, BASE, CAP, SLOW_MS);
+        final Outcome below = other.recordOutcome(0, true, SLOW_MS - 1, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         expect("one millisecond under the threshold is fast", below == Outcome.RESET);
         expect("a fast success does not sleep the slot", !other.isSleeping(0));
     }
 
     private static void slowSuccessEscalatesLikeAFailure() {
         final SlotBackoff backoff = slots(4);
-        backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS);
-        backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS);
+        backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
+        backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         expect("two slow successes double the interval", backoff.intervalOf(0) == BASE * 2);
         for (int i = 0; i < 20; i++) {
-            backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS);
+            backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         }
         expect("slow successes also stop at the cap", backoff.intervalOf(0) == CAP);
     }
@@ -138,11 +148,11 @@ public final class HeadlessBackoffCheck {
         final SlotBackoff backoff = slots(4);
         // An expensive plan that sometimes cannot start at all must keep escalating rather
         // than resetting halfway on every flip between the two reasons.
-        backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS);
+        backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         expect("flip step 1 is the base", backoff.intervalOf(0) == BASE);
-        backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS);
+        backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         expect("a slow success continues a failure's ladder", backoff.intervalOf(0) == BASE * 2);
-        backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS);
+        backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         expect("a failure continues a slow success's ladder", backoff.intervalOf(0) == BASE * 4);
     }
 
@@ -150,25 +160,25 @@ public final class HeadlessBackoffCheck {
 
     private static void slowThresholdOfZeroRestoresOldBehaviour() {
         final SlotBackoff backoff = slots(4);
-        final Outcome outcome = backoff.recordOutcome(0, true, 5_000, BASE, CAP, 0);
+        final Outcome outcome = backoff.recordOutcome(0, true, 5_000, BASE, CAP, 0, 0, CAP_TICKS);
         expect("slowMs=0 lets even a 5s success through", outcome == Outcome.RESET);
         expect("slowMs=0 leaves the slot awake", !backoff.isSleeping(0));
     }
 
     private static void fastSuccessAfterSlowOneClearsIt() {
         final SlotBackoff backoff = slots(4);
-        backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS);
-        backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS);
+        backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
+        backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         // The network got faster -- a storage filled up, a competing pattern was removed.
         // Nothing should keep punishing the slot for what it used to cost.
-        backoff.recordOutcome(0, true, 1, BASE, CAP, SLOW_MS);
+        backoff.recordOutcome(0, true, 1, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         expect("a fast success clears a slow ladder", backoff.intervalOf(0) == 0);
         expect("a fast success wakes a slow-slept slot", !backoff.isSleeping(0));
     }
 
     private static void sleepingSlotIsSkippedUntilTimerExpires() {
         final SlotBackoff backoff = slots(4);
-        backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS);
+        backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         for (int tick = 0; tick < BASE - 1; tick++) {
             backoff.tick();
             expect("slot stays asleep for the whole interval", backoff.isSleeping(0));
@@ -180,17 +190,17 @@ public final class HeadlessBackoffCheck {
 
     private static void slotsAreIndependent() {
         final SlotBackoff backoff = slots(4);
-        backoff.recordOutcome(1, true, 400, BASE, CAP, SLOW_MS);
+        backoff.recordOutcome(1, true, 400, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         expect("the slow slot sleeps", backoff.isSleeping(1));
         expect("its neighbour does not", !backoff.isSleeping(0));
         expect("nor does a later slot", !backoff.isSleeping(2));
-        backoff.recordOutcome(0, true, 1, BASE, CAP, SLOW_MS);
+        backoff.recordOutcome(0, true, 1, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         expect("a fast slot does not wake a slow one", backoff.isSleeping(1));
     }
 
     private static void reconfigureClearsASleepingSlot() {
         final SlotBackoff backoff = slots(4);
-        backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS);
+        backoff.recordOutcome(0, true, 400, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         backoff.reset(0);
         expect("reset wakes the slot", !backoff.isSleeping(0));
         expect("reset clears the interval", backoff.intervalOf(0) == 0);
@@ -198,7 +208,7 @@ public final class HeadlessBackoffCheck {
 
     private static void capacityGrowsWithoutLosingState() {
         final SlotBackoff backoff = slots(2);
-        backoff.recordOutcome(1, true, 400, BASE, CAP, SLOW_MS);
+        backoff.recordOutcome(1, true, 400, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
         backoff.ensureCapacity(9);
         expect("growing keeps the sleeping slot asleep", backoff.isSleeping(1));
         expect("growing keeps its interval", backoff.intervalOf(1) == BASE);
@@ -212,11 +222,89 @@ public final class HeadlessBackoffCheck {
         // -1 is the mixin's initial currentSlot, reachable if startTask is somehow called
         // before any slot has been read. It must not throw on the server thread.
         expect("a negative slot reports RESET",
-            backoff.recordOutcome(-1, false, 0, BASE, CAP, SLOW_MS) == Outcome.RESET);
+            backoff.recordOutcome(-1, false, 0, BASE, CAP, SLOW_MS, 0, CAP_TICKS) == Outcome.RESET);
         expect("a slot past the end reports RESET",
-            backoff.recordOutcome(99, false, 0, BASE, CAP, SLOW_MS) == Outcome.RESET);
+            backoff.recordOutcome(99, false, 0, BASE, CAP, SLOW_MS, 0, CAP_TICKS) == Outcome.RESET);
         expect("a negative slot is never sleeping", !backoff.isSleeping(-1));
         expect("a slot past the end is never sleeping", !backoff.isSleeping(99));
+    }
+
+    // ---- COST-FLOOR: the 0.2.116 half, which the ladder alone cannot do ---------------
+
+    private static void costFloorScalesWithTheCalculation() {
+        final SlotBackoff backoff = slots(4);
+        // 5% budget: 70ms of calculation buys 1,400ms of silence = 28 ticks.
+        backoff.recordOutcome(0, false, 70, BASE, CAP, SLOW_MS, 5, CAP_TICKS);
+        expect("70ms at 5% sleeps 28 ticks", backoff.intervalOf(0) == 28);
+
+        final SlotBackoff cheaper = slots(4);
+        // 10% budget halves every sleep: 200ms buys 2,000ms = 40 ticks, against 80 at 5%.
+        cheaper.recordOutcome(0, false, 200, BASE, CAP, SLOW_MS, 10, CAP_TICKS);
+        expect("200ms at 10% sleeps 40 ticks", cheaper.intervalOf(0) == 40);
+
+        final SlotBackoff stricter = slots(4);
+        stricter.recordOutcome(0, false, 200, BASE, CAP, SLOW_MS, 5, CAP_TICKS);
+        expect("200ms at 5% sleeps twice as long", stricter.intervalOf(0) == 80);
+
+        // Below the ladder's own base the floor is simply not the binding constraint —
+        // 70ms at 10% asks for 14 ticks and the 20-tick base already exceeds it.
+        final SlotBackoff tiny = slots(4);
+        tiny.recordOutcome(0, false, 70, BASE, CAP, SLOW_MS, 10, CAP_TICKS);
+        expect("a floor under the ladder base does not lower it", tiny.intervalOf(0) == BASE);
+    }
+
+    private static void costFloorBoundsTheFiveSecondTimeout() {
+        final SlotBackoff backoff = slots(4);
+        // The measured worst case: TimeoutableCancellationToken.TIMEOUT_MS, burned in full.
+        // At 5% that is 100 seconds of silence = 2,000 ticks. Under the old ladder this slot
+        // slept 20 ticks and went straight back to spending 5s of the next second.
+        backoff.recordOutcome(0, false, 5_000, BASE, CAP, SLOW_MS, 5, CAP_TICKS);
+        expect("a 5s timeout sleeps 2,000 ticks", backoff.intervalOf(0) == 2_000);
+        expect("which is far past the ladder cap", backoff.intervalOf(0) > CAP);
+    }
+
+    private static void costFloorIsAFloorNotACeiling() {
+        final SlotBackoff backoff = slots(4);
+        // Escalate the ladder well past what a trivial cost would ask for.
+        for (int i = 0; i < 20; i++) {
+            backoff.recordOutcome(0, false, 0, BASE, CAP, SLOW_MS, 5, CAP_TICKS);
+        }
+        expect("ladder reached its cap", backoff.intervalOf(0) == CAP);
+        // 10ms at 5% is only 4 ticks; it must not drag the slot back down to that.
+        backoff.recordOutcome(0, false, 10, BASE, CAP, SLOW_MS, 5, CAP_TICKS);
+        expect("a cheap cost never shortens an escalated ladder",
+            backoff.intervalOf(0) >= CAP);
+    }
+
+    private static void costFloorAppliesToFailuresToo() {
+        final SlotBackoff backoff = slots(4);
+        // The measurement that drove this: the expensive calls FAIL, they do not succeed.
+        // "slow crafts backed off" was absent from every report while the mean was 387ms.
+        final Outcome outcome = backoff.recordOutcome(0, false, 5_000, BASE, CAP, SLOW_MS, 5, CAP_TICKS);
+        expect("an expensive failure still reports FAILED", outcome == Outcome.FAILED);
+        expect("an expensive failure gets the cost floor", backoff.intervalOf(0) == 2_000);
+    }
+
+    private static void costFloorRespectsItsCap() {
+        final SlotBackoff backoff = slots(4);
+        backoff.recordOutcome(0, false, 5_000, BASE, CAP, SLOW_MS, 1, 600);
+        expect("the cost cap bounds an extreme budget", backoff.intervalOf(0) == 600);
+        expect("a capped slot is still only asleep, not silenced forever",
+            backoff.isSleeping(0));
+    }
+
+    private static void costFloorOfZeroLeavesTheLadderAlone() {
+        final SlotBackoff backoff = slots(4);
+        backoff.recordOutcome(0, false, 5_000, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
+        expect("budgetPercent=0 restores pure ladder behaviour", backoff.intervalOf(0) == BASE);
+    }
+
+    private static void costFloorGivesAtLeastOneTick() {
+        final SlotBackoff backoff = slots(4);
+        // 1ms at 5% is 20ms, under a tick. It must round up rather than to zero, or a slot
+        // could be "escalated" to no delay at all.
+        backoff.recordOutcome(0, true, 1, BASE, CAP, 1, 5, CAP_TICKS);
+        expect("a sub-tick cost still sleeps", backoff.isSleeping(0));
     }
 
     // ---- harness ---------------------------------------------------------------------
