@@ -47,6 +47,7 @@ public final class ChatReporter {
                           long stepCalls,
                           long stepNanos,
                           long patternSorts,
+                          long stepTimeouts,
                           long sidedLookups,
                           long uncraftable,
                           long duplicateRequests,
@@ -61,7 +62,7 @@ public final class ChatReporter {
                           long emptyExtracts) {
 
         static final Counts ZERO =
-            new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
         static Counts now() {
             return new Counts(
@@ -71,6 +72,7 @@ public final class ChatReporter {
                 Stats.stepRequesterCalculations,
                 Stats.stepRequesterCalculationNanos,
                 Stats.patternListsSorted,
+                Stats.stepRequesterTimeouts,
                 Stats.sidedInputLookups,
                 Stats.uncraftableChecksSkipped,
                 Stats.duplicateRequestsSuppressed,
@@ -93,6 +95,7 @@ public final class ChatReporter {
                 stepCalls - earlier.stepCalls,
                 stepNanos - earlier.stepNanos,
                 patternSorts - earlier.patternSorts,
+                stepTimeouts - earlier.stepTimeouts,
                 sidedLookups - earlier.sidedLookups,
                 uncraftable - earlier.uncraftable,
                 duplicateRequests - earlier.duplicateRequests,
@@ -218,11 +221,16 @@ public final class ChatReporter {
             // "thousands of small calls" shape, and a large slowest with a small count is the
             // opposite. Setting the threshold needs to know which.
             final double meanMs = delta.stepNanos() / 1_000_000.0 / delta.stepCalls();
-            parts.add(String.format("%,d craft calculations (%.2fms mean, %,dms slowest, %,dms total)",
+            parts.add(String.format("%,d craft calculations (%.2fms mean, %,dms total; %,dms session peak)",
                 delta.stepCalls(),
                 meanMs,
-                Stats.stepRequesterSlowestMs,
-                Math.round(delta.stepNanos() / 1_000_000.0)));
+                Math.round(delta.stepNanos() / 1_000_000.0),
+                Stats.stepRequesterSlowestMs));
+        }
+        if (delta.stepTimeouts() > 0) {
+            // The delta-able form of "is it still hitting the ceiling". Each one also means a
+            // craft was reported impossible when it may only have been slow.
+            parts.add(String.format("%,d hit the calculation timeout", delta.stepTimeouts()));
         }
         if (delta.stepSlow() > 0) {
             // Reported separately from failures on purpose: these SUCCEEDED. A high number

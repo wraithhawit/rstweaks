@@ -51,8 +51,26 @@ public final class Stats {
     /** Total nanoseconds spent in Step Requester {@code startTask} calls. */
     public static long stepRequesterCalculationNanos;
 
-    /** The single most expensive Step Requester {@code startTask}, in milliseconds. */
+    /**
+     * The single most expensive Step Requester {@code startTask} of the whole session.
+     *
+     * <p>A running maximum, NOT a per-report delta -- a max cannot be subtracted the way the
+     * other counters can. It is labelled "session peak" in the report for that reason: 0.2.117
+     * printed it beside per-window figures and produced lines like "187 craft calculations
+     * (0.69ms mean, 5,000ms slowest, 129ms total)", where the peak plainly cannot fit inside
+     * the total. Use {@link #stepRequesterTimeouts} for the per-window question.
+     */
     public static long stepRequesterSlowestMs;
+
+    /**
+     * Calculations that burned the entire crafting budget and were cancelled.
+     *
+     * <p>The delta-able form of "is it still hitting the ceiling", which the session peak cannot
+     * answer. A cancelled calculation reports MISSING_RESOURCES, indistinguishable from an
+     * impossible one -- see {@code rstweaks-five-second-craft-timeout} -- so a non-zero count
+     * here also means crafts may be being refused that would have worked.
+     */
+    public static long stepRequesterTimeouts;
 
     /**
      * Pattern lists reordered because RS handed them back in heap-array order.

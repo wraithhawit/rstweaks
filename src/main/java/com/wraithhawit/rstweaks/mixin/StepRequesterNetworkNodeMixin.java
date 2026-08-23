@@ -187,6 +187,11 @@ public abstract class StepRequesterNetworkNodeMixin {
         if (elapsedMs > Stats.stepRequesterSlowestMs) {
             Stats.stepRequesterSlowestMs = elapsedMs;
         }
+        // Cancelled at RS's ceiling. Compared against the configured budget rather than a
+        // literal 5000 so lowering craftingCalculationTimeoutMs keeps this meaningful.
+        if (elapsedMs >= Config.craftingCalculationTimeoutMs) {
+            ++Stats.stepRequesterTimeouts;
+        }
 
         // Every branch below lives in SlotBackoff, which plannerCheck can exercise. All that
         // is left here is reading the live config and counting what it decided.

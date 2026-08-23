@@ -8,6 +8,37 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.118
+
+**Reporting fix. No behaviour change.**
+
+0.2.117 printed the session-wide slowest calculation beside per-window deltas, which produced
+lines like:
+
+```
+187 craft calculations (0.69ms mean, 5,000ms slowest, 129ms total)
+```
+
+187 calls totalling 129ms cannot contain a 5,000ms call. `slowest` is a running maximum and a
+maximum cannot be subtracted the way the other counters can, so it was never a per-window figure
+— it is the whole session's peak. That is precisely the "made 'since last report' untrue for half
+the line" flaw this class's own javadoc records having fixed once already.
+
+It is now labelled explicitly:
+
+```
+187 craft calculations (0.69ms mean, 129ms total; 5,000ms session peak)
+```
+
+And the question the peak was being misread to answer — *is it still hitting the ceiling?* — gets
+a counter that genuinely is a delta: **`N hit the calculation timeout`**. Compared against
+`craftingCalculationTimeoutMs` rather than a literal 5000, so lowering that setting keeps the
+line meaningful.
+
+Worth reading closely when it appears. A cancelled calculation reports `MISSING_RESOURCES`, which
+is indistinguishable from "cannot be made" — so every count here is also a craft that may have
+been refused when it would have worked given more budget.
+
 ## 0.2.117
 
 **The root cause, three versions late.** Everything before this rationed the cost. This removes

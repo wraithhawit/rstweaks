@@ -10,6 +10,15 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.118
+-------
+  Reporting fix, no behaviour change. 0.2.117 printed the session-wide slowest calculation
+  beside per-window deltas, producing lines like "187 craft calculations (0.69ms mean, 5,000ms
+  slowest, 129ms total)" where the peak cannot fit inside the total -- the exact "untrue for
+  half the line" flaw ChatReporter's own javadoc warns about. It is now labelled "session peak",
+  and the per-window question is answered by a new counter: "N hit the calculation timeout",
+  compared against craftingCalculationTimeoutMs rather than a literal 5000. Each one is also a
+  craft reported impossible that may only have been slow.
 0.2.117
 -------
   sortPatternsByPriority: the ROOT CAUSE of the whole session. RS 2.0.9 keeps each output's
