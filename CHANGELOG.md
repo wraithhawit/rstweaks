@@ -8,6 +8,51 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.113
+
+**The Step Requester backoff was watching the wrong signal.** 0.2.x added
+`stepRequesterFailureBackoffTicks` on an explicit premise, written into the mixin's javadoc:
+*"the satisfiable path is already cheap … it is specifically the failed attempt that repeats
+forever."* That premise is now disproved, and the disproof is worth recording because the
+mixin was working perfectly the whole time.
+
+Measured 2026-08-23 in a survival world whose patterns had all been consolidated into a single
+multiblock pattern provider. Three Step Requesters at one location held **34.8% of the entire
+server thread** (`StepRequesterNetworkNode.doWork`, spark `ZHq9zHxsZH`; Observable `Cl4wO` puts
+the same three blocks at 20.249 ms/tick, 61.4% of all block-entity time). Over 100 seconds of
+that, the chat counters reported:
+
+| counter | 100s |
+| --- | --- |
+| failed attempts backed off | **45** |
+| crafting calculations skipped | 5,828 |
+| plan copies avoided | **+72,600,000 in 45s** |
+
+Failures were negligible and the backoff was firing correctly on every one of them. The
+expensive calculations were the ones that **succeeded** — so each hit the `else` branch,
+reset its own slot to zero delay, and ran again on the very next tick, forever.
+
+The cost is the *branching factor*, not the outcome. `CraftingTree.calculateChild` iterates
+every pattern that outputs a resource and explores each to exhaustion, copying the plan at
+each node. The Step Requester slots here ask for base materials — `redstone`, `silicon`,
+`coal`, `tin_ingot` — which in a large pack have a dozen competing patterns each. One
+successful plan explored on the order of a million nodes and cost roughly 400ms of server
+thread. Consolidating every pattern into one provider is what exposed it: it is the first time
+the repository hands the calculator *all* the alternatives at once.
+
+So `stepRequesterSlowCalculationMs` (default 10, `0` disables) times `startTask` and puts a
+slot to sleep when a **successful** calculation exceeds the threshold, on the same escalating
+ladder failures use. Failures and slow successes share one ladder deliberately: a slot is
+either cheap enough to run every tick or it is not, and a slot that alternates between the two
+should keep escalating rather than resetting on each flip. A fast success is still completely
+untouched and starts its craft on exactly the tick it otherwise would.
+
+New chat line, **"slow crafts backed off"**, reported separately from failures — a high number
+there with failures near zero is precisely the signature the old backoff could not see.
+
+The mixin's class javadoc has been rewritten rather than amended. It asserted the false premise
+as established fact, which is how the gap survived this long.
+
 ## 0.2.112
 
 **The five-second freeze has a number, and now it has a config.** 0.2.111 took the doubling

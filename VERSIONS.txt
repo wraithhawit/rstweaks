@@ -10,6 +10,17 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.113
+-------
+  stepRequesterSlowCalculationMs: the Step Requester backoff now triggers on COST, not just
+  on failure. The old mixin reset a slot on any success, on the premise that only failed
+  attempts are expensive. Disproved 2026-08-23: three Step Requesters held 34.8% of the
+  server thread while just 45 attempts failed in 100s, and plan-copies-avoided rose 72.6M in
+  45s. The costly calculations SUCCEED, so each reset its own backoff and reran next tick.
+  A success slower than the threshold (default 10ms) now sleeps on the same escalating
+  ladder. Fast successes are untouched. Exposed as "slow crafts backed off" in chat.
+
+
 0.2.112
 -------
   craftingCalculationTimeoutMs: RS's TimeoutableCancellationToken allows 5000ms per crafting

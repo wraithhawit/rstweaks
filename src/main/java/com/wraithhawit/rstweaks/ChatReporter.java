@@ -43,6 +43,7 @@ public final class ChatReporter {
      */
     private record Counts(long stepScans,
                           long stepFailures,
+                          long stepSlow,
                           long sidedLookups,
                           long uncraftable,
                           long duplicateRequests,
@@ -56,12 +57,13 @@ public final class ChatReporter {
                           long planCopies,
                           long emptyExtracts) {
 
-        static final Counts ZERO = new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        static final Counts ZERO = new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
         static Counts now() {
             return new Counts(
                 Stats.stepRequesterScansSkipped,
                 Stats.stepRequesterFailures,
+                Stats.stepRequesterSlowCalculations,
                 Stats.sidedInputLookups,
                 Stats.uncraftableChecksSkipped,
                 Stats.duplicateRequestsSuppressed,
@@ -80,6 +82,7 @@ public final class ChatReporter {
             return new Counts(
                 stepScans - earlier.stepScans,
                 stepFailures - earlier.stepFailures,
+                stepSlow - earlier.stepSlow,
                 sidedLookups - earlier.sidedLookups,
                 uncraftable - earlier.uncraftable,
                 duplicateRequests - earlier.duplicateRequests,
@@ -193,6 +196,13 @@ public final class ChatReporter {
         }
         if (delta.stepFailures() > 0) {
             parts.add(String.format("%,d failed attempts backed off", delta.stepFailures()));
+        }
+        if (delta.stepSlow() > 0) {
+            // Reported separately from failures on purpose: these SUCCEEDED. A high number
+            // here with failures near zero is the signature the failure-only backoff used to
+            // miss entirely, and it is the one line that says the slot is expensive rather
+            // than impossible.
+            parts.add(String.format("%,d slow crafts backed off", delta.stepSlow()));
         }
         if (delta.sidedLookups() > 0) {
             parts.add(String.format("%,d fast pattern lookups", delta.sidedLookups()));

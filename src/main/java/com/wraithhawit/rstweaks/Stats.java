@@ -23,6 +23,13 @@ public final class Stats {
     /** Craft attempts that genuinely failed and triggered a backoff. */
     public static long stepRequesterFailures;
 
+    /**
+     * Craft attempts that SUCCEEDED but cost more than stepRequesterSlowCalculationMs,
+     * and were backed off anyway. These are the ones the failure-only backoff cannot see:
+     * measured at 34.8% of the server thread while failures were 45 in 100 seconds.
+     */
+    public static long stepRequesterSlowCalculations;
+
     /** Sided-input pattern lookups served by the allocation-free path. */
     public static long sidedInputLookups;
 

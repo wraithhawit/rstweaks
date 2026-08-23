@@ -40,6 +40,33 @@ public final class Config {
         )
         .defineInRange("stepRequesterMaxBackoffTicks", 200, 1, 12000);
 
+    public static final ModConfigSpec.IntValue STEP_REQUESTER_SLOW_CALCULATION_MS = BUILDER
+        .comment(
+            "Back off a Step Requester slot whose craft calculation took longer than this,",
+            "even when the calculation SUCCEEDED. 0 disables it.",
+            "",
+            "stepRequesterFailureBackoffTicks only sees failures, on the assumption that a",
+            "satisfiable request is cheap. That assumption is false once every pattern in the",
+            "network lives in one provider. Measured 2026-08-23 on a survival world with the",
+            "patterns consolidated into a multiblock crafter: three Step Requesters were 34.8%",
+            "of the entire server thread, while only 45 attempts failed in 100 seconds. The",
+            "expensive calls all SUCCEEDED, so every one of them reset its slot to no delay and",
+            "ran again on the next tick.",
+            "",
+            "The cost is the branching factor. CraftingTree.calculateChild tries every pattern",
+            "that outputs a resource, to exhaustion, and copies the whole plan at each node.",
+            "Slots asking for base materials -- redstone, silicon, coal, tin -- have a dozen",
+            "competing patterns each in a large pack, so a single successful plan explored on",
+            "the order of a million nodes and cost roughly 400ms of the server thread.",
+            "",
+            "A slot that plans in under this many milliseconds is untouched and keeps starting",
+            "crafts on exactly the tick it otherwise would. A slot that costs more than this",
+            "sleeps for the same escalating backoff a failure gets, so it still crafts -- just",
+            "not twenty times a second. Raise it to be more permissive, lower it to be",
+            "stricter. 10ms is a fifth of a tick."
+        )
+        .defineInRange("stepRequesterSlowCalculationMs", 10, 0, 5000);
+
     public static final ModConfigSpec.IntValue UNCRAFTABLE_RECHECK_TICKS = BUILDER
         .comment(
             "How long the network remembers that a resource is not craftable.",
