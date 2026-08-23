@@ -10,6 +10,13 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.119
+-------
+  The timeout counter added in 0.2.118 never counted anything. It tested elapsed >= the
+  configured budget exactly, and a calculation that burns the whole budget measures just UNDER
+  it: RS polls its cancellation token rather than interrupting, and elapsed nanos truncate on
+  integer division. The report showed "4,999ms session peak" beside no timeout line at all.
+  Now allows 50ms of tolerance -- nothing else lands that close to the ceiling by chance.
 0.2.118
 -------
   Reporting fix, no behaviour change. 0.2.117 printed the session-wide slowest calculation

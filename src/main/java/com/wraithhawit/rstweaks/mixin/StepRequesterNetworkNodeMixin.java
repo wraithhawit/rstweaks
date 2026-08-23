@@ -94,6 +94,13 @@ public abstract class StepRequesterNetworkNodeMixin {
     @Unique
     private final SlotBackoff rstweaks$backoff = new SlotBackoff();
 
+    /**
+     * How far under the configured budget still counts as having hit it. See the comment at
+     * the comparison for why an exact test counts nothing at all.
+     */
+    @Unique
+    private static final long TIMEOUT_TOLERANCE_MS = 50L;
+
     /** Last seen slot configuration, used only to detect a player edit at the cap. */
     @Unique
     private ResourceMinMaxAmount[] rstweaks$snapshot;
@@ -189,7 +196,14 @@ public abstract class StepRequesterNetworkNodeMixin {
         }
         // Cancelled at RS's ceiling. Compared against the configured budget rather than a
         // literal 5000 so lowering craftingCalculationTimeoutMs keeps this meaningful.
-        if (elapsedMs >= Config.craftingCalculationTimeoutMs) {
+        //
+        // The tolerance is not padding. 0.2.118 tested `>= timeout` exactly and never counted a
+        // single one, while the session peak sat at 4,999ms: RS polls its cancellation token
+        // rather than interrupting, and the elapsed nanos are truncated by integer division, so
+        // a calculation that burned the whole budget measures just UNDER it. Nothing else lands
+        // within 50ms of the ceiling by chance.
+        final long budgetMs = Config.craftingCalculationTimeoutMs;
+        if (budgetMs > 0 && elapsedMs >= budgetMs - TIMEOUT_TOLERANCE_MS) {
             ++Stats.stepRequesterTimeouts;
         }
 

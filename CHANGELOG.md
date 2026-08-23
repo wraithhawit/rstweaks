@@ -8,6 +8,30 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.119
+
+**The timeout counter added one version ago never counted anything.**
+
+0.2.118 tested `elapsedMs >= Config.craftingCalculationTimeoutMs` exactly. Over a full soak it
+reported nothing at all, while the very same line read `4,999ms session peak`.
+
+A calculation that burns the entire budget measures *just under* it. RS polls its cancellation
+token rather than interrupting the thread, so the check lands slightly before the wall, and the
+elapsed nanoseconds are then truncated by integer division into milliseconds. 5,000ms of budget
+reliably measures as 4,999.
+
+Now allows 50ms of tolerance. That is not padding to make the number look busy — nothing else in
+this workload lands within 50ms of the ceiling by chance, and the alternative is a diagnostic
+that reads zero forever while the thing it measures is happening.
+
+Worth recording as a pattern rather than a one-off: this is the third time this session a number
+has been derived instead of measured, and been wrong. The first was reading a log line's
+frequency as a call rate; the second was concluding calls were cheap because a threshold never
+fired. Both times the fix was to count the thing directly — and this is the failure mode of
+*that* fix, a counter whose own condition was never checked against a real observation.
+`4,999 < 5,000` is exactly the sort of thing a test with a real distribution would have caught
+and a hand-written assertion never would.
+
 ## 0.2.118
 
 **Reporting fix. No behaviour change.**
