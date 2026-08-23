@@ -10,6 +10,18 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.117
+-------
+  sortPatternsByPriority: the ROOT CAUSE of the whole session. RS 2.0.9 keeps each output's
+  patterns in a PriorityQueue and reads them with holders.stream() -- and PriorityQueue
+  guarantees order only for its HEAD, so every alternative after the first comes back in raw
+  heap-array layout, which depends on the sequence patterns were added in. CraftingTree tries
+  them in that order and explores each failure to exhaustion, so an arbitrary order is an
+  arbitrary cost. Re-adding patterns (moving them into one provider) reshuffles every heap:
+  same patterns, 0.199 -> 20.249 ms/tick. Now sorted by priority, tie-broken on the pattern's
+  UUID rather than an insertion counter, so a pattern keeps its place when it MOVES. New
+  patternOrderCheck (29) plus a gametest against RS's real repository (10 total), confirmed to
+  fail with the sort off: "insertion sequence 1 produced a different search order".
 0.2.116
 -------
   The expensive calculations FAIL, they do not succeed - 0.2.113 had it backwards, and the

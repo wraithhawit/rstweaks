@@ -55,6 +55,21 @@ public final class RSTweaksGameTests {
     }
 
     /**
+     * Asserts that a resource's candidate patterns come back in a stable, priority-respecting
+     * order from Refined Storage's real repository.
+     *
+     * <p>Has to be a gametest: {@code patternOrderCheck} exercises the ordering logic against a
+     * stand-in, but only a running game applies {@code PatternRepositoryImplMixin} and the
+     * accessor on RS's private {@code PatternHolder} record. It is also the test that would
+     * have caught the mixin-package mistake, where the accessor interface compiled, unit-tested
+     * and built cleanly, then threw "cannot be referenced directly" at class-load time.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void patternSearchOrderIsStable(final GameTestHelper helper) {
+        report(helper, "pattern order", PatternOrderSelfTest.run());
+    }
+
+    /**
      * Runs crafting tasks to completion through Refined Storage's real task engine and
      * audits the network's contents afterwards.
      *

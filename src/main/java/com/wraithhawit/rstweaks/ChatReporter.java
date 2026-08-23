@@ -46,6 +46,7 @@ public final class ChatReporter {
                           long stepSlow,
                           long stepCalls,
                           long stepNanos,
+                          long patternSorts,
                           long sidedLookups,
                           long uncraftable,
                           long duplicateRequests,
@@ -60,7 +61,7 @@ public final class ChatReporter {
                           long emptyExtracts) {
 
         static final Counts ZERO =
-            new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
         static Counts now() {
             return new Counts(
@@ -69,6 +70,7 @@ public final class ChatReporter {
                 Stats.stepRequesterSlowCalculations,
                 Stats.stepRequesterCalculations,
                 Stats.stepRequesterCalculationNanos,
+                Stats.patternListsSorted,
                 Stats.sidedInputLookups,
                 Stats.uncraftableChecksSkipped,
                 Stats.duplicateRequestsSuppressed,
@@ -90,6 +92,7 @@ public final class ChatReporter {
                 stepSlow - earlier.stepSlow,
                 stepCalls - earlier.stepCalls,
                 stepNanos - earlier.stepNanos,
+                patternSorts - earlier.patternSorts,
                 sidedLookups - earlier.sidedLookups,
                 uncraftable - earlier.uncraftable,
                 duplicateRequests - earlier.duplicateRequests,
@@ -203,6 +206,11 @@ public final class ChatReporter {
         }
         if (delta.stepFailures() > 0) {
             parts.add(String.format("%,d failed attempts backed off", delta.stepFailures()));
+        }
+        if (delta.patternSorts() > 0) {
+            // Counts only the lists whose order actually changed, so this is a direct measure
+            // of how often RS handed back heap-array order rather than priority order.
+            parts.add(String.format("%,d pattern lists reordered", delta.patternSorts()));
         }
         if (delta.stepCalls() > 0) {
             // The line that would have prevented 0.2.113's wrong threshold. Count, mean and

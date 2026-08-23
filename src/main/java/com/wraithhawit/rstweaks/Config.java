@@ -227,6 +227,42 @@ public final class Config {
     /** Cached: read on the ensureTask path, which a tiered exporter hits several times a tick. */
     public static volatile boolean waitForRunningCraft = true;
 
+    public static final ModConfigSpec.BooleanValue SORT_PATTERNS_BY_PRIORITY = BUILDER
+        .comment(
+            "Return a resource's candidate patterns in priority order, which Refined Storage",
+            "intends and does not achieve.",
+            "",
+            "RS keeps each output's patterns in a PriorityQueue and reads them back with",
+            "holders.stream(). PriorityQueue guarantees ordering only for its HEAD -- Java",
+            "documents that its iterator traverses in no particular order -- so every alternative",
+            "after the first comes back in raw heap-array layout, which depends on the sequence",
+            "the patterns happened to be added in.",
+            "",
+            "That is not cosmetic. CraftingTree.calculateChild tries alternatives in the order it",
+            "receives them, returns on the first that succeeds, and explores every failure to",
+            "exhaustion while copying the whole crafting state at each node. An arbitrary order is",
+            "an arbitrary cost, and it changes silently whenever patterns are re-added.",
+            "",
+            "Measured 2026-08-23: consolidating a network's patterns into one provider -- which",
+            "re-adds every pattern and rebuilds every per-output heap in a new sequence -- took",
+            "three Step Requesters from 0.199 to 20.249 ms/tick with the SAME patterns, the same",
+            "count and the same recipes, with some calculations going from sub-millisecond to",
+            "burning RS's entire 5,000ms timeout.",
+            "",
+            "Ties are broken on the pattern's UUID rather than on an insertion counter, so a",
+            "pattern keeps its place in the search order when it MOVES BETWEEN PROVIDERS -- which",
+            "is precisely the event that caused the regression above. The resulting order is",
+            "arbitrary but fixed, which is the point: cost stops depending on insertion history,",
+            "and raising a provider's priority genuinely searches it first instead of merely",
+            "owning the head of a queue nobody reads in order.",
+            "",
+            "Turn this off to get RS's heap-array order back."
+        )
+        .define("sortPatternsByPriority", true);
+
+    /** Cached: read once per ingredient per crafting-tree node, which is as hot as it gets. */
+    public static volatile boolean sortPatternsByPriority = true;
+
     /** Called on config load and reload to refresh the hot-path caches. */
     public static void refresh() {
         lazyPatternPlanCopy = LAZY_PATTERN_PLAN_COPY.get();
@@ -243,6 +279,7 @@ public final class Config {
         mekanismQioExternalStorage = MEKANISM_QIO_EXTERNAL_STORAGE.get();
         durabilityAwarePlanning = DURABILITY_AWARE_PLANNING.get();
         waitForRunningCraft = WAIT_FOR_RUNNING_CRAFT.get();
+        sortPatternsByPriority = SORT_PATTERNS_BY_PRIORITY.get();
         refillContainersInCraftingGrid = REFILL_CONTAINERS_IN_CRAFTING_GRID.get();
         containerGridClicks = CONTAINER_GRID_CLICKS.get();
         logGridViewDiagnostics = LOG_GRID_VIEW_DIAGNOSTICS.get();

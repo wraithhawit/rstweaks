@@ -19,6 +19,8 @@
     "ItemHandlerExternalStorageProviderMixin",
     "ItemHandlerExtractableStorageMixin",
     "MutablePatternPlanAccessor",
+    "PatternHolderMixin",
+    "PatternRepositoryImplMixin",
     "MutablePatternPlanMixin",
     "MutableResourceListEntryMixin",
     "PatternResolverFuzzyMixin",

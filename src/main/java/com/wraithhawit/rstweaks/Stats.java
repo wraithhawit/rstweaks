@@ -54,6 +54,14 @@ public final class Stats {
     /** The single most expensive Step Requester {@code startTask}, in milliseconds. */
     public static long stepRequesterSlowestMs;
 
+    /**
+     * Pattern lists reordered because RS handed them back in heap-array order.
+     *
+     * <p>Counts only lists the sort actually changed, so a zero here with a busy network means
+     * RS's order already happened to be right -- not that the mixin failed to apply.
+     */
+    public static long patternListsSorted;
+
     /** Sided-input pattern lookups served by the allocation-free path. */
     public static long sidedInputLookups;
 

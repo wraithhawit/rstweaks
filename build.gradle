@@ -38,8 +38,15 @@ tasks.register('backoffCheck', JavaExec) {
     mainClass = 'com.wraithhawit.rstweaks.test.HeadlessBackoffCheck'
 }
 
+tasks.register('patternOrderCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the pattern search-order self-tests headlessly.'
+    classpath = sourceSets.main.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'com.wraithhawit.rstweaks.test.HeadlessPatternOrderCheck'
+}
+
 tasks.named('check') {
-    dependsOn 'backoffCheck'
+    dependsOn 'backoffCheck', 'patternOrderCheck'
 }
 
 tasks.register('sparkProfile', JavaExec) {

@@ -8,6 +8,64 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.117
+
+**The root cause, three versions late.** Everything before this rationed the cost. This removes
+the thing that created it.
+
+Refined Storage 2.0.9 keeps each output's candidate patterns in a `PriorityQueue` and reads them
+back with:
+
+```java
+holders.stream().map(holder -> holder.pattern).toList()
+```
+
+**`PriorityQueue` guarantees ordering only for its head.** Java documents that its iterator and
+spliterator traverse in no particular order. So the first pattern really is the highest priority
+and *everything after it is in raw heap-array layout* — a function of the sequence patterns
+happened to be added in and whichever sift operations followed.
+
+That is not cosmetic, because `CraftingTree.calculateChild` consumes that list **in order**,
+returns on the first pattern that succeeds, and explores every failure to exhaustion while
+copying the whole crafting state at each node. An arbitrary order is an arbitrary cost.
+
+And it explains the question that started this: *why did the same Step Requesters, asking for the
+same things, only start timing out after the patterns moved?* Moving patterns into one provider
+re-adds every one of them, rebuilding every per-output heap in a new sequence. Same patterns,
+same count, same recipes — new search order. Measured: **0.199 → 20.249 ms/tick**, with some
+calculations going from sub-millisecond to burning RS's entire 5,000ms timeout.
+
+`sortPatternsByPriority` (default on) sorts properly. Two design notes:
+
+- **Priority alone would fix nothing.** `List.sort` is stable, so equal priorities keep their
+  encounter order — the heap-array order we are escaping — and in an ordinary network every
+  provider sits at priority 0. The tiebreak *is* the fix.
+- **The tiebreak is the pattern's UUID, not an insertion counter.** RS's own later builds use
+  insertion order; that still reshuffles when a pattern moves between providers, which is
+  precisely the event that caused this. A UUID is intrinsic and persisted, so a pattern keeps its
+  place in the search order regardless of where it has lived.
+
+The resulting order is arbitrary but *fixed*. That is the point: cost stops depending on
+insertion history, and **provider priority becomes a real lever** — raising one now genuinely
+searches it first, instead of merely owning the head of a queue nobody reads in order.
+
+Reaching RS's private `PatternHolder` record uses the documented seam — a mixin implementing an
+interface of ours — because `setAccessible` is refused across RS's module.
+
+New `patternOrderCheck` (**29 assertions**), including a deliberate reproduction of the JDK
+behaviour itself, so if a future JDK ever orders its iterator the suite says so and this mixin
+can be deleted. Plus a **gametest against RS's real repository**, because only a running game
+applies the mixins — confirmed to fail with the sort disabled:
+`insertion sequence 1 produced a different search order`.
+
+That gametest earned its place immediately. `PatternHolderAccess` was first written inside
+`com.wraithhawit.rstweaks.mixin`, which compiled, unit-tested and built perfectly, then threw
+`is in a defined mixin package ... and cannot be referenced directly` at class-load time. Mixin
+owns that package. The interface lives in `..pattern` now, as `CraftingGridResultSlotAccess`
+already did.
+
+New chat line: **`N pattern lists reordered`**, counting only lists whose order actually changed.
+
 ## 0.2.116
 
 **The expensive calculations fail. They do not succeed. 0.2.113 had it backwards, and the
