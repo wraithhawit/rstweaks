@@ -78,7 +78,7 @@ public abstract class TaskPlanCraftingCalculatorListenerMixin {
                                     final Amount amount,
                                     final CallbackInfoReturnable<CraftingCalculatorListener<MutableTaskPlan>> cir) {
         if (Config.traceSlowCalculations) {
-            CalculationTrace.noteNode(resource::toString);
+            CalculationTrace.noteNode(resource::toString, childPattern.id());
         }
     }
 

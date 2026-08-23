@@ -59,6 +59,24 @@ public final class CalculationTrace {
     private static long detailFrom;
     private static final Map<String, long[]> BY_RESOURCE = new HashMap<>();
 
+    /**
+     * Distinct patterns seen producing each resource, capped per resource.
+     *
+     * <p>This is the branching factor, measured rather than assumed. {@code calculateChild}
+     * explores every alternative pattern for a resource to exhaustion, so a resource with one
+     * real recipe but twelve pattern items behind it costs twelve failing subtrees instead of
+     * one -- and {@code Pattern} identity is a per-item UUID, so duplicates of the same recipe
+     * are genuinely distinct alternatives to the calculator.
+     *
+     * <p>Bounded because the point is to distinguish "one or two" from "a lot"; counting past
+     * the cap would cost memory in exactly the pathological case this runs in.
+     */
+    private static final Map<String, java.util.Set<java.util.UUID>> PATTERNS_BY_RESOURCE =
+        new HashMap<>();
+
+    /** Above this many distinct patterns for one resource, the exact count stops mattering. */
+    private static final int PATTERN_CAP = 64;
+
     private CalculationTrace() {
     }
 
@@ -72,6 +90,9 @@ public final class CalculationTrace {
         if (!BY_RESOURCE.isEmpty()) {
             BY_RESOURCE.clear();
         }
+        if (!PATTERNS_BY_RESOURCE.isEmpty()) {
+            PATTERNS_BY_RESOURCE.clear();
+        }
     }
 
     /**
@@ -82,7 +103,8 @@ public final class CalculationTrace {
      * builds a whole component patch. The caller passes a supplier so nothing is built until this
      * calculation has already proven itself expensive.
      */
-    public static void noteNode(final java.util.function.Supplier<String> resourceName) {
+    public static void noteNode(final java.util.function.Supplier<String> resourceName,
+                                final java.util.UUID patternId) {
         ++nodes;
         if (!detailed) {
             if (nodes < detailThreshold) {
@@ -91,7 +113,15 @@ public final class CalculationTrace {
             detailed = true;
             detailFrom = nodes;
         }
-        BY_RESOURCE.computeIfAbsent(resourceName.get(), k -> new long[2])[0]++;
+        final String name = resourceName.get();
+        BY_RESOURCE.computeIfAbsent(name, k -> new long[2])[0]++;
+        if (patternId != null) {
+            final java.util.Set<java.util.UUID> seen =
+                PATTERNS_BY_RESOURCE.computeIfAbsent(name, k -> new java.util.HashSet<>());
+            if (seen.size() < PATTERN_CAP) {
+                seen.add(patternId);
+            }
+        }
     }
 
     /** A branch that gave up because this resource ran out. */
@@ -145,10 +175,14 @@ public final class CalculationTrace {
             final Map.Entry<String, long[]> entry = ranked.get(i);
             final long visits = entry.getValue()[0];
             final long exhausted = entry.getValue()[1];
-            lines.add(String.format("  %,d nodes (%.0f%%) making %s%s",
+            final java.util.Set<java.util.UUID> seen = PATTERNS_BY_RESOURCE.get(entry.getKey());
+            final int alternatives = seen == null ? 0 : seen.size();
+            lines.add(String.format("  %,d nodes (%.0f%%) making %s%s%s",
                 visits,
                 observed == 0 ? 0.0 : visits * 100.0 / observed,
                 entry.getKey(),
+                alternatives <= 1 ? "" : String.format("  via %s%d patterns",
+                    alternatives >= PATTERN_CAP ? ">=" : "", alternatives),
                 exhausted == 0 ? "" : String.format("  -- ran out %,d times", exhausted)));
         }
         if (ranked.size() > KEEP) {

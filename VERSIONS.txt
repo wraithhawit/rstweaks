@@ -10,6 +10,14 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.122
+-------
+  The trace now reports the BRANCHING FACTOR: "822,202 nodes (87%) making allthemodium_nugget
+  via 12 patterns". Pattern identity is a per-item UUID, so two copies of one recipe are two
+  alternatives to the calculator and each costs its own failing subtree. This is the number that
+  decides whether deduplicating patterns is the fix, measured instead of assumed. Groundwork for
+  the memoization idea, which was investigated and REJECTED AS UNSOUND -- see CHANGELOG.
+  traceCheck 17 -> 20.
 0.2.121
 -------
   Two fixes the first real traces exposed. (1) Percentages were computed against the TOTAL node

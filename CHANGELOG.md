@@ -8,6 +8,54 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.122
+
+**Groundwork for the memoization idea — and the reason that idea is not being shipped.**
+
+### The memo, investigated and rejected as unsound
+
+The obvious fix for `allthemodium_essence` running out 736,899 times in one calculation is to
+remember that a `(resource, amount)` request already failed and skip re-exploring it. Reading
+`CraftingTree` closely, that is not safe:
+
+- Alternatives all start from the **same** parent state — `child()` does `parentState.copy()`,
+  and while cycling alternatives the parent keeps its own state, so a failed alternative's
+  extractions are discarded.
+- But on final failure, `cycleToNextIngredientOrFail` **adopts** the failed child's state.
+
+So a failure can be recorded deep in a branch that had already extracted heavily, and later
+consulted from a state holding *more* of the relevant resources — where the same request would
+have succeeded. The memo would then refuse a craft that works, reporting `MISSING_RESOURCES`,
+which is indistinguishable from "cannot be made". No error, no log line, just a recipe that
+quietly stops being offered.
+
+That is exactly the failure recorded in `rstweaks-cap-is-not-a-proof`, and it is not worth a
+throughput win. A sound version needs the memo keyed on a fingerprint of the crafting state,
+which costs more than it saves on the path it would run on.
+
+### What ships instead: measure the branching factor
+
+The other explanation for 822,202 nodes on one resource is that it is reached through many
+**distinct patterns**, each exploring its own failing subtree. `Pattern` identity is a per-item
+UUID, so two pattern items encoding the same recipe are two genuine alternatives to the
+calculator — and deduplicating *those* is provably sound, because identical layouts produce
+identical subtrees.
+
+Whether that is what is happening here is a question with an answer, so the trace now reports it:
+
+```
+822,202 nodes (87%) making allthemodium:allthemodium_nugget  via 12 patterns
+```
+
+One pattern and the line stays quiet; many and it says how many. `>=64` means it stopped
+counting, which is answer enough.
+
+This is deliberately a measurement rather than a fix. Three times this session a number was
+inferred instead of observed and was wrong; deduplication is only worth building if the count
+says duplicates exist.
+
+`traceCheck` 17 → **20**.
+
 ## 0.2.121
 
 **Two fixes the first real traces exposed within minutes of shipping 0.2.120.**
