@@ -44,6 +44,8 @@ public final class ChatReporter {
     private record Counts(long stepScans,
                           long stepFailures,
                           long stepSlow,
+                          long stepCalls,
+                          long stepNanos,
                           long sidedLookups,
                           long uncraftable,
                           long duplicateRequests,
@@ -57,13 +59,16 @@ public final class ChatReporter {
                           long planCopies,
                           long emptyExtracts) {
 
-        static final Counts ZERO = new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        static final Counts ZERO =
+            new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
         static Counts now() {
             return new Counts(
                 Stats.stepRequesterScansSkipped,
                 Stats.stepRequesterFailures,
                 Stats.stepRequesterSlowCalculations,
+                Stats.stepRequesterCalculations,
+                Stats.stepRequesterCalculationNanos,
                 Stats.sidedInputLookups,
                 Stats.uncraftableChecksSkipped,
                 Stats.duplicateRequestsSuppressed,
@@ -83,6 +88,8 @@ public final class ChatReporter {
                 stepScans - earlier.stepScans,
                 stepFailures - earlier.stepFailures,
                 stepSlow - earlier.stepSlow,
+                stepCalls - earlier.stepCalls,
+                stepNanos - earlier.stepNanos,
                 sidedLookups - earlier.sidedLookups,
                 uncraftable - earlier.uncraftable,
                 duplicateRequests - earlier.duplicateRequests,
@@ -196,6 +203,18 @@ public final class ChatReporter {
         }
         if (delta.stepFailures() > 0) {
             parts.add(String.format("%,d failed attempts backed off", delta.stepFailures()));
+        }
+        if (delta.stepCalls() > 0) {
+            // The line that would have prevented 0.2.113's wrong threshold. Count, mean and
+            // worst case together: a mean well under the threshold with a huge count is the
+            // "thousands of small calls" shape, and a large slowest with a small count is the
+            // opposite. Setting the threshold needs to know which.
+            final double meanMs = delta.stepNanos() / 1_000_000.0 / delta.stepCalls();
+            parts.add(String.format("%,d craft calculations (%.2fms mean, %,dms slowest, %,dms total)",
+                delta.stepCalls(),
+                meanMs,
+                Stats.stepRequesterSlowestMs,
+                Math.round(delta.stepNanos() / 1_000_000.0)));
         }
         if (delta.stepSlow() > 0) {
             // Reported separately from failures on purpose: these SUCCEEDED. A high number

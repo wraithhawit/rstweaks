@@ -30,6 +30,30 @@ public final class Stats {
      */
     public static long stepRequesterSlowCalculations;
 
+    /**
+     * Every {@code startTask} a Step Requester made, and what they cost in total.
+     *
+     * <p>Added in 0.2.115 because 0.2.113's threshold was set from an inference rather than a
+     * measurement, and the inference was wrong by two orders of magnitude. The reasoning was:
+     * one {@code LP planner declined} log line per calculation, ~1/second, against 34.8% of
+     * the server thread, therefore ~400ms per calculation. But that log line is written per
+     * distinct resource the LP planner is offered, not per calculation, so it is not a call
+     * counter at all. The real shape is thousands of calls of a few milliseconds each — spark
+     * `KJdBQvnix4` shows 60,580ms inside the timed region over 120s with only ONE call above
+     * 10ms, which puts the count at 6,000+ and the mean in low single-digit milliseconds.
+     *
+     * <p>These two make the mean and the distribution directly readable in game, so the
+     * threshold can be set from data. Nanos rather than millis because a per-call figure that
+     * rounds to zero sums to nothing.
+     */
+    public static long stepRequesterCalculations;
+
+    /** Total nanoseconds spent in Step Requester {@code startTask} calls. */
+    public static long stepRequesterCalculationNanos;
+
+    /** The single most expensive Step Requester {@code startTask}, in milliseconds. */
+    public static long stepRequesterSlowestMs;
+
     /** Sided-input pattern lookups served by the allocation-free path. */
     public static long sidedInputLookups;
 

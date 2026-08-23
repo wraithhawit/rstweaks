@@ -8,6 +8,39 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.115
+
+**0.2.113 set its threshold from an inference instead of a measurement, and the inference was
+wrong by two orders of magnitude.** The mechanism was right and was firing correctly the whole
+time. The number was not.
+
+The reasoning behind 10ms: the `LP planner declined` log line appeared roughly once a second,
+which was read as one line per crafting calculation; against 34.8% of the server thread that
+gives ~400ms per calculation, so a 10ms threshold looked generous. **That log line is written
+per distinct resource offered to the LP planner, not per call** — it is not a call counter, and
+using it as one was unfounded.
+
+Profile `KJdBQvnix4` shows the real shape. The timed region holds **60,580ms of `startTask` over
+a 120-second profile** — 50.5% of the server thread, wrapping exactly the right call — and
+**exactly one** of those calls exceeded 10ms. So the count is in the thousands and the mean is
+low single-digit milliseconds: thousands of small calls, not a handful of enormous ones. In game
+the counter read `slow crafts backed off: 1`.
+
+Two changes, neither to the mechanism:
+
+- **`/rstweaks stats` now prints `N craft calculations (X.XXms mean, Yms slowest, Zms total)`.**
+  Count, mean and worst case together, because setting a threshold requires knowing which shape
+  you are looking at, and nothing in game said so before. This is the line that would have
+  caught the mistake immediately.
+- **`stepRequesterSlowCalculationMs` default drops 10 → 1.**
+
+If the mean turns out to be below 1ms, whole milliseconds are too coarse and the key will have
+to change units — the new stats line is what will say so.
+
+The lesson generalises past this config key: a number derived from a log line's frequency is
+only as good as the assumption about what writes that line, and that assumption was never
+checked against the code that emits it.
+
 ## 0.2.114
 
 **Tests for 0.2.113, and a note on what they cannot reach.** No behaviour change.

@@ -176,7 +176,17 @@ public abstract class StepRequesterNetworkNodeMixin {
         final long startedAt = System.nanoTime();
         final Optional<TaskId> result =
             component.startTask(resource, amount, actor, notifyListeners, cancellationToken);
-        final long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
+        final long elapsedNanos = System.nanoTime() - startedAt;
+        final long elapsedMs = elapsedNanos / 1_000_000L;
+
+        // Recorded for every call, backed off or not. 0.2.113 set its threshold from an
+        // inference instead of a measurement and was wrong by two orders of magnitude; these
+        // make the mean and the worst case readable in game so the next number comes from data.
+        ++Stats.stepRequesterCalculations;
+        Stats.stepRequesterCalculationNanos += elapsedNanos;
+        if (elapsedMs > Stats.stepRequesterSlowestMs) {
+            Stats.stepRequesterSlowestMs = elapsedMs;
+        }
 
         // Every branch below lives in SlotBackoff, which plannerCheck can exercise. All that
         // is left here is reading the live config and counting what it decided.

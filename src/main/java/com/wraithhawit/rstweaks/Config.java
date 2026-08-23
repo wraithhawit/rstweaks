@@ -62,10 +62,23 @@ public final class Config {
             "A slot that plans in under this many milliseconds is untouched and keeps starting",
             "crafts on exactly the tick it otherwise would. A slot that costs more than this",
             "sleeps for the same escalating backoff a failure gets, so it still crafts -- just",
-            "not twenty times a second. Raise it to be more permissive, lower it to be",
-            "stricter. 10ms is a fifth of a tick."
+            "not twenty times a second. Raise it to be more permissive, lower it to be stricter.",
+            "",
+            "DEFAULT LOWERED 10 -> 1 IN 0.2.115. The 10 was set from an inference, not a",
+            "measurement, and the inference was wrong by two orders of magnitude: it read the",
+            "'LP planner declined' log line as one-per-calculation, counted ~1/second against",
+            "34.8% of the server thread, and concluded ~400ms per calculation. That log line is",
+            "written per distinct resource offered to the LP planner, not per call. Profile",
+            "KJdBQvnix4 shows what is really happening -- 60,580ms inside the timed region over",
+            "120 seconds, with exactly ONE call above 10ms. Thousands of calls of a few",
+            "milliseconds each, not a handful of enormous ones. At 10ms the check almost never",
+            "fired; the counter read 'slow crafts backed off: 1'.",
+            "",
+            "Use the figures /rstweaks stats now prints -- calculation count, mean and slowest --",
+            "to set this from data rather than from a guess. If the mean is below 1ms this needs",
+            "finer granularity than whole milliseconds and the key will have to change units."
         )
-        .defineInRange("stepRequesterSlowCalculationMs", 10, 0, 5000);
+        .defineInRange("stepRequesterSlowCalculationMs", 1, 0, 5000);
 
     public static final ModConfigSpec.IntValue UNCRAFTABLE_RECHECK_TICKS = BUILDER
         .comment(

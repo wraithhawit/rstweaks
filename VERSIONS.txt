@@ -10,6 +10,16 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.115
+-------
+  0.2.113's threshold was wrong by two orders of magnitude and this measures instead of
+  guessing. The 10ms came from reading "LP planner declined" as one line per calculation
+  (~1/s) against 34.8% of the thread, giving ~400ms per plan. That line is per distinct
+  resource offered to the LP planner, not per call. Profile KJdBQvnix4: 60,580ms inside the
+  timed region over 120s with exactly ONE call above 10ms -- thousands of few-millisecond
+  calls, not a handful of enormous ones. Result in game: "slow crafts backed off: 1".
+  /rstweaks stats now prints craft-calculation count, mean, slowest and total, and the
+  default drops 10 -> 1. No mechanism change; the branch was always firing correctly.
 0.2.114
 -------
   Tests for 0.2.113. The backoff decision moved out of StepRequesterNetworkNodeMixin into
