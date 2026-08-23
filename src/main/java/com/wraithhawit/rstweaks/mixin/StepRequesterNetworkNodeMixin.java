@@ -10,6 +10,7 @@ import com.ultramega.stepcrafter.common.support.ResourceMinMaxAmount;
 import com.ultramega.stepcrafter.common.support.patternresource.PatternResourceContainerImpl;
 import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.Stats;
+import com.wraithhawit.rstweaks.backoff.SlotBackoff;
 
 import java.util.Arrays;
 import java.util.Optional;
@@ -22,7 +23,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Backs off a Step Requester filter slot after a failed craft attempt.
+ * Backs off a Step Requester filter slot whose craft attempt failed, or succeeded expensively.
  *
  * <p>Diagnosis, from a 120s spark profile of the survival world: 91.6% of the
  * server tick was {@code Level.tickBlockEntities}, of which <b>77.8% was a
@@ -85,13 +86,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(StepRequesterNetworkNode.class)
 public abstract class StepRequesterNetworkNodeMixin {
-    /** Ticks left before each slot may attempt a craft again. */
+    /**
+     * The whole backoff decision, in a class with no mixin or Minecraft types so it can be
+     * tested. See {@link SlotBackoff} — {@code plannerCheck} cannot exercise a mixin, but it
+     * can exercise this.
+     */
     @Unique
-    private int[] rstweaks$backoffRemaining;
-
-    /** Current backoff length per slot, doubled on each consecutive failure. */
-    @Unique
-    private int[] rstweaks$backoffInterval;
+    private final SlotBackoff rstweaks$backoff = new SlotBackoff();
 
     /** Last seen slot configuration, used only to detect a player edit at the cap. */
     @Unique
@@ -114,15 +115,7 @@ public abstract class StepRequesterNetworkNodeMixin {
         )
     )
     private void rstweaks$tickBackoff(final CallbackInfo ci) {
-        final int[] remaining = this.rstweaks$backoffRemaining;
-        if (remaining == null) {
-            return;
-        }
-        for (int slot = 0; slot < remaining.length; slot++) {
-            if (remaining[slot] > 0) {
-                --remaining[slot];
-            }
-        }
+        this.rstweaks$backoff.tick();
     }
 
     @Redirect(
@@ -140,7 +133,7 @@ public abstract class StepRequesterNetworkNodeMixin {
 
         final ResourceMinMaxAmount actual = container.get(slot);
 
-        if (this.rstweaks$backoffRemaining[slot] <= 0) {
+        if (!this.rstweaks$backoff.isSleeping(slot)) {
             this.rstweaks$snapshot[slot] = actual;
             return actual;
         }
@@ -152,10 +145,9 @@ public abstract class StepRequesterNetworkNodeMixin {
             Config.STEP_REQUESTER_FAILURE_BACKOFF_TICKS.getAsInt(),
             Config.STEP_REQUESTER_MAX_BACKOFF_TICKS.getAsInt()
         );
-        if (this.rstweaks$backoffInterval[slot] >= cap
+        if (this.rstweaks$backoff.intervalOf(slot) >= cap
             && this.rstweaks$wasReconfigured(this.rstweaks$snapshot[slot], actual)) {
-            this.rstweaks$backoffRemaining[slot] = 0;
-            this.rstweaks$backoffInterval[slot] = 0;
+            this.rstweaks$backoff.reset(slot);
             this.rstweaks$snapshot[slot] = actual;
             return actual;
         }
@@ -186,54 +178,22 @@ public abstract class StepRequesterNetworkNodeMixin {
             component.startTask(resource, amount, actor, notifyListeners, cancellationToken);
         final long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
 
-        final int slot = this.rstweaks$currentSlot;
-        if (this.rstweaks$backoffRemaining == null
-            || slot < 0
-            || slot >= this.rstweaks$backoffRemaining.length) {
-            return result;
-        }
+        // Every branch below lives in SlotBackoff, which plannerCheck can exercise. All that
+        // is left here is reading the live config and counting what it decided.
+        final SlotBackoff.Outcome outcome = this.rstweaks$backoff.recordOutcome(
+            this.rstweaks$currentSlot,
+            result.isPresent(),
+            elapsedMs,
+            Config.STEP_REQUESTER_FAILURE_BACKOFF_TICKS.getAsInt(),
+            Config.STEP_REQUESTER_MAX_BACKOFF_TICKS.getAsInt(),
+            Config.STEP_REQUESTER_SLOW_CALCULATION_MS.getAsInt());
 
-        if (result.isEmpty()) {
-            ++Stats.stepRequesterFailures;
-            this.rstweaks$escalate(slot);
-            return result;
+        switch (outcome) {
+            case FAILED -> ++Stats.stepRequesterFailures;
+            case SLOW -> ++Stats.stepRequesterSlowCalculations;
+            case RESET -> { }
         }
-
-        // A success that cost real tick time is backed off too. The original mixin reset the
-        // slot here unconditionally, on the premise that only failures are expensive -- which
-        // holds until every pattern in the network lives in one provider and the calculator is
-        // handed a dozen alternatives for `redstone`. Then the expensive calls are the ones
-        // that SUCCEED, they reset their own backoff, and nothing throttles them. See
-        // stepRequesterSlowCalculationMs for the measurement.
-        final int slowMs = Config.STEP_REQUESTER_SLOW_CALCULATION_MS.getAsInt();
-        if (slowMs > 0 && elapsedMs >= slowMs) {
-            ++Stats.stepRequesterSlowCalculations;
-            this.rstweaks$escalate(slot);
-            return result;
-        }
-
-        this.rstweaks$backoffInterval[slot] = 0;
-        this.rstweaks$backoffRemaining[slot] = 0;
         return result;
-    }
-
-    /**
-     * Puts a slot to sleep, doubling the wait on each consecutive escalation up to the cap.
-     *
-     * <p>Failures and slow successes share one escalation ladder deliberately. A slot is
-     * either cheap enough to run every tick or it is not, and which of the two reasons put it
-     * to sleep does not change how long it should sleep for. Sharing the ladder also means a
-     * slot that alternates between the two -- an expensive plan that sometimes cannot start at
-     * all -- keeps escalating instead of resetting halfway on each flip.
-     */
-    @Unique
-    private void rstweaks$escalate(final int slot) {
-        final int base = Config.STEP_REQUESTER_FAILURE_BACKOFF_TICKS.getAsInt();
-        final int cap = Math.max(base, Config.STEP_REQUESTER_MAX_BACKOFF_TICKS.getAsInt());
-        final int previous = this.rstweaks$backoffInterval[slot];
-        final int next = previous <= 0 ? base : Math.min(previous * 2, cap);
-        this.rstweaks$backoffInterval[slot] = next;
-        this.rstweaks$backoffRemaining[slot] = next;
     }
 
     /**
@@ -258,13 +218,10 @@ public abstract class StepRequesterNetworkNodeMixin {
 
     @Unique
     private void rstweaks$ensureCapacity(final int size) {
-        if (this.rstweaks$backoffRemaining == null) {
-            this.rstweaks$backoffRemaining = new int[size];
-            this.rstweaks$backoffInterval = new int[size];
+        this.rstweaks$backoff.ensureCapacity(size);
+        if (this.rstweaks$snapshot == null) {
             this.rstweaks$snapshot = new ResourceMinMaxAmount[size];
-        } else if (this.rstweaks$backoffRemaining.length < size) {
-            this.rstweaks$backoffRemaining = Arrays.copyOf(this.rstweaks$backoffRemaining, size);
-            this.rstweaks$backoffInterval = Arrays.copyOf(this.rstweaks$backoffInterval, size);
+        } else if (this.rstweaks$snapshot.length < size) {
             this.rstweaks$snapshot = Arrays.copyOf(this.rstweaks$snapshot, size);
         }
     }

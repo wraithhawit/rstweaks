@@ -8,6 +8,42 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.114
+
+**Tests for 0.2.113, and a note on what they cannot reach.** No behaviour change.
+
+`plannerCheck` can never test a mixin — nothing transforms Refined Storage's or Step Crafter's
+bytecode in a plain JVM, so a mixin-dependent assertion there exercises stock code and passes
+whatever we do. `ExtractionSelfTest` sat in exactly that position for months. But the
+*decision* 0.2.113 changed is ordinary arithmetic over slot state, and that half can be pulled
+out and checked exhaustively.
+
+So `SlotBackoff` now holds every branch that decides whether a slot sleeps, with no Minecraft,
+Refined Storage, mixin or config types in it. Thresholds are parameters rather than config
+reads, which is what makes the timing deterministic in a test. `StepRequesterNetworkNodeMixin`
+keeps only the three injection points, the config reads and the stat counters.
+
+`./gradlew backoffCheck` — **59 assertions across 15 scenarios**, wired into `check` so `build`
+runs it. It is instant and depends on nothing, unlike `plannerCheck`, so there was no reason
+for it to be opt-in.
+
+Confirmed to have teeth, per the discipline in `rstweaks-gametest-harness`: reinstating the
+pre-0.2.113 unconditional reset on success fails **32 of the 59**, including every SLOW-PATH
+case and the whole sleep-duration scenario. A test that passes with the bug present is not a
+test.
+
+Covered: the failure ladder escalates, doubles and caps; a fast success resets it; a slow
+success arms it; `elapsed == threshold` counts as slow and one millisecond under does not;
+slow successes escalate and cap like failures; failures and slow successes share one ladder
+across flips; `slowMs = 0` restores failure-only behaviour exactly; a slot sleeps for its full
+interval and wakes on the last tick; slots are independent; reconfiguration clears a sleeping
+slot; capacity grows without losing state and never shrinks; and an out-of-range slot — the
+mixin's initial `currentSlot = -1` — is inert rather than throwing on the server thread.
+
+**What this still does not prove:** that the redirects fire, that `startTask` is the method
+being timed, or that the elapsed figure is real. Those need a running game, and the reading
+that settles them is the "slow crafts backed off" counter appearing in chat.
+
 ## 0.2.113
 
 **The Step Requester backoff was watching the wrong signal.** 0.2.x added

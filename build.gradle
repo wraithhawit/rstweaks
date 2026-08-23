@@ -28,6 +28,20 @@ tasks.register('plannerCheck', JavaExec) {
     mainClass = 'com.wraithhawit.rstweaks.test.HeadlessPlannerCheck'
 }
 
+// Wired into `check` (and so into `build`) unlike plannerCheck, which needs Refined Storage
+// on the classpath and takes seconds. This one touches nothing but our own arithmetic and
+// runs instantly, so there is no reason for it to be opt-in.
+tasks.register('backoffCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the Step Requester backoff policy self-tests headlessly.'
+    classpath = sourceSets.main.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'com.wraithhawit.rstweaks.test.HeadlessBackoffCheck'
+}
+
+tasks.named('check') {
+    dependsOn 'backoffCheck'
+}
+
 tasks.register('sparkProfile', JavaExec) {
     group = 'verification'
     description = 'Decodes a spark profile: ./gradlew sparkProfile --args="<url|code|file>"'
