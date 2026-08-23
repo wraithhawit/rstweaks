@@ -48,6 +48,7 @@ public final class ChatReporter {
                           long stepNanos,
                           long patternSorts,
                           long stepTimeouts,
+                          long stepBudgetExpiries,
                           long sidedLookups,
                           long uncraftable,
                           long duplicateRequests,
@@ -62,7 +63,7 @@ public final class ChatReporter {
                           long emptyExtracts) {
 
         static final Counts ZERO =
-            new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
         static Counts now() {
             return new Counts(
@@ -73,6 +74,7 @@ public final class ChatReporter {
                 Stats.stepRequesterCalculationNanos,
                 Stats.patternListsSorted,
                 Stats.stepRequesterTimeouts,
+                Stats.stepRequesterBudgetExpiries,
                 Stats.sidedInputLookups,
                 Stats.uncraftableChecksSkipped,
                 Stats.duplicateRequestsSuppressed,
@@ -96,6 +98,7 @@ public final class ChatReporter {
                 stepNanos - earlier.stepNanos,
                 patternSorts - earlier.patternSorts,
                 stepTimeouts - earlier.stepTimeouts,
+                stepBudgetExpiries - earlier.stepBudgetExpiries,
                 sidedLookups - earlier.sidedLookups,
                 uncraftable - earlier.uncraftable,
                 duplicateRequests - earlier.duplicateRequests,
@@ -226,6 +229,11 @@ public final class ChatReporter {
                 meanMs,
                 Math.round(delta.stepNanos() / 1_000_000.0),
                 Stats.stepRequesterSlowestMs));
+        }
+        if (delta.stepBudgetExpiries() > 0) {
+            // Each of these is a five-second server-thread freeze that did not happen. A slot
+            // climbing the ladder is being asked for something large, not something impossible.
+            parts.add(String.format("%,d long calculations cut short", delta.stepBudgetExpiries()));
         }
         if (delta.stepTimeouts() > 0) {
             // The delta-able form of "is it still hitting the ceiling". Each one also means a

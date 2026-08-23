@@ -10,6 +10,18 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.123
+-------
+  stepRequesterCalculationBudgetMs (default 200): THE FIVE-SECOND FREEZE IS FIXED. RS gives every
+  calculation 5,000ms of the SERVER thread. craftingCalculationTimeoutMs could always have cut
+  that and deliberately never did, because a cancelled calculation reports MISSING_RESOURCES and
+  a global cut would silently refuse a player's valid craft. That reasoning holds for a player
+  waiting on an answer; it does not hold for automation, which is not waiting and asks again on a
+  schedule anyway. So the budget applies ONLY to Step Requester calculations -- players keep the
+  full 5,000ms untouched -- and it ESCALATES per slot on cancellation up to RS's own timeout, so
+  a large-but-valid craft is planned after a few attempts instead of never. Any cheap success
+  resets it. Worst case for automation: 200ms, four ticks. New chat line "N long calculations cut
+  short". backoffCheck 73 -> 90, including the token on a driven clock.
 0.2.122
 -------
   The trace now reports the BRANCHING FACTOR: "822,202 nodes (87%) making allthemodium_nugget

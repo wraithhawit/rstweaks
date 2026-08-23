@@ -29,6 +29,16 @@ public final class SlotBackoff {
     /** Current backoff length per slot, doubled on each consecutive escalation. */
     private int[] interval = new int[0];
 
+    /**
+     * Calculation budget per slot in milliseconds, doubled each time our own budget is what
+     * cancelled the calculation. Zero means "not yet raised", i.e. use the configured start.
+     *
+     * <p>This is what keeps a short automation budget from becoming the mistake in
+     * {@code rstweaks-cap-is-not-a-proof}. A cap that permanently refuses a large craft is a
+     * bug; a budget that grows until the craft fits is a schedule.
+     */
+    private int[] budget = new int[0];
+
     /** What {@link #recordOutcome} decided, so the caller can count it. */
     public enum Outcome {
         /** Fast success. The slot was reset to no delay at all. */
@@ -46,6 +56,7 @@ public final class SlotBackoff {
         }
         this.remaining = Arrays.copyOf(this.remaining, size);
         this.interval = Arrays.copyOf(this.interval, size);
+        this.budget = Arrays.copyOf(this.budget, size);
     }
 
     /** Number of slots currently tracked. */
@@ -77,7 +88,43 @@ public final class SlotBackoff {
         if (this.inRange(slot)) {
             this.remaining[slot] = 0;
             this.interval[slot] = 0;
+            this.budget[slot] = 0;
         }
+    }
+
+    /**
+     * How many milliseconds this slot's next crafting calculation may have.
+     *
+     * @param startMs what a slot gets before it has ever been cancelled on budget
+     * @param maxMs   the ceiling, normally RS's own crafting timeout — a slot never gets more
+     *                than a player-initiated craft would
+     */
+    public int budgetFor(final int slot, final int startMs, final int maxMs) {
+        final int start = Math.max(1, startMs);
+        final int cap = Math.max(start, maxMs);
+        if (!this.inRange(slot) || this.budget[slot] <= 0) {
+            return start;
+        }
+        return Math.min(this.budget[slot], cap);
+    }
+
+    /**
+     * Records that our budget, rather than the calculation itself, ended the attempt. Doubles
+     * what the slot gets next time so a large-but-valid craft is eventually planned.
+     */
+    public void noteBudgetExpired(final int slot, final int startMs, final int maxMs) {
+        if (!this.inRange(slot)) {
+            return;
+        }
+        final int start = Math.max(1, startMs);
+        final int cap = Math.max(start, maxMs);
+        final int previous = this.budget[slot];
+        this.budget[slot] = previous <= 0 ? Math.min(start * 2, cap) : Math.min(previous * 2, cap);
+    }
+
+    /** Current escalated budget for a slot, or 0 when it has never been raised. */
+    public int rawBudgetOf(final int slot) {
+        return this.inRange(slot) ? this.budget[slot] : 0;
     }
 
     /**
@@ -114,6 +161,9 @@ public final class SlotBackoff {
         }
         this.remaining[slot] = 0;
         this.interval[slot] = 0;
+        // A cheap success means the slot no longer needs an enlarged budget. Leaving it raised
+        // would let one hard craft permanently license long calculations from that slot.
+        this.budget[slot] = 0;
         return Outcome.RESET;
     }
 

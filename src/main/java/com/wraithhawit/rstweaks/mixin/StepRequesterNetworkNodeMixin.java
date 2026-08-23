@@ -11,6 +11,7 @@ import com.ultramega.stepcrafter.common.support.patternresource.PatternResourceC
 import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.RSTweaks;
 import com.wraithhawit.rstweaks.Stats;
+import com.wraithhawit.rstweaks.backoff.BudgetedCancellationToken;
 import com.wraithhawit.rstweaks.backoff.SlotBackoff;
 import com.wraithhawit.rstweaks.pattern.CalculationTrace;
 
@@ -185,9 +186,26 @@ public abstract class StepRequesterNetworkNodeMixin {
         if (Config.traceSlowCalculations) {
             CalculationTrace.begin(resource.toString(), amount);
         }
+
+        // Automation gets a shorter budget than a player does. RS hands every calculation
+        // 5,000ms of the SERVER thread; a Step Requester is not waiting on the answer and will
+        // ask again regardless, so freezing the world for it is a straight loss. The budget
+        // escalates per slot on cancellation, so a large-but-valid craft is still planned.
+        final int budgetStart = Config.STEP_REQUESTER_CALCULATION_BUDGET_MS.getAsInt();
+        final int budgetCap = (int) Math.min(Integer.MAX_VALUE, Config.craftingCalculationTimeoutMs);
+        final int slotForBudget = this.rstweaks$currentSlot;
+        BudgetedCancellationToken budgeted = null;
+        CancellationToken token = cancellationToken;
+        if (budgetStart > 0 && budgetStart < budgetCap) {
+            budgeted = new BudgetedCancellationToken(
+                cancellationToken,
+                this.rstweaks$backoff.budgetFor(slotForBudget, budgetStart, budgetCap));
+            token = budgeted;
+        }
+
         final long startedAt = System.nanoTime();
         final Optional<TaskId> result =
-            component.startTask(resource, amount, actor, notifyListeners, cancellationToken);
+            component.startTask(resource, amount, actor, notifyListeners, token);
         final long elapsedNanos = System.nanoTime() - startedAt;
         final long elapsedMs = elapsedNanos / 1_000_000L;
 
@@ -210,6 +228,14 @@ public abstract class StepRequesterNetworkNodeMixin {
         final long budgetMs = Config.craftingCalculationTimeoutMs;
         if (budgetMs > 0 && elapsedMs >= budgetMs - TIMEOUT_TOLERANCE_MS) {
             ++Stats.stepRequesterTimeouts;
+        }
+
+        // Only OUR budget expiring earns a bigger one next time. A calculation that failed on
+        // its own merits gets nothing extra -- otherwise every impossible craft would climb the
+        // ladder to the cap and automation would be back to freezing the world for five seconds.
+        if (budgeted != null && budgeted.expiredOnBudget()) {
+            ++Stats.stepRequesterBudgetExpiries;
+            this.rstweaks$backoff.noteBudgetExpired(slotForBudget, budgetStart, budgetCap);
         }
 
         // Log the breakdown for anything slow enough to have been noticed. Gated on the same

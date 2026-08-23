@@ -110,6 +110,40 @@ public final class Config {
         )
         .defineInRange("stepRequesterBudgetPercent", 5, 0, 100);
 
+    public static final ModConfigSpec.IntValue STEP_REQUESTER_CALCULATION_BUDGET_MS = BUILDER
+        .comment(
+            "How long ONE automated craft calculation may run before being cancelled. 0 uses",
+            "Refined Storage's full craftingCalculationTimeoutMs, i.e. disables this.",
+            "",
+            "THIS IS THE SETTING THAT STOPS THE FIVE-SECOND FREEZE.",
+            "",
+            "RS allows every calculation 5,000ms OF THE SERVER THREAD -- a hundred ticks in which",
+            "nothing else in the world happens -- and a request that is going to fail spends all",
+            "of it before saying so. Measured 2026-08-23: one Step Requester slot spent the full",
+            "5,000ms and 4,574,498 tree nodes to conclude that a resource with no pattern behind",
+            "it still had no pattern.",
+            "",
+            "craftingCalculationTimeoutMs could always have been lowered, and deliberately never",
+            "was, because a cancelled calculation reports MISSING_RESOURCES -- indistinguishable",
+            "from 'cannot be made' -- so cutting it globally silently refuses crafts that would",
+            "have worked. That reasoning holds for a PLAYER clicking craft and waiting.",
+            "",
+            "It does not hold for automation. A Step Requester is not waiting on an answer; it",
+            "asks again on a schedule regardless. Refusing it once costs a retry. Freezing the",
+            "world for five seconds costs everyone. So this applies ONLY to Step Requester",
+            "calculations -- anything a player asks for keeps the full budget, untouched.",
+            "",
+            "AND IT ESCALATES, which is what makes it safe. A slot cancelled on budget gets",
+            "double next time, up to craftingCalculationTimeoutMs, so a genuinely large craft is",
+            "planned after a few attempts instead of never. Any cheap success resets it. That is",
+            "the difference between a schedule and the permanent cap that once blocked late-game",
+            "crafts in this mod.",
+            "",
+            "200ms is four ticks. Raise it if automation is being made to retry too often; the",
+            "'N hit the calculation timeout' figure in /rstweaks stats is what tells you."
+        )
+        .defineInRange("stepRequesterCalculationBudgetMs", 200, 0, 60000);
+
     public static final ModConfigSpec.IntValue STEP_REQUESTER_COST_CAP_TICKS = BUILDER
         .comment(
             "Hard ceiling on a cost-derived sleep, so no slot can be silenced indefinitely.",

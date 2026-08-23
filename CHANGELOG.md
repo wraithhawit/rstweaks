@@ -8,6 +8,55 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.123
+
+**The five-second freeze is fixed, not rationed.**
+
+Everything before this reduced how *often* the world froze. This bounds how *long* it can freeze
+at all.
+
+Refined Storage gives every crafting calculation `TIMEOUT_MS = 5000` — five seconds **of the
+server thread**. `craftingCalculationTimeoutMs` has been able to lower that since 0.2.112, and
+was deliberately never lowered, because a cancelled calculation reports `MISSING_RESOURCES`,
+indistinguishable from "cannot be made" — so cutting it globally silently refuses crafts that
+would have worked.
+
+**That reasoning holds for a player.** Someone clicking craft is waiting on an answer, and a
+wrong "no" is a bug they cannot diagnose.
+
+**It does not hold for automation.** A Step Requester is not waiting on anything; it asks again
+on a schedule regardless. Refusing it once costs a retry. Freezing the world for five seconds
+costs everyone. Measured 2026-08-23: one slot spent the full 5,000ms and 4,574,498 tree nodes to
+conclude that a resource with no pattern behind it still had no pattern.
+
+So `stepRequesterCalculationBudgetMs` (default **200**, `0` disables) applies **only** to Step
+Requester calculations. Player-initiated crafts keep the full budget, untouched. Worst case for
+automation drops from 5,000ms to 200ms — **four ticks**.
+
+### Why this is not the permanent cap that once broke late-game crafts
+
+`rstweaks-cap-is-not-a-proof` records a cap that blocked crafts with no path back. This one
+**escalates**: a slot cancelled *on our budget* gets double next time, up to
+`craftingCalculationTimeoutMs`, so a genuinely large craft is planned after a few attempts rather
+than never. Any cheap success resets it to the start.
+
+Two properties make that safe, and both are pinned by tests:
+
+- **Only our own budget escalates.** A calculation that failed on its own merits gets nothing
+  extra — otherwise every impossible craft would climb to the cap and automation would be back to
+  freezing the world.
+- **The ceiling is RS's own timeout.** Automation never gets more than a player would.
+
+`BudgetedCancellationToken` also consults the token it wraps, so ours is only ever an *additional*
+bound — anything that would have stopped the calculation before still does.
+
+New chat line: **`N long calculations cut short`** — each one a five-second freeze that did not
+happen.
+
+`backoffCheck` 73 → **90**, including the token driven on an injected clock so expiry is
+deterministic, and a case asserting a delegate cancellation is *not* mistaken for a budget expiry.
+Confirmed to fail with the budget check removed.
+
 ## 0.2.122
 
 **Groundwork for the memoization idea — and the reason that idea is not being shipped.**

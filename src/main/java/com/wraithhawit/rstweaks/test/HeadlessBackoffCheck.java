@@ -1,5 +1,7 @@
 package com.wraithhawit.rstweaks.test;
 
+import com.refinedmods.refinedstorage.api.autocrafting.calculation.CancellationToken;
+import com.wraithhawit.rstweaks.backoff.BudgetedCancellationToken;
 import com.wraithhawit.rstweaks.backoff.SlotBackoff;
 import com.wraithhawit.rstweaks.backoff.SlotBackoff.Outcome;
 
@@ -63,6 +65,15 @@ public final class HeadlessBackoffCheck {
         costFloorRespectsItsCap();
         costFloorOfZeroLeavesTheLadderAlone();
         costFloorGivesAtLeastOneTick();
+
+        budgetStartsAtTheConfiguredValue();
+        budgetDoublesWhenOurTokenExpires();
+        budgetStopsAtRefinedStoragesOwnTimeout();
+        aCheapSuccessGivesTheBudgetBack();
+        budgetIsPerSlot();
+        tokenExpiresOnItsBudget();
+        tokenHonoursTheDelegate();
+        tokenDoesNotClaimBudgetExpiryForADelegateCancel();
 
         System.out.printf("scenarios: %d%n", checks);
         if (FAILURES.isEmpty()) {
@@ -305,6 +316,113 @@ public final class HeadlessBackoffCheck {
         // could be "escalated" to no delay at all.
         backoff.recordOutcome(0, true, 1, BASE, CAP, 1, 5, CAP_TICKS);
         expect("a sub-tick cost still sleeps", backoff.isSleeping(0));
+    }
+
+
+    // ---- the automation calculation budget --------------------------------------------
+
+    private static void budgetStartsAtTheConfiguredValue() {
+        final SlotBackoff backoff = slots(4);
+        expect("an untouched slot gets the start budget",
+            backoff.budgetFor(0, 200, 5000) == 200);
+        expect("and has no raised budget recorded", backoff.rawBudgetOf(0) == 0);
+    }
+
+    private static void budgetDoublesWhenOurTokenExpires() {
+        final SlotBackoff backoff = slots(4);
+        backoff.noteBudgetExpired(0, 200, 5000);
+        expect("one expiry doubles the budget", backoff.budgetFor(0, 200, 5000) == 400);
+        backoff.noteBudgetExpired(0, 200, 5000);
+        expect("two expiries double again", backoff.budgetFor(0, 200, 5000) == 800);
+    }
+
+    /**
+     * The property that keeps this from being the permanent cap of
+     * rstweaks-cap-is-not-a-proof: automation never gets LESS than a player would eventually
+     * allow, and never more either.
+     */
+    private static void budgetStopsAtRefinedStoragesOwnTimeout() {
+        final SlotBackoff backoff = slots(4);
+        for (int i = 0; i < 30; i++) {
+            backoff.noteBudgetExpired(0, 200, 5000);
+        }
+        expect("the budget climbs to RS's own timeout and stops",
+            backoff.budgetFor(0, 200, 5000) == 5000);
+    }
+
+    private static void aCheapSuccessGivesTheBudgetBack() {
+        final SlotBackoff backoff = slots(4);
+        backoff.noteBudgetExpired(0, 200, 5000);
+        backoff.noteBudgetExpired(0, 200, 5000);
+        backoff.recordOutcome(0, true, 0, BASE, CAP, SLOW_MS, 0, CAP_TICKS);
+        expect("a cheap success returns the slot to the start budget",
+            backoff.budgetFor(0, 200, 5000) == 200);
+    }
+
+    private static void budgetIsPerSlot() {
+        final SlotBackoff backoff = slots(4);
+        backoff.noteBudgetExpired(1, 200, 5000);
+        expect("the expiring slot is raised", backoff.budgetFor(1, 200, 5000) == 400);
+        expect("its neighbour is not", backoff.budgetFor(0, 200, 5000) == 200);
+    }
+
+    // ---- the token itself, on a driven clock ------------------------------------------
+
+    private static void tokenExpiresOnItsBudget() {
+        final long[] now = {0};
+        final BudgetedCancellationToken token =
+            new BudgetedCancellationToken(null, 200, () -> now[0]);
+        expect("not cancelled immediately", !token.isCancelled());
+        now[0] = 199L * 1_000_000L;
+        expect("not cancelled one millisecond short", !token.isCancelled());
+        now[0] = 200L * 1_000_000L;
+        expect("cancelled at the budget", token.isCancelled());
+        expect("and says the budget is what did it", token.expiredOnBudget());
+    }
+
+    /** Our budget is an ADDITIONAL bound, never a licence to keep going past someone else's. */
+    private static void tokenHonoursTheDelegate() {
+        final boolean[] delegateCancelled = {false};
+        final CancellationToken delegate = new CancellationToken() {
+            @Override
+            public boolean isCancelled() {
+                return delegateCancelled[0];
+            }
+
+            @Override
+            public void cancel() {
+                delegateCancelled[0] = true;
+            }
+        };
+        final long[] now = {0};
+        final BudgetedCancellationToken token =
+            new BudgetedCancellationToken(delegate, 5000, () -> now[0]);
+        expect("not cancelled while the delegate is not", !token.isCancelled());
+        delegateCancelled[0] = true;
+        expect("cancelled as soon as the delegate is", token.isCancelled());
+        token.cancel();
+        expect("cancelling ours cancels the delegate too", delegateCancelled[0]);
+    }
+
+    private static void tokenDoesNotClaimBudgetExpiryForADelegateCancel() {
+        final boolean[] delegateCancelled = {true};
+        final CancellationToken delegate = new CancellationToken() {
+            @Override
+            public boolean isCancelled() {
+                return delegateCancelled[0];
+            }
+
+            @Override
+            public void cancel() {
+                delegateCancelled[0] = true;
+            }
+        };
+        final BudgetedCancellationToken token =
+            new BudgetedCancellationToken(delegate, 5000, () -> 0L);
+        expect("cancelled by the delegate", token.isCancelled());
+        // If this were wrong, every unrelated cancellation would enlarge the slot's budget
+        // until automation was back to freezing the world for five seconds.
+        expect("but that is not a budget expiry", !token.expiredOnBudget());
     }
 
     // ---- harness ---------------------------------------------------------------------

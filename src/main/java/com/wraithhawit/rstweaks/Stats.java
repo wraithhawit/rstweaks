@@ -73,6 +73,15 @@ public final class Stats {
     public static long stepRequesterTimeouts;
 
     /**
+     * Automated calculations cancelled by OUR budget rather than by RS's full timeout.
+     *
+     * <p>Each one is a five-second server-thread freeze that did not happen. It is also the
+     * number to watch if automation seems to be retrying too much: a slot climbing the budget
+     * ladder is being asked for something genuinely large, not something impossible.
+     */
+    public static long stepRequesterBudgetExpiries;
+
+    /**
      * Pattern lists reordered because RS handed them back in heap-array order.
      *
      * <p>Counts only lists the sort actually changed, so a zero here with a busy network means
