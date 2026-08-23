@@ -10,6 +10,16 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.124
+-------
+  stepRequesterCalculationMaxBudgetMs (default 1000): closes the hole 0.2.123 left. Its escalating
+  budget capped at RS's own craftingCalculationTimeoutMs, so the ladder's TOP RUNG was still a
+  full five-second freeze -- measured climbing 200 -> 400 -> 800 -> 1,600 -> 3,200 -> 5,005ms on
+  one repeated request. Bounding how OFTEN a freeze happens is not the same as fixing it.
+  Automation now has its own ceiling well under RS's, so the worst an automated calculation can
+  cost is 20 ticks. Cost: a craft needing more than 1s to PLAN is never started by automation --
+  still craftable by hand, and "long calculations cut short" says when it happens.
+  backoffCheck 90 -> 96.
 0.2.123
 -------
   stepRequesterCalculationBudgetMs (default 200): THE FIVE-SECOND FREEZE IS FIXED. RS gives every

@@ -8,6 +8,41 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.124
+
+**0.2.123 bounded how *often* the freeze happened. It did not remove it, and the very first
+profile said so.**
+
+The escalating automation budget capped at `craftingCalculationTimeoutMs` — RS's own 5,000ms — so
+the top rung of the ladder was still a full five-second freeze. The log caught it climbing on one
+repeated request:
+
+```
+  200ms wasted calculating 64x kubejs:allthemodium_solar_sail_package
+  400ms   "
+  800ms   "
+1,600ms   "  -- 1,519,575 tree nodes
+3,200ms   "  -- 3,096,759 tree nodes
+5,005ms   "  -- 2,980,768 tree nodes
+```
+
+Every rung behaved exactly as designed, and the design was wrong at the top. **Making a freeze
+rarer is not the same as fixing it**, and shipping the first without noticing the second is the
+kind of thing a "much better!" profile hides.
+
+`stepRequesterCalculationMaxBudgetMs` (default **1000**, `0` restores RS's timeout) gives
+automation its own ceiling. Worst case an automated calculation can now cost is **twenty ticks**,
+once per backoff cycle, instead of a hundred.
+
+**What that costs, stated plainly:** a craft that genuinely needs more than a second to *plan*
+will never be started by automation. It stays perfectly craftable by hand — a player request is
+not bounded by this at all — and `N long calculations cut short` in `/rstweaks stats` is what
+tells you it is happening. Raise the setting if automation stops keeping something in stock;
+that trades freeze length back for planning depth, deliberately.
+
+`backoffCheck` 90 → **96**, including a case that walks the ladder rung by rung against the
+figures actually observed in game.
+
 ## 0.2.123
 
 **The five-second freeze is fixed, not rationed.**

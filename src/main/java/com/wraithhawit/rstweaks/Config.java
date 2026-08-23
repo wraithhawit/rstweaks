@@ -144,6 +144,30 @@ public final class Config {
         )
         .defineInRange("stepRequesterCalculationBudgetMs", 200, 0, 60000);
 
+    public static final ModConfigSpec.IntValue STEP_REQUESTER_MAX_BUDGET_MS = BUILDER
+        .comment(
+            "Ceiling on the escalating automation calculation budget. 0 means RS's own",
+            "craftingCalculationTimeoutMs, which is what 0.2.123 used and which left the freeze",
+            "in place once per ladder.",
+            "",
+            "stepRequesterCalculationBudgetMs doubles on each cancellation so a large-but-valid",
+            "craft is eventually planned. In 0.2.123 that ladder climbed all the way to RS's",
+            "5,000ms, and measurement showed exactly what that means in practice -- the same",
+            "request logged at 200ms, 400ms, 800ms, 1,600ms, 3,200ms and then 5,005ms. The last",
+            "rung IS the five-second freeze, just rarer. Bounding how often a freeze happens is",
+            "not the same as fixing it.",
+            "",
+            "So automation gets its own ceiling, well under RS's. At 1,000ms the worst an",
+            "automated calculation can cost is twenty ticks, once per backoff cycle.",
+            "",
+            "WHAT YOU GIVE UP: a craft that genuinely needs more than this to PLAN will never be",
+            "started by automation. It remains perfectly craftable by hand -- a player request is",
+            "not bounded by this at all -- and 'N long calculations cut short' in /rstweaks stats",
+            "is what tells you it is happening. Raise this if automation stops keeping something",
+            "in stock; that trades freeze length back for planning depth, deliberately."
+        )
+        .defineInRange("stepRequesterCalculationMaxBudgetMs", 1000, 0, 60000);
+
     public static final ModConfigSpec.IntValue STEP_REQUESTER_COST_CAP_TICKS = BUILDER
         .comment(
             "Hard ceiling on a cost-derived sleep, so no slot can be silenced indefinitely.",

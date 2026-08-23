@@ -192,7 +192,12 @@ public abstract class StepRequesterNetworkNodeMixin {
         // ask again regardless, so freezing the world for it is a straight loss. The budget
         // escalates per slot on cancellation, so a large-but-valid craft is still planned.
         final int budgetStart = Config.STEP_REQUESTER_CALCULATION_BUDGET_MS.getAsInt();
-        final int budgetCap = (int) Math.min(Integer.MAX_VALUE, Config.craftingCalculationTimeoutMs);
+        // Automation's own ceiling, not RS's. 0.2.123 let the ladder climb to
+        // craftingCalculationTimeoutMs, so its top rung was still a full five-second freeze --
+        // measured climbing 200 -> 400 -> 800 -> 1,600 -> 3,200 -> 5,005ms on one request.
+        final int rsTimeout = (int) Math.min(Integer.MAX_VALUE, Config.craftingCalculationTimeoutMs);
+        final int configuredMax = Config.STEP_REQUESTER_MAX_BUDGET_MS.getAsInt();
+        final int budgetCap = configuredMax > 0 ? Math.min(configuredMax, rsTimeout) : rsTimeout;
         final int slotForBudget = this.rstweaks$currentSlot;
         BudgetedCancellationToken budgeted = null;
         CancellationToken token = cancellationToken;

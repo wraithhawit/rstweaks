@@ -74,6 +74,7 @@ public final class HeadlessBackoffCheck {
         tokenExpiresOnItsBudget();
         tokenHonoursTheDelegate();
         tokenDoesNotClaimBudgetExpiryForADelegateCancel();
+        budgetLadderStopsBelowTheFiveSecondFreeze();
 
         System.out.printf("scenarios: %d%n", checks);
         if (FAILURES.isEmpty()) {
@@ -423,6 +424,32 @@ public final class HeadlessBackoffCheck {
         // If this were wrong, every unrelated cancellation would enlarge the slot's budget
         // until automation was back to freezing the world for five seconds.
         expect("but that is not a budget expiry", !token.expiredOnBudget());
+    }
+
+
+    /**
+     * The hole 0.2.123 left, pinned. Its ladder capped at RS's own 5,000ms, so the top rung was
+     * still a full five-second freeze -- measured climbing 200, 400, 800, 1,600, 3,200, 5,005ms
+     * on one request. Automation's ceiling must be its own, and well under RS's.
+     */
+    private static void budgetLadderStopsBelowTheFiveSecondFreeze() {
+        final SlotBackoff backoff = slots(4);
+        final int automationCap = 1000;
+        for (int i = 0; i < 30; i++) {
+            backoff.noteBudgetExpired(0, 200, automationCap);
+        }
+        final int settled = backoff.budgetFor(0, 200, automationCap);
+        expect("the ladder stops at the automation ceiling", settled == automationCap);
+        expect("which is nowhere near a five-second freeze", settled <= 1000);
+
+        // And the rungs on the way up are the ones actually observed in game.
+        final SlotBackoff climb = slots(4);
+        final int[] expected = {400, 800, 1000, 1000};
+        for (int i = 0; i < expected.length; i++) {
+            climb.noteBudgetExpired(0, 200, automationCap);
+            expect("rung " + i + " is " + expected[i],
+                climb.budgetFor(0, 200, automationCap) == expected[i]);
+        }
     }
 
     // ---- harness ---------------------------------------------------------------------
