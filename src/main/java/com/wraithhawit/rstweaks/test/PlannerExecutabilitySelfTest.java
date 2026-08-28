@@ -819,6 +819,55 @@ public final class PlannerExecutabilitySelfTest {
             repo -> repo.add(wearPattern(0), 0),
             Map.of("material", 4096L),
             "product", 8L, false);
+
+        // The boundary of everything above: an ingredient handed back BYTE-IDENTICAL.
+        // Mystical Agriculture's Master Infusion Crystal is cucumber's
+        // BaseReusableItem(0) -- unbreakable, max damage 0 -- so getCraftingRemainingItem
+        // returns the same stack and the resource key never changes between iterations.
+        // That is not a tool with infinite uses, which NeverWears above exists to catch;
+        // it is not a tool at all, and isDurable says so. The class must net to zero.
+        run(failures, new FakeDurability("crystal", 100),
+            "non-durable catalyst: one is enough for any amount",
+            repo -> repo.add(catalystPattern(), 0),
+            Map.of("master_crystal", 1L, "material", 4096L),
+            "product", 512L, true,
+            plan -> requisition(plan, "master_crystal", 1L));
+
+        // The same catalyst with none in stock but a recipe for one. This is the shape
+        // that reported "needs 712 million": with the byproduct uncredited the plan wants
+        // one crystal per craft, and every one of them has to be built.
+        run(failures, new FakeDurability("crystal", 100),
+            "non-durable catalyst: craft exactly one, not one per craft",
+            repo -> {
+                repo.add(catalystPattern(), 0);
+                repo.add(pattern("makecatalyst", List.of(ing(8, "gem")),
+                    List.of(new ResourceAmount(res("master_crystal"), 1L)),
+                    List.of()), 0);
+            },
+            Map.of("material", 4096L, "gem", 4096L),
+            "product", 512L, true,
+            plan -> {
+                final long made = plan.patterns().entrySet().stream()
+                    .filter(e -> e.getKey().layout().outputs().stream()
+                        .anyMatch(o -> "master_crystal".equals(String.valueOf(o.resource()))))
+                    .mapToLong(e -> e.getValue().iterations())
+                    .sum();
+                return made == 1 ? null
+                    : "crafted " + made + " catalysts for 512 crafts; a returned one needs 1";
+            });
+    }
+
+    /**
+     * The master-crystal shape: consume the catalyst, hand back the very same key.
+     *
+     * <p>Named without an {@code @} on purpose, so {@link FakeDurability} reports it as not
+     * durable — which is what Minecraft does for an item whose max damage is 0.
+     */
+    private static Pattern catalystPattern() {
+        return pattern("catalyst",
+            List.of(ing(1, "master_crystal"), ing(4, "material")),
+            List.of(new ResourceAmount(res("product"), 1L)),
+            List.of(new ResourceAmount(res("master_crystal"), 1L)));
     }
 
     /** Complains unless the plan asks the network for exactly this many matching items. */
