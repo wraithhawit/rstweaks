@@ -8,6 +8,79 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.2.125
+
+**Two of our tweaks got upstreamed, so they now stand down on their own.**
+
+Ultramega shipped both of the optimizations we wrote against his mods:
+
+| his release | his changelog | ours it replaces |
+|---|---|---|
+| Step Crafter `1.21.1-0.1.7` | "Improved Step Requester performance by adding a timeout on failed requested crafts" | step requester backoff |
+| Cable Tiers `1.21.1-0.6.14` | "Improved performance of sided input" | tiered autocrafter lookup |
+
+This is the outcome we wanted. It also left a problem, because both releases fall *inside*
+our declared version ranges, so nothing refused to load — our mixins simply kept applying on
+top of his.
+
+### Ours did not sit beside his; it replaced him
+
+Both mixins inject at `HEAD` and cancel. On 0.6.14, `findSidedInputPatternState` computes our
+answer and returns, so his rewritten body never executes — including whatever correctness
+work went in with it. That method had a duplication bug fixed as recently as 0.6.12, which is
+not a method to be shadowing by accident.
+
+### And the Step Crafter one actively defeated his
+
+0.1.5 and 0.1.7 both null-check the result of `PatternResourceContainerImpl.get(slot)`, so our
+redirect returning null was safe in both. What changed is where the branch *goes*:
+
+```
+0.1.5:  ifnull -> skip this slot, continue
+0.1.7:  ifnull -> failedTaskTimeouts.remove(slot), continue
+```
+
+In 0.1.7 a null means "this slot is empty, clear its timeout". Our redirect returns null for
+exactly the slots we are sleeping — so on every sleeping tick we cleared his backoff for the
+slots that were failing. His timeout could never accumulate while ours was installed. No
+crash, no log line, the two fixes quietly cancelling into one. Reported to him.
+
+### The gate
+
+`AddonMixinGate` is an `IMixinConfigPlugin` on the two addon configs. `requiredMods` in
+`neoforge.mods.toml` already decides whether they load at all, so only the version is in
+question by the time it runs, and it reads that from `LoadingModList` — mixin plugins run
+during class transformation, where `ModList` means nothing, as the comments in `RSTweaks`
+have said for a long time.
+
+**Older versions keep our fix, deliberately.** Not every ATM10 install is up to date and this
+mod has to stay drag-and-drop; raising the minimum versions instead would have been less code
+and would have broken exactly the people we most want it to work for.
+
+**An unreadable version applies the mixin and warns.** Guessing the other way would silently
+withdraw an optimization the user believes is running, and this mod's whole stance is that it
+fails loudly instead — the same reasoning as `required=true` on the configs.
+
+### The comparison is hand-written, and that is the part worth doubting
+
+These are strings like `1.21.1-0.6.14`, and both obvious approaches misplace `0.6.9`: string
+order puts it *above* `0.6.14`, and Maven's rules treat everything past the dash as a single
+opaque qualifier. Either mistake leaves the mixin applied on precisely the release that
+supersedes it, silently. So `isAtLeast` reads each run of digits as a number and compares
+those, which also makes a `+build` suffix harmless.
+
+`UpstreamGate` is free of Minecraft, NeoForge and Mixin types so this is testable in a plain
+JVM — new `gateCheck`, 18 assertions, wired into `build`. As ever it cannot show the plugin is
+wired in or that Mixin calls it; that needs a launch against a real Step Crafter.
+
+### Reporting
+
+The startup line and chat message no longer claim a stood-down tweak is running, which was
+already the rule for an absent mod and is now the rule for a superseded one. The plugin logs
+which tweak stood down, for whose version, quoting his changelog line — so the log says the
+fix was upstreamed rather than leaving a silent gap where an optimization used to be.
+
+
 ## 0.2.124
 
 **0.2.123 bounded how *often* the freeze happened. It did not remove it, and the very first

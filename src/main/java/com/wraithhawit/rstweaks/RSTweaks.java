@@ -17,6 +17,7 @@ import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 
+import com.wraithhawit.rstweaks.gate.UpstreamGate;
 import com.wraithhawit.rstweaks.mekanism.MekanismQio;
 import com.wraithhawit.rstweaks.planner.Durability;
 import com.wraithhawit.rstweaks.storage.DrawerDenylist;
@@ -115,10 +116,16 @@ public class RSTweaks {
             if (Config.skipEmptyCompositeExtract) {
                 features.add("empty extract skip");
             }
-            if (ModList.get().isLoaded("stepcrafter")) {
+            // Present-but-superseded is a third state these two can be in: the mod is
+            // installed, but a version of it that carries the author's own fix, so our mixin
+            // stood down. Claiming it regardless would be the same lie as claiming it when
+            // the mod is absent. See UpstreamGate.
+            if (ModList.get().isLoaded("stepcrafter")
+                && !UpstreamGate.isStoodDown("step requester backoff")) {
                 features.add("step requester backoff");
             }
-            if (ModList.get().isLoaded("cabletiers")) {
+            if (ModList.get().isLoaded("cabletiers")
+                && !UpstreamGate.isStoodDown("tiered autocrafter lookup")) {
                 features.add("tiered autocrafter lookup");
             }
             if (ModList.get().isLoaded("functionalstorage")) {

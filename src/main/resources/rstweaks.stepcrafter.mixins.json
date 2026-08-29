@@ -2,6 +2,7 @@
   "required": true,
   "minVersion": "0.8.5",
   "package": "com.wraithhawit.rstweaks.mixin",
+  "plugin": "com.wraithhawit.rstweaks.gate.AddonMixinGate",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "StepRequesterNetworkNodeMixin"

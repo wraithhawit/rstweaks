@@ -52,8 +52,15 @@ tasks.register('traceCheck', JavaExec) {
     mainClass = 'com.wraithhawit.rstweaks.test.HeadlessTraceCheck'
 }
 
+tasks.register('gateCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the upstream-supersession version-gate self-tests headlessly.'
+    classpath = sourceSets.main.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'com.wraithhawit.rstweaks.test.HeadlessGateCheck'
+}
+
 tasks.named('check') {
-    dependsOn 'backoffCheck', 'patternOrderCheck', 'traceCheck'
+    dependsOn 'backoffCheck', 'patternOrderCheck', 'traceCheck', 'gateCheck'
 }
 
 tasks.register('sparkProfile', JavaExec) {

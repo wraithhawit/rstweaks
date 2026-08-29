@@ -10,6 +10,28 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.2.125
+-------
+  Two of our addon tweaks were SHIPPED UPSTREAM by their author, so they now stand down on
+  their own. Step Crafter 1.21.1-0.1.7 ("Improved Step Requester performance by adding a
+  timeout on failed requested crafts") is our backoff; Cable Tiers 1.21.1-0.6.14 ("Improved
+  performance of sided input") hoists the same invariant our lookup did. Both our mixins
+  still APPLIED on those versions and both fully replace his implementation -- ours inject
+  at HEAD and cancel -- so his new code, and any correctness fix in it, never ran.
+  Step Crafter was worse than redundant: 0.1.7 treats a null from get(slot) as "empty slot,
+  clear its timeout", and our redirect returns null for exactly the slots we sleep, so we
+  reset his backoff every sleeping tick and his timeout could never accumulate. Silent, no
+  crash. New AddonMixinGate (an IMixinConfigPlugin) reads the loaded version from
+  LoadingModList -- ModList means nothing that early -- and skips the mixin from the
+  superseding version on. Older installs keep our fix, deliberately: not every ATM10 is up
+  to date and this mod stays drag-and-drop. An unreadable version APPLIES the mixin and
+  warns, because silently withdrawing an optimization is the one outcome this mod refuses.
+  Version comparison is hand-written and tested: string order puts 0.6.9 ABOVE 0.6.14 and
+  Maven treats everything past the dash as one qualifier, and either mistake would leave the
+  mixin applied on the exact release that supersedes it. New gateCheck (18), wired into build.
+  The startup line no longer claims a stood-down tweak is running.
+
+
 0.2.124
 -------
   stepRequesterCalculationMaxBudgetMs (default 1000): closes the hole 0.2.123 left. Its escalating
