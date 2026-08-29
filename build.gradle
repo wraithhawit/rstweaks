@@ -59,8 +59,18 @@ tasks.register('gateCheck', JavaExec) {
     mainClass = 'com.wraithhawit.rstweaks.test.HeadlessGateCheck'
 }
 
+// The ledger model's arithmetic: slots with fates, pools, and `initial + produced - consumed
+// == final`. Wired into `check` because the package it exercises holds no Minecraft types and
+// the whole suite, two thousand random plans included, runs in well under a second.
+tasks.register('ledgerCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the ledger model and pattern-inference self-tests headlessly.'
+    classpath = sourceSets.main.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'com.wraithhawit.rstweaks.test.HeadlessLedgerCheck'
+}
+
 tasks.named('check') {
-    dependsOn 'backoffCheck', 'patternOrderCheck', 'traceCheck', 'gateCheck'
+    dependsOn 'backoffCheck', 'patternOrderCheck', 'traceCheck', 'gateCheck', 'ledgerCheck'
 }
 
 tasks.register('sparkProfile', JavaExec) {

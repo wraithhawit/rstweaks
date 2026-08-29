@@ -10,6 +10,28 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.7.0
+-----
+  The ledger model, phase one: the algebra, and NOTHING WIRED TO IT YET -- no behaviour changes in
+  game. A pattern's three flat lists throw away which ingredient became which byproduct, which is
+  why the planner ignores byproducts while the executor returns them (the 712-million crystal). The
+  primitive is now a slot with a fate, (resource, amount, becomes): consumed / catalyst / worn tool
+  / container are one case, and a catalyst needs no code because it cancels itself out of the
+  arithmetic. Durability becomes a Pools adapter -- which column a resource pays into and what one
+  of it is worth there -- so the wear step falls out of subtraction and is never assumed; charge and
+  stored fluid are the same shape. ToolPools refuses to pool a family any pattern destroys, because
+  uses are fungible and destruction is not.
+  One property is the suite: initial + produced - consumed == final. ./gradlew ledgerCheck, wired
+  into check, 66 assertions, 2000 random plans replayed independently.
+  PatternTransforms has to INFER the ingredient->byproduct link and is the load-bearing risk;
+  conservative by design, and everything it cannot explain is reported rather than swallowed.
+  Remainder has no game-side implementation yet, so container cases are proven against fakes only.
+  It passed first try, which meant nothing, so it was mutation tested: 74% -> 88% killed, test
+  strength 98%, nine scenarios added to close real holes.
+  LICENSE: still ARR, plus a standing irrevocable grant letting the devs of any mod we mixin into
+  take this code and ship it as their own, no credit required.
+
+
 0.6.0
 -----
   Per-slot control on both halves of the Inventory Interface, asked for after RS Insert Export

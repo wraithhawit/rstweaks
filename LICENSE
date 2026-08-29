@@ -1,14 +1,62 @@
 Refined Storage Tweaks (rstweaks)
 Copyright (c) 2026 wraithhawit and contributors
 
-All Rights Reserved.
+All Rights Reserved, with one standing grant to upstream developers (section 2).
 
-This software is provided for use as a Minecraft mod. No permission is granted to
-copy, modify, redistribute, sublicense, or create derivative works from this source
-code, in whole or in part, except as expressly permitted in writing by the copyright
-holder.
+
+1. GENERAL TERMS
+
+No permission is granted to copy, modify, redistribute, sublicense, or create
+derivative works from this source code, in whole or in part, except as granted in
+section 2 or as expressly permitted in writing by the copyright holder.
 
 Using the built mod in a modpack or on a server is permitted.
+
+
+2. GRANT TO UPSTREAM DEVELOPERS
+
+Most of this project exists as mixins into other people's mods. It patches, extends
+and works around code they wrote and still maintain, and the best outcome for any
+tweak here is that it stops needing to exist because the fix landed upstream. When
+that happens, this licence should not be the thing standing in the way.
+
+Accordingly, the copyright holders, maintainers and contributors of any mod that this
+project targets with a mixin, access widener, coremod or Mixin plugin -- at the time
+of writing Refined Storage, Cable Tiers, Step Crafter, Functional Storage and
+Sophisticated Core, together with any mod similarly targeted by a later version of
+this project -- are each granted a perpetual, irrevocable, worldwide, royalty-free,
+non-exclusive licence to:
+
+  a. use, copy, modify and adapt any part of this source code, in whole or in part;
+  b. incorporate it into that mod, or into any other project they maintain; and
+  c. release the result under whatever licence that project uses, including a licence
+     more permissive than this one, and including a licence under which they are the
+     stated author.
+
+NO ATTRIBUTION IS REQUIRED. No credit, notice, changelog line, copyright header, or
+acknowledgement of any kind is a condition of this grant, and the copyright notice
+above may be removed from any copy taken under it. Credit is welcome and never
+expected: taking an idea, a method, or a whole file from here and shipping it as your
+own is exactly what this section is for.
+
+Scope and limits, stated plainly so nobody has to guess:
+
+  - The grant is irrevocable as to any version of this code published under this
+    licence. Withdrawing it later would make it worthless to rely on today, which
+    would defeat the point of granting it.
+  - It covers the code in this repository that its contributors own. It does not and
+    cannot cover third-party code, which remains under its own licence -- see
+    section 4.
+  - It is a licence to the code, not a transfer of copyright, and not a trademark
+    licence to the name "rstweaks".
+  - The code is provided as-is under this grant, with no warranty of any kind and no
+    liability on the part of its authors.
+
+If you maintain a mod this project touches and you want something from here, take it.
+If it is easier to ask than to read, ask -- but you do not have to.
+
+
+3. PROVISIONAL, AND KNOWN TO BE
 
 This is a provisional licence chosen to keep options open while the project is young.
 It is not a considered long-term choice, and it has two known consequences worth
@@ -16,15 +64,23 @@ being aware of:
 
   1. Contributors retain copyright in their own contributions. This repository has
      already received work from someone other than the copyright holder above, so
-     "All Rights Reserved" by a single party is a simplification. Before this project
-     accepts contributions publicly, it wants either a real open-source licence or an
-     explicit contributor agreement.
+     "All Rights Reserved" by a single party is a simplification -- and so is the
+     grant in section 2, which for that contributor's work is only as good as their
+     agreement to it. Contributions made after this licence was adopted are accepted
+     on its terms, section 2 included. Before this project accepts contributions
+     publicly, it wants either a real open-source licence or an explicit contributor
+     agreement.
 
   2. All Rights Reserved discourages the things that usually help a mod: forks that
      fix it after it is abandoned, packs that need to patch it, and other developers
-     reading it to learn from. Worth revisiting before any public release.
+     reading it to learn from. Section 2 answers that only for upstream developers,
+     which is the case this project actually cares about. Worth revisiting for
+     everyone else before any public release.
+
+
+4. OTHER PEOPLE'S CODE
 
 This licence covers only the code in this repository. It does not apply to Refined
-Storage, Cable Tiers, Step Crafter, Functional Storage, or any other mod this project
-depends on or interoperates with; those remain under their own licences and are not
-redistributed here.
+Storage, Cable Tiers, Step Crafter, Functional Storage, Sophisticated Core, or any
+other mod this project depends on or interoperates with; those remain under their own
+licences and are not redistributed here.

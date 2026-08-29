@@ -8,6 +8,90 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.7.0
+
+**The ledger model, phase one: the algebra.** Nothing in game changes in this version. This is the
+core the autocrafting rebuild is meant to stand on, built and tested on its own before anything is
+wired to it, because the alternative is discovering the model is wrong from a player's storage.
+
+### The one mistake it fixes
+
+A Refined Storage pattern is three flat lists — ingredients, outputs, byproducts — and that shape
+throws away the only fact that matters: **which ingredient became which byproduct**. Once the link
+is gone nothing downstream can recover it, so `CraftingState.addOutputsToInternalStorage` ignores
+byproducts entirely while `InternalTaskPattern.step` faithfully returns them. The plan buys N
+crystals; the craft hands N crystals back. That is where the 712-million Master Infusion Crystal
+request came from, and five of the six autocrafting failures on the list are the same sentence with
+different nouns.
+
+The primitive is a **slot with a fate** — `(resource, amount, becomes)`:
+
+| kind | goes in | becomes | net |
+|---|---|---|---|
+| consumed | 4 inferium | nothing | −4 |
+| catalyst | master crystal | master crystal | 0 — free |
+| worn tool | crystal@0 | crystal@1 | −1 use |
+| container | honey bucket | bucket | −honey, bucket kept |
+
+Four cases Refined Storage models four different ways, three of them wrongly. Here they are one
+case, and **a catalyst needs no code at all**: it is the slot whose `becomes` equals its input, so
+it cancels itself out of `Transform.net` and never reaches the constraint matrix.
+
+### Pools, not item counts
+
+A 1000-use crystal is not a thousand items and not a thousand recipes. It is one pool measured in
+uses, and `Pools` says it in two methods: which column a resource pays into, and what one of it is
+worth there. The wear step is then never assumed and never even written down — `crystal@0` at 1000
+units becoming `crystal@1` at 999 costs one use *by subtraction*, and a recipe that burns five
+costs five for the same reason. Assuming one would make such a tool last five times too long, which
+reads as a working feature and is a duplication bug.
+
+Nothing in that is about damage. Charge, blood and stored fluid are the same shape, so the mods
+that keep power in a crafting ingredient become one implementation of `Pools` rather than a
+permanent known gap.
+
+A pool has to be **earned**, though, and `ToolPools` enforces it: uses are fungible and destruction
+is not, so ten crystals with a hundred uses each cannot satisfy a recipe that eats one whole
+crystal. One destructive pattern anywhere in the set and the family stays ordinary items.
+
+### Conservation is the test
+
+`initial + produced − consumed == final`. Every case above is a conservation failure wearing a
+costume — upward is a duplication glitch, downward is items destroyed — so one property covers all
+of them and the ones nobody has thought of yet. `./gradlew ledgerCheck`, wired into `check`: 66
+assertions including two thousand random plans replayed a second, independent way.
+
+### The part I do not trust yet, said plainly
+
+`PatternTransforms` has to **infer** the ingredient→byproduct link, because the data to state it
+does not exist. Three rules in order — same resource, same tool with fewer uses left, the game's
+own crafting remainder — and anything they cannot explain stays exactly what Refined Storage
+already thought it was. A failed inference costs an optimisation, never an item. Everything it
+could not explain lands in `Result.notes()` rather than being swallowed: a planner that silently
+declines is indistinguishable from one that was never installed, and this project has paid for that
+twice.
+
+`Remainder` has **no game-side implementation yet** — the default answers "nothing", which is the
+model Refined Storage ships. So the container cases are proven against fakes and nothing else.
+
+### The suite passed on its first run, which meant nothing
+
+Two tests in 0.6.0 were green with the feature ripped out, so this one was mutation-tested before
+being believed: `./gradlew mutationTest -PpitTarget=com.wraithhawit.rstweaks.ledger.*`. The first
+run killed 74% and the survivors were real holes — a partial container return whose *consumed* half
+nothing checked, a `totalsMatch` that only ever had to say yes, a remainder credited without the
+pattern handing it back, the equal-wear case that would make a tool immortal. Nine more scenarios
+later it kills 88%, test strength 98%, and the six survivors are equivalent mutants (a label
+string, a `> 0` on a delta that is never zero).
+
+### Licence
+
+`LICENSE` gains a standing grant: the maintainers of any mod this project mixins into — Refined
+Storage, Cable Tiers, Step Crafter, Functional Storage, Sophisticated Core, and anything targeted
+later — may take any of this code, ship it under their own licence, and **name themselves the
+author**. No attribution required, irrevocable for anything already published. The best outcome for
+a tweak here is that it stops needing to exist; the licence should not be what stands in the way.
+
 ## 0.6.0
 
 **Per-slot control, on both halves.** Asked for after
