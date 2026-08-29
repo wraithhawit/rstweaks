@@ -115,6 +115,31 @@ public final class InventoryInterfaceGameTest {
         });
     }
 
+    /**
+     * "Keep 16" means sixteen in the whole inventory, not sixteen outside the hotbar.
+     *
+     * <p>Auto-insert will not take from the hotbar by default, but what is sitting there still
+     * counts against the budget. Otherwise the two halves of the feature disagree about the same
+     * number: insert would leave sixteen in the bag on top of ten in the hotbar, and export — which
+     * counts everything — would see twenty-six and consider the job done at an amount nobody asked
+     * for.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void theKeepBudgetCountsTheHotbarItWillNotTakeFrom(final GameTestHelper helper) {
+        run(helper, (player, grid) -> {
+            player.getInventory().selected = 0;
+            player.getInventory().setItem(1, new ItemStack(net.minecraft.world.item.Items.IRON_INGOT, 10));
+            player.getInventory().setItem(CARGO_SLOT, new ItemStack(net.minecraft.world.item.Items.IRON_INGOT, 64));
+            configure(grid, state -> new InventoryInterfaceState(
+                true, false, FilterMode.ALLOW, false, filter(iron(), 16L)));
+        }, (helper2, player, grid) -> {
+            expect("iron kept across the whole inventory", countCarried(player, iron()), 16L);
+            expect("hotbar iron left where it was",
+                player.getInventory().getItem(1).getCount(), 10L);
+            expect("the rest filed away", countStored(helper2, grid, iron()), 58L);
+        });
+    }
+
     /** Export tops the player back up to the filter's amount, and stops there. */
     @GameTest(template = "empty", timeoutTicks = 400)
     public static void autoExportTopsUpToTheFilterAmount(final GameTestHelper helper) {

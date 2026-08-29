@@ -8,6 +8,25 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.4.1
+
+**The keep budget now counts the slots auto-insert refuses to take from.**
+
+0.4.0 walked the inventory once, skipping protected slots — the hotbar, the held item, the grid
+itself — before spending the per-entry keep budget. So "keep 16" meant sixteen *outside* those
+slots plus whatever was inside them: ten iron in the hotbar and sixty-four in the bag settled at
+twenty-six, not sixteen.
+
+That is worse than an off-by-some, because auto-export counts the **whole** inventory. The two
+halves of one feature disagreed about the same number, and the maintained stock settled wherever
+the hotbar/bag split happened to be rather than at the amount on the filter slot.
+
+A first pass now spends the budget against the protected slots, and the insert pass files away
+what is left over. The protected slots are still never taken from; they just stop being invisible.
+
+`theKeepBudgetCountsTheHotbarItWillNotTakeFrom` pins it, and was confirmed to fail against 0.4.0's
+code — 26 where 16 was asked for. 18 gametests pass.
+
 ## 0.4.0
 
 **The Inventory Interface.** The first thing this mod adds rather than makes cheaper:

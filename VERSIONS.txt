@@ -10,6 +10,17 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.4.1
+-----
+  The Inventory Interface's keep budget now counts the slots auto-insert refuses to take from.
+  0.4.0 skipped the hotbar before spending the budget, so "keep 16" meant sixteen OUTSIDE the
+  hotbar plus whatever was in it -- ten in the hotbar and sixty-four in the bag settled at
+  twenty-six. Export counts the whole inventory, so the two halves of one feature disagreed about
+  the same number and the stock settled wherever the split happened to be. A first pass now spends
+  the budget on the protected slots, then the insert pass files away what is left over. New
+  gametest, confirmed to fail against 0.4.0's code with 26 where 16 was asked for; 18 pass.
+
+
 0.4.0
 -----
   The Inventory Interface, and the first thing this mod adds rather than makes cheaper.

@@ -315,6 +315,11 @@ grid, and by default takes nothing from the hotbar at all
 away everything you did not name, and what you did not name includes the blocks you are
 placing.
 
+What is in those protected slots still **counts** against the amount, though. "Keep 16"
+means sixteen in the whole inventory, not sixteen on top of whatever is in the hotbar —
+otherwise the two halves disagree about the same number, and export tops you up to an
+amount nobody asked for.
+
 Supported items are an allowlist (`inventoryInterfaceItems`), covering Refined Storage's
 Wireless and Portable Grids, Quartz Arsenal's Wireless Crafting Grid and Universal Grid's
 Wireless Universal Grid, plus creative variants. Nothing is looked up by class, so neither

@@ -112,11 +112,25 @@ public final class InventoryInterfaceTicker {
         final InventoryInterfaceTarget target = resolved.get();
         final Actor actor = new PlayerActor(player);
         if (state.insert() && target.mayInsert(player)) {
-            insert(player, inventory, gridSlot, state, target, actor);
+            insert(inventory, gridSlot, state, target, actor);
         }
         if (state.export() && target.mayExtract(player)) {
             export(player, inventory, gridSlot, state, target, actor);
         }
+    }
+
+    /**
+     * Slots auto-insert will not take from, whatever the filter says.
+     *
+     * <p>The grid doing the filing, the item in your hand, and — unless
+     * {@code inventoryInterfaceInsertFromHotbar} says otherwise — the whole hotbar. Armour and the
+     * offhand are outside this range entirely, so they are never candidates in the first place.
+     */
+    private static boolean isProtected(final Inventory inventory, final int gridSlot, final int slot) {
+        if (slot == gridSlot || slot == inventory.selected) {
+            return true;
+        }
+        return !Config.inventoryInterfaceInsertFromHotbar && slot < Inventory.getSelectionSize();
     }
 
     /**
@@ -139,8 +153,7 @@ public final class InventoryInterfaceTicker {
         return null;
     }
 
-    private static void insert(final ServerPlayer player,
-                               final Inventory inventory,
+    private static void insert(final Inventory inventory,
                                final int gridSlot,
                                final InventoryInterfaceState state,
                                final InventoryInterfaceTarget target,
@@ -154,12 +167,25 @@ public final class InventoryInterfaceTicker {
             keepLeft[i] = filter.get(i).map(ResourceAmount::amount).orElse(0L);
         }
         final int mainSize = inventory.items.size();
-        final int hotbarSize = Inventory.getSelectionSize();
+        // What is in the slots this pass will not touch still counts against the budget. Without
+        // this, "keep 64" means 64 outside the hotbar PLUS whatever is in it, and the export half
+        // -- which counts the whole inventory -- disagrees with the insert half about the same
+        // number. Sixteen in the hotbar and sixty-four in the bag would settle at eighty.
         for (int slot = 0; slot < mainSize; ++slot) {
-            if (slot == gridSlot || slot == inventory.selected) {
+            if (!isProtected(inventory, gridSlot, slot)) {
                 continue;
             }
-            if (!Config.inventoryInterfaceInsertFromHotbar && slot < hotbarSize) {
+            final ItemStack stack = inventory.getItem(slot);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            final int match = indexOf(state, ItemResource.ofItemStack(stack));
+            if (match >= 0) {
+                keepLeft[match] = Math.max(0L, keepLeft[match] - stack.getCount());
+            }
+        }
+        for (int slot = 0; slot < mainSize; ++slot) {
+            if (isProtected(inventory, gridSlot, slot)) {
                 continue;
             }
             final ItemStack stack = inventory.getItem(slot);
