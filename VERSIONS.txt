@@ -10,6 +10,24 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.10.2
+-----
+  BATCHING RAN FOR THE FIRST TIME, and cost 1.33% to do nothing. Profile 4JnFBQWZwg is the first
+  with rstweaks$batchStep in it at all -- proof the flag was on, where two earlier runs believed to
+  be batching tests were not. Craft was the crystal chain, every pattern has a byproduct, so it
+  refused all of them as designed and the profile is otherwise identical to the batching-off run:
+  no benefit, no harm.
+  But canBatch walked every ingredient against every output plus a durability lookup per input ON
+  EVERY STEP, for an answer that cannot change (immutable layout, item-level durability). At 10^5
+  steps a tick that is 1.33% of the server thread spent saying no. Decided once per pattern now.
+  AND THE REASON TWO RUNS WERE WASTED: there was no way to tell whether batching was on. It refuses
+  every byproduct pattern, so on a tool chain it is CORRECTLY silent, which looks identical to being
+  off. Startup line now lists "batched execution"; /rstweaks stats reports iterations, batches and
+  average width, and says "batching on, nothing batched yet" when zero -- zero is the interesting
+  answer. Third time this project has shipped something whose presence is indistinguishable from its
+  absence.
+
+
 0.10.1
 -----
   A TOOL FAMILY IS AN INTEGER NOW. 0.9.1 cached withoutDamage and killed the ItemStack allocation in

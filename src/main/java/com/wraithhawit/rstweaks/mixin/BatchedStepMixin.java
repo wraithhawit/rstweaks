@@ -165,10 +165,34 @@ public abstract class BatchedStepMixin {
     }
 
     /**
-     * The guard. Wider than the arithmetic needs, on purpose — see the class notes.
+     * The guard's answer, decided once.
+     *
+     * <p>It cannot change: the layout is immutable and whether an item wears out is a property of
+     * the item. Recomputing it per step cost <b>1.33% of the server thread</b> in profile
+     * {@code 4JnFBQWZwg} — a crystal craft, where the answer is "no" every time and the whole path
+     * is a refusal. Paying a walk of every ingredient against every output, plus a durability
+     * lookup per input, a hundred thousand times a tick to reach the same conclusion is worse than
+     * not having the optimization at all.
      */
     @Unique
+    private Boolean rstweaks$batchable;
+
+    @Unique
     private boolean rstweaks$canBatch(final PatternLayout layout) {
+        final Boolean cached = this.rstweaks$batchable;
+        if (cached != null) {
+            return cached;
+        }
+        final boolean decided = rstweaks$decideCanBatch(layout);
+        this.rstweaks$batchable = decided;
+        return decided;
+    }
+
+    /**
+     * The guard itself. Wider than the arithmetic needs, on purpose — see the class notes.
+     */
+    @Unique
+    private boolean rstweaks$decideCanBatch(final PatternLayout layout) {
         if (!layout.byproducts().isEmpty()) {
             return false;
         }

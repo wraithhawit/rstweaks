@@ -8,6 +8,37 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.10.2
+
+**Batching ran for the first time, and cost 1.33% to do nothing.** Profile `4JnFBQWZwg` is the
+first with `rstweaks$batchStep` in it at all — proof the flag was on, where two earlier runs
+believed to be batching tests were not. The craft was the crystal chain, so every pattern has a
+byproduct and batching refused all of them exactly as designed. The rest of the profile is
+unchanged from the batching-off run of the same craft, which is the right answer for a refused
+craft: no benefit, no harm.
+
+Except it was not free. `canBatch` walked every ingredient against every output and did a
+durability lookup per input, **on every step**, to reach a conclusion that cannot change — the
+layout is immutable and whether an item wears out is a property of the item. At a hundred thousand
+steps a tick that is 1.33% of the server thread spent saying no. It is decided once per pattern
+now.
+
+### And the reason two runs were wasted
+
+There was no way to tell whether batching was on. It refuses every byproduct pattern, so on a
+crafting-tool chain it is *correctly* silent — which looks identical to being switched off. That
+cost two profiling runs and a "wait, did I run it with batching enabled?" that I could not answer
+from the log.
+
+- The startup line now lists **batched execution** among the active features.
+- `/rstweaks stats` reports iterations, batches and the average width — and says
+  `batching on, nothing batched yet` when the count is zero, because zero is the interesting
+  answer.
+
+Shipping a feature whose presence is indistinguishable from its absence is the same mistake as a
+differential test between two identical things, and this is the third time this project has paid
+for it.
+
 ## 0.10.1
 
 **A tool family is an integer now.** 0.9.1 cached `withoutDamage` and removed the `ItemStack`

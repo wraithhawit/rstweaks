@@ -179,6 +179,12 @@ public class RSTweaks {
             if (Config.durabilityAwarePlanning) {
                 features.add("tool durability");
             }
+            // Listed because its absence was unanswerable. Batched stepping refuses every pattern
+            // with a byproduct, so on a crafting-tool chain it does nothing at all -- which is
+            // indistinguishable from being switched off, and cost two profiling runs to work out.
+            if (Config.batchedExecution) {
+                features.add("batched execution");
+            }
             if (Config.inventoryInterface) {
                 features.add("inventory interface");
             }

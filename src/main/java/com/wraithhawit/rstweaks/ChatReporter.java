@@ -270,6 +270,17 @@ public final class ChatReporter {
         if (delta.lpPlanned() > 0) {
             parts.add(String.format("%,d crafts planned by solver", delta.lpPlanned()));
         }
+        // Read straight off Stats rather than through the delta record, because the question this
+        // answers is "did batching do anything at all" and a zero is the interesting answer. It
+        // refuses every pattern with a byproduct, so on a crafting-tool chain it is silent by
+        // design -- which is indistinguishable from being switched off unless the number is here.
+        if (Config.batchedExecution) {
+            parts.add(Stats.batchedSteps == 0L
+                ? "batching on, nothing batched yet"
+                : String.format("%,d iterations in %,d batches (%.0f wide)",
+                    Stats.batchedIterations, Stats.batchedSteps,
+                    (double) Stats.batchedIterations / Stats.batchedSteps));
+        }
         if (delta.planCopies() > 0) {
             parts.add(String.format("%,d plan copies avoided", delta.planCopies()));
         }
