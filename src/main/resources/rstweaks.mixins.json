@@ -21,6 +21,8 @@
     "MutablePatternPlanAccessor",
     "PatternHolderMixin",
     "PortableGridBlockItemAccessor",
+    "RefinedStorageApiImplAccessor",
+    "RefinedStorageApiProxyInvoker",
     "PatternRepositoryImplMixin",
     "MutablePatternPlanMixin",
     "MutableResourceListEntryMixin",

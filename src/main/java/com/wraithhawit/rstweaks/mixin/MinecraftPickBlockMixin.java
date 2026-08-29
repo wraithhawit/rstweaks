@@ -7,7 +7,6 @@ import com.wraithhawit.rstweaks.iface.SupportedGrids;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
@@ -84,22 +83,14 @@ public abstract class MinecraftPickBlockMixin {
         if (player.getInventory().findSlotMatchingItem(wanted) != -1) {
             return;
         }
-        if (!rstweaks$carryingAGrid(player.getInventory())) {
+        // Checked here so that a player with no grid on them presses pick block at a block they do
+        // not have and sends nothing at all. Every press on a missing block would otherwise be a
+        // packet. Refined Storage's composite provider rather than an inventory scan, so a grid
+        // worn in a Curios slot counts -- and it is safe on the client, because Refined Storage
+        // runs the same composite here for its own open-grid keybinds.
+        if (SupportedGrids.carriedBy(player).isEmpty()) {
             return;
         }
         PacketDistributor.sendToServer(new BlockPickPacket(blockHit.getBlockPos(), blockHit.getDirection()));
-    }
-
-    /**
-     * Checked here so that a player with no grid on them presses pick block at a block they do not
-     * own and sends nothing at all. Every press on a missing block would otherwise be a packet.
-     */
-    private static boolean rstweaks$carryingAGrid(final Inventory inventory) {
-        for (int slot = 0; slot < inventory.getContainerSize(); ++slot) {
-            if (SupportedGrids.isSupported(inventory.getItem(slot))) {
-                return true;
-            }
-        }
-        return false;
     }
 }

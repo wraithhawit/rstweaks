@@ -8,6 +8,52 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.5.2
+
+**A grid worn in a Curios slot now works.** Reported from the world during the 0.5.1 test pass:
+
+> there's curios slots where we can put the grids in to keep them out of the inventory and the
+> pickblock doesn't work from there
+
+It didn't, and neither did the Inventory Interface. Every scan in `iface/` walked
+`player.getInventory()`, and a grid in a Curios slot is not in it — so a player who had tidied their
+grid away out of the inventory, which is the entire point of a Curios slot, had silently switched
+both features off.
+
+**Refined Storage already models this and we were not asking.** Its Curios integration registers a
+`SlotReferenceProvider` through `RefinedStorageApi.addSlotReferenceProvider`, and RS keeps a
+`CompositeSlotReferenceProvider` that knows about all of them — `InventorySlotReferenceProvider` is
+merely the one it starts with. The API lets anyone *add* a provider and nobody read the composite
+back, so getting at it takes two accessor mixins: `@Invoker` for the proxy's `ensureLoaded`, and
+`@Accessor` for the impl's field. Universal Grid reaches the same field through the same pair, which
+is a fair sign this is the seam rather than a way around one.
+
+All three scan sites — the ticker, block pick's grid lookup, and the client-side "is a packet worth
+sending" check — now ask Refined Storage where the grids are instead of assuming. The consequence
+is bigger than Curios: a backpack or trinket integration nobody here has heard of works too, and
+this mod still names neither Curios nor Universal Grid, for the same reason the supported-item list
+is ids rather than classes.
+
+Client-safe, and not by luck: Refined Storage runs this same composite on the client for its own
+open-grid keybinds (`useSlotReferencedItem`), so every registered provider is already expected to
+answer for a client player.
+
+**One thing got better on the way.** The insert pass used to protect the grid's own slot by
+comparing an index; it now asks the slot reference `isDisabledSlot`. That is the question the method
+exists to answer — it is how a menu greys out the slot its item came from — and a grid in a Curios
+slot correctly answers false to every inventory index, having none to protect.
+
+**Testing.** Curios is not in the dev run, so `aGridOutsideTheInventoryStillWorks` exposes the grid
+through a provider of our own registered into the same composite: a provider is a provider, and
+Curios has no special status in it. What that tests is the thing that was actually wrong — whether
+the pass asks or assumes. Confirmed to fail with the inventory scan put back (64 kept where 16 was
+asked for). 23 gametests pass.
+
+**Not fixed, and known.** The configuration screen still opens on sneak + right-click *in the air*,
+so a grid in a Curios slot has to come out to be configured. The setting rides on the item, so it
+survives the round trip. A keybind would fix it properly — Refined Storage and AE2WTLib both use one
+to reach slot-referenced items — and that is a separate change.
+
 ## 0.5.1
 
 **Block pick no longer works in spectator**, and 0.5.0's claim that nothing else does this was

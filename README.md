@@ -320,6 +320,14 @@ means sixteen in the whole inventory, not sixteen on top of whatever is in the h
 otherwise the two halves disagree about the same number, and export tops you up to an
 amount nobody asked for.
 
+**The grid does not have to be in your inventory.** Refined Storage's Curios integration
+registers a slot-reference provider, and both halves of this — the Inventory Interface and
+block pick — ask Refined Storage's composite provider where your grids are rather than
+scanning the inventory. So a grid worn in a Curios slot works, and so does any other
+integration that registers itself. The one exception is the configuration screen, which
+still opens on sneak + right-click in the air: take the grid out to configure it, and the
+setting rides back with the item.
+
 Supported items are an allowlist (`inventoryInterfaceItems`), covering Refined Storage's
 Wireless and Portable Grids, Quartz Arsenal's Wireless Crafting Grid and Universal Grid's
 Wireless Universal Grid, plus creative variants. Nothing is looked up by class, so neither

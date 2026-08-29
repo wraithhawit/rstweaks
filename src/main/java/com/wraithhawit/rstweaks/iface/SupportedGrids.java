@@ -5,12 +5,19 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import com.refinedmods.refinedstorage.common.api.RefinedStorageApi;
+import com.refinedmods.refinedstorage.common.api.support.slotreference.SlotReference;
+import com.refinedmods.refinedstorage.common.support.slotreference.CompositeSlotReferenceProvider;
+
 import com.wraithhawit.rstweaks.Config;
+import com.wraithhawit.rstweaks.mixin.RefinedStorageApiImplAccessor;
+import com.wraithhawit.rstweaks.mixin.RefinedStorageApiProxyInvoker;
 import com.wraithhawit.rstweaks.RSTweaks;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
 /**
@@ -55,6 +62,39 @@ public final class SupportedGrids {
 
     public static boolean isSupported(final ItemStack stack) {
         return !stack.isEmpty() && items().contains(stack.getItem());
+    }
+
+    /**
+     * Every grid this player is carrying, wherever it is kept.
+     *
+     * <p><b>Not {@code player.getInventory()}.</b> Refined Storage's Curios integration registers a
+     * slot-reference provider, so a Wireless Grid worn in a Curios slot is an ordinary working grid
+     * that an inventory scan cannot see — which is how this mod came to ignore one until somebody
+     * wore theirs. Asking Refined Storage's composite provider instead means Curios works, and so
+     * does any other integration that registers itself, without this mod naming either.
+     *
+     * <p>Returns {@link SlotReference}s rather than stacks because the reference is what the rest
+     * of the feature needs anyway: it resolves to the live stack, it is what Refined Storage's
+     * network-item machinery takes, and {@code isDisabledSlot} is how the inventory pass knows
+     * which slot not to touch. A grid in a Curios slot answers false to all of those, which is
+     * correct — it occupies no inventory slot to protect.
+     */
+    public static List<SlotReference> carriedBy(final Player player) {
+        final Set<Item> supported = items();
+        if (supported.isEmpty()) {
+            return List.of();
+        }
+        return slotReferenceProvider().find(player, supported);
+    }
+
+    /**
+     * Refined Storage's composite provider, reached through two accessors because the API lets
+     * anyone add a provider and nobody read the list back. See {@code RefinedStorageApiImplAccessor}.
+     */
+    private static CompositeSlotReferenceProvider slotReferenceProvider() {
+        final RefinedStorageApi api =
+            ((RefinedStorageApiProxyInvoker) RefinedStorageApi.INSTANCE).rstweaks$ensureLoaded();
+        return ((RefinedStorageApiImplAccessor) api).rstweaks$getSlotReferenceProvider();
     }
 
     /**

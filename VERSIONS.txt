@@ -10,6 +10,28 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.5.2
+-----
+  A grid worn in a CURIOS slot now works -- for block pick and for the Inventory Interface, both of
+  which ignored one completely. Reported from the world: "there's curios slots where we can put the
+  grids in to keep them out of the inventory and the pickblock doesn't work from there". Every scan
+  here walked player.getInventory(), and a grid in a Curios slot is not in it. Refined Storage
+  already models this: the Curios integration registers a SlotReferenceProvider through
+  RefinedStorageApi.addSlotReferenceProvider, and RS keeps a CompositeSlotReferenceProvider that
+  knows about all of them. The API lets anyone ADD a provider and nobody read the composite back, so
+  reaching it takes two accessor mixins -- exactly the pair Universal Grid uses for the same field,
+  which is a fair sign it is the seam rather than a way around one. All three scan sites now ask
+  Refined Storage where the grids are instead of assuming, so a backpack or trinket integration
+  nobody here has heard of works too, and this mod still names neither Curios nor Universal Grid.
+  The insert pass now asks the slot reference isDisabledSlot instead of comparing an index, which
+  is the right question anyway and correctly protects nothing when the grid occupies no inventory
+  slot. New gametest: Curios is not in the dev run, so the grid is exposed through a provider of our
+  own registered into the same composite -- confirmed to fail with the inventory scan put back. 23
+  pass. NOT fixed: the configuration screen still opens on sneak + right-click in the AIR, so a grid
+  in a Curios slot has to come out to be configured. The setting rides on the item, so it survives
+  the round trip.
+
+
 0.5.1
 -----
   Block pick no longer works in spectator, and 0.5.0's claim that nothing else does this was

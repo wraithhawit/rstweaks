@@ -2,10 +2,16 @@ package com.wraithhawit.rstweaks.test;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import com.refinedmods.refinedstorage.api.resource.ResourceAmount;
 import com.refinedmods.refinedstorage.api.resource.filter.FilterMode;
+import com.refinedmods.refinedstorage.common.api.RefinedStorageApi;
+import com.refinedmods.refinedstorage.common.api.support.slotreference.SlotReference;
+import com.refinedmods.refinedstorage.common.api.support.slotreference.SlotReferenceFactory;
+import com.refinedmods.refinedstorage.common.api.support.slotreference.SlotReferenceProvider;
 import com.refinedmods.refinedstorage.common.content.Items;
+import com.refinedmods.refinedstorage.common.support.slotreference.InventorySlotReferenceFactory;
 import com.refinedmods.refinedstorage.common.support.resource.ItemResource;
 
 import com.wraithhawit.rstweaks.Config;
@@ -17,12 +23,15 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+
+import org.jetbrains.annotations.Nullable;
 
 /**
  * The Inventory Interface, driven by the real player tick against a real storage.
@@ -177,7 +186,114 @@ public final class InventoryInterfaceGameTest {
         }
     }
 
+    /**
+     * A grid that is not in the inventory at all still works.
+     *
+     * <p>Refined Storage's Curios integration registers a slot-reference provider, so a Wireless
+     * Grid worn in a Curios slot is an ordinary working grid that {@code player.getInventory()}
+     * cannot see. This mod scanned the inventory and so ignored one, which is how the gap was
+     * found — by somebody wearing theirs.
+     *
+     * <p>Curios is not in the dev run, so the grid here is exposed through a provider of our own
+     * registered into the same composite. That tests the thing that was actually wrong: whether the
+     * pass asks Refined Storage where the grids are, or assumes. A provider is a provider; Curios
+     * has no special status in the composite.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void aGridOutsideTheInventoryStillWorks(final GameTestHelper helper) {
+        final int originalInterval = Config.inventoryInterfaceIntervalTicks;
+        final boolean originalEnabled = Config.inventoryInterface;
+        Config.inventoryInterfaceIntervalTicks = 1;
+        Config.inventoryInterface = true;
+        try {
+            final ServerPlayer player = (ServerPlayer) helper.makeMockServerPlayerInLevel();
+            player.getInventory().clearContent();
+
+            final ItemStack grid = PortableGridFixture.portableGrid(helper, player);
+            configure(grid, state -> new InventoryInterfaceState(
+                true, false, FilterMode.ALLOW, false, filter(iron(), 16L)));
+            player.getInventory().setItem(CARGO_SLOT,
+                new ItemStack(net.minecraft.world.item.Items.IRON_INGOT, 64));
+
+            // Deliberately NOT put in the inventory anywhere.
+            ExternalSlot.hold(grid);
+            try {
+                for (int pass = 0; pass < PASSES; ++pass) {
+                    NeoForge.EVENT_BUS.post(new PlayerTickEvent.Post(player));
+                }
+            } finally {
+                ExternalSlot.release();
+            }
+
+            expect("iron kept on the player", countCarried(player, iron()), 16L);
+            expect("iron filed away by a grid the inventory cannot see",
+                PortableGridFixture.countStored(helper, grid, iron()), 48L);
+            helper.succeed();
+        } finally {
+            Config.inventoryInterfaceIntervalTicks = originalInterval;
+            Config.inventoryInterface = originalEnabled;
+        }
+    }
+
     // ------------------------------------------------------------------ harness
+
+    /**
+     * A slot that is not an inventory slot, registered into Refined Storage's composite provider
+     * the way Curios registers its own.
+     *
+     * <p>Registered once and inert until {@link #hold} arms it, because the composite is global and
+     * lives for the session — every other test's {@code carriedBy} runs through this too, and gets
+     * an empty list. {@code isDisabledSlot} answers false for every inventory index, which is the
+     * honest answer for something occupying none of them and the behaviour the insert pass relies
+     * on.
+     */
+    private static final class ExternalSlot implements SlotReferenceProvider, SlotReference {
+        private static final ExternalSlot INSTANCE = new ExternalSlot();
+        private static boolean registered;
+
+        @Nullable
+        private ItemStack stack;
+
+        static void hold(final ItemStack stack) {
+            if (!registered) {
+                RefinedStorageApi.INSTANCE.addSlotReferenceProvider(INSTANCE);
+                registered = true;
+            }
+            INSTANCE.stack = stack;
+        }
+
+        static void release() {
+            INSTANCE.stack = null;
+        }
+
+        @Override
+        public List<SlotReference> find(final Player player, final Set<Item> validItems) {
+            if (stack == null || !validItems.contains(stack.getItem())) {
+                return List.of();
+            }
+            return List.of(this);
+        }
+
+        @Override
+        public Optional<ItemStack> resolve(final Player player) {
+            return Optional.ofNullable(stack);
+        }
+
+        @Override
+        public boolean isDisabledSlot(final int playerSlotIndex) {
+            return false;
+        }
+
+        /**
+         * Only used to write a reference to a client, which nothing on this path does. Refined
+         * Storage's own factory rather than null so that a future caller gets a wrong answer rather
+         * than a crash.
+         */
+        @Override
+        public SlotReferenceFactory getFactory() {
+            return InventorySlotReferenceFactory.INSTANCE;
+        }
+    }
 
     @FunctionalInterface
     private interface Setup {

@@ -69,30 +69,32 @@ public final class InventoryInterfaceTicker {
         run(player);
     }
 
+    /**
+     * Every grid the player is carrying, wherever it is kept.
+     *
+     * <p>Not an inventory scan: a grid worn in a Curios slot is reached through Refined Storage's
+     * own composite provider and would be invisible to one. See {@link SupportedGrids#carriedBy}.
+     */
     private static void run(final ServerPlayer player) {
         final Inventory inventory = player.getInventory();
-        for (int slot = 0; slot < inventory.getContainerSize(); ++slot) {
-            final ItemStack stack = inventory.getItem(slot);
-            if (stack.isEmpty()) {
+        for (final SlotReference slotReference : SupportedGrids.carriedBy(player)) {
+            final ItemStack stack = slotReference.resolve(player).orElse(null);
+            if (stack == null) {
                 continue;
             }
             final InventoryInterfaceState state = stack.get(InventoryInterfaceContent.STATE.get());
-            if (state == null || !state.isActive() || !SupportedGrids.isSupported(stack)) {
+            if (state == null || !state.isActive()) {
                 continue;
             }
-            serve(player, inventory, slot, stack, state);
+            serve(player, inventory, slotReference, stack, state);
         }
     }
 
     private static void serve(final ServerPlayer player,
                               final Inventory inventory,
-                              final int gridSlot,
+                              final SlotReference slotReference,
                               final ItemStack gridStack,
                               final InventoryInterfaceState state) {
-        final SlotReference slotReference = InventoryInterfaceTarget.referenceFor(player, gridSlot);
-        if (slotReference == null) {
-            return;
-        }
         final Optional<InventoryInterfaceTarget> resolved =
             InventoryInterfaceTarget.of(player, gridStack, slotReference);
         if (resolved.isEmpty()) {
@@ -101,10 +103,10 @@ public final class InventoryInterfaceTicker {
         final InventoryInterfaceTarget target = resolved.get();
         final Actor actor = new PlayerActor(player);
         if (state.insert() && target.mayInsert(player)) {
-            insert(inventory, gridSlot, state, target, actor);
+            insert(inventory, slotReference, state, target, actor);
         }
         if (state.export() && target.mayExtract(player)) {
-            export(player, inventory, gridSlot, state, target, actor);
+            export(player, inventory, slotReference, state, target, actor);
         }
     }
 
@@ -114,16 +116,23 @@ public final class InventoryInterfaceTicker {
      * <p>The grid doing the filing, the item in your hand, and — unless
      * {@code inventoryInterfaceInsertFromHotbar} says otherwise — the whole hotbar. Armour and the
      * offhand are outside this range entirely, so they are never candidates in the first place.
+     *
+     * <p>The grid's own slot is asked of the reference rather than compared to an index, because a
+     * grid does not have to be in the inventory at all. {@code isDisabledSlot} is exactly this
+     * question — it exists so a menu can grey out the slot its item came from — and a grid in a
+     * Curios slot correctly answers false to every inventory index, having none to protect.
      */
-    private static boolean isProtected(final Inventory inventory, final int gridSlot, final int slot) {
-        if (slot == gridSlot || slot == inventory.selected) {
+    private static boolean isProtected(final Inventory inventory,
+                                       final SlotReference slotReference,
+                                       final int slot) {
+        if (slotReference.isDisabledSlot(slot) || slot == inventory.selected) {
             return true;
         }
         return !Config.inventoryInterfaceInsertFromHotbar && slot < Inventory.getSelectionSize();
     }
 
     private static void insert(final Inventory inventory,
-                               final int gridSlot,
+                               final SlotReference slotReference,
                                final InventoryInterfaceState state,
                                final InventoryInterfaceTarget target,
                                final Actor actor) {
@@ -141,7 +150,7 @@ public final class InventoryInterfaceTicker {
         // -- which counts the whole inventory -- disagrees with the insert half about the same
         // number. Sixteen in the hotbar and sixty-four in the bag would settle at eighty.
         for (int slot = 0; slot < mainSize; ++slot) {
-            if (!isProtected(inventory, gridSlot, slot)) {
+            if (!isProtected(inventory, slotReference, slot)) {
                 continue;
             }
             final ItemStack stack = inventory.getItem(slot);
@@ -154,7 +163,7 @@ public final class InventoryInterfaceTicker {
             }
         }
         for (int slot = 0; slot < mainSize; ++slot) {
-            if (isProtected(inventory, gridSlot, slot)) {
+            if (isProtected(inventory, slotReference, slot)) {
                 continue;
             }
             final ItemStack stack = inventory.getItem(slot);
@@ -197,7 +206,7 @@ public final class InventoryInterfaceTicker {
 
     private static void export(final ServerPlayer player,
                                final Inventory inventory,
-                               final int gridSlot,
+                               final SlotReference slotReference,
                                final InventoryInterfaceState state,
                                final InventoryInterfaceTarget target,
                                final Actor actor) {
@@ -217,7 +226,7 @@ public final class InventoryInterfaceTicker {
             // One stack per entry per pass. A player who has just emptied a filter slot's worth of
             // blocks would otherwise pull the whole shortfall in a single tick, and the point of
             // the cap is that the work per pass stays bounded no matter what the filter says.
-            final long take = Math.min(Math.min(missing, sample.getMaxStackSize()), room(inventory, gridSlot, sample));
+            final long take = Math.min(Math.min(missing, sample.getMaxStackSize()), room(inventory, slotReference, sample));
             if (take <= 0L) {
                 continue;
             }
@@ -291,11 +300,13 @@ public final class InventoryInterfaceTicker {
     }
 
     /** How many more of a stack the player's main inventory could hold. */
-    private static long room(final Inventory inventory, final int gridSlot, final ItemStack sample) {
+    private static long room(final Inventory inventory,
+                             final SlotReference slotReference,
+                             final ItemStack sample) {
         final int maxStackSize = sample.getMaxStackSize();
         long free = 0L;
         for (int slot = 0; slot < inventory.items.size(); ++slot) {
-            if (slot == gridSlot) {
+            if (slotReference.isDisabledSlot(slot)) {
                 continue;
             }
             final ItemStack stack = inventory.getItem(slot);
