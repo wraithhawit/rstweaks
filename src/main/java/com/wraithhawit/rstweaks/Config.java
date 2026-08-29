@@ -1040,6 +1040,43 @@ public final class Config {
         }
     }
 
+    /** As {@link #intOrDefault}, for the long-valued settings. */
+    public static long longOrDefault(final ModConfigSpec.LongValue value, final long fallback) {
+        try {
+            return value.get();
+        } catch (final IllegalStateException configNotLoaded) {
+            return fallback;
+        }
+    }
+
+    public static final ModConfigSpec.LongValue LP_PLANNER_EXPANSION_THRESHOLD = BUILDER
+        .comment(
+            "How many base items a request must expand into before the LP planner takes it",
+            "over from Refined Storage's own calculator, even when there is nothing wrong",
+            "with the recipes.",
+            "",
+            "Refined Storage plans an ordinary chain perfectly correctly -- it just cannot",
+            "always finish. CraftingTree.calculateIngredient counts to the total expanded",
+            "item count one at a time:",
+            "",
+            "    long remaining = ingredientState.amount() * this.amount.iterations();",
+            "    while (remaining > 0L) { ... }",
+            "",
+            "So 320 of a nine-times-compressed block is 9^9 each, that loop counts to about",
+            "120 billion, and the request dies on its five-second timeout -- which Refined",
+            "Storage spends on the SERVER THREAD, so the world stops for a hundred ticks and",
+            "you are told 'this request took too long to calculate'.",
+            "",
+            "The LP planner is O(patterns) and does not care what the amount is: the same",
+            "nine-tier chain solves in under a millisecond whether you ask for one or a",
+            "million, and when it cannot be made it says which resource you are short of",
+            "instead of timing out.",
+            "",
+            "Lower to hand it more of these; raise it to keep more on stock Refined Storage.",
+            "Requests smaller than this are untouched, which is nearly all of them."
+        )
+        .defineInRange("lpPlannerExpansionThreshold", 10_000_000L, 1L, Long.MAX_VALUE);
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private Config() {

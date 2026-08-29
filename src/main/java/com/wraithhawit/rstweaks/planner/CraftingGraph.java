@@ -24,6 +24,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import javax.annotation.Nullable;
+
 /**
  * Extracts the crafting subgraph reachable from a target and reduces it to the
  * numbers the solver needs.
@@ -93,6 +95,94 @@ public final class CraftingGraph {
         public boolean needsLpPlanner() {
             return !this.truncated && (this.hasByproducts || this.hasCycle);
         }
+
+        /**
+         * Roughly how many base items one of {@code resource} expands into.
+         *
+         * <p>This is the number that decides whether Refined Storage's own calculator can finish.
+         * {@code CraftingTree.calculateIngredient} is:
+         *
+         * <pre>{@code   long remaining = ingredientState.amount() * this.amount.iterations();
+         *   while (remaining > 0L) { ... } }</pre>
+         *
+         * <p>— a loop that runs <b>once per expanded item</b>. Three hundred and twenty
+         * nine-times-compressed blocks is 9<sup>9</sup> each, so that loop counts to about
+         * 1.2×10<sup>11</sup> and the request dies on its five-second timeout, on the server
+         * thread. The solver is O(patterns) and does not care what the amount is, which is the
+         * whole argument for handing it these.
+         *
+         * <p>Saturating rather than exact: past {@link #EXPANSION_CAP} the only question anyone is
+         * asking is "far too many", and an exact answer would overflow long before it was useful.
+         */
+        public long expansionOf(final ResourceKey resource) {
+            return expansion(resource, new HashMap<>(), new HashSet<>());
+        }
+
+        private long expansion(final ResourceKey resource,
+                               final Map<ResourceKey, Long> memo,
+                               final Set<ResourceKey> visiting) {
+            final Long cached = memo.get(resource);
+            if (cached != null) {
+                return cached;
+            }
+            if (!visiting.add(resource)) {
+                // A cycle, which this estimate cannot describe. Those already reach the planner
+                // on their own, so answering "one" here costs nothing.
+                return 1L;
+            }
+            long result = 1L;
+            final Pattern producer = producerOf(resource);
+            if (producer != null) {
+                long total = 0L;
+                for (final Ingredient ingredient : producer.layout().ingredients()) {
+                    final long each = expansion(ingredient.inputs().getFirst(), memo, visiting);
+                    total = saturatingAdd(total, saturatingMultiply(ingredient.amount(), each));
+                }
+                final long perCraft = outputAmount(producer, resource);
+                result = perCraft <= 0L ? total : Math.max(1L, total / perCraft);
+            }
+            visiting.remove(resource);
+            memo.put(resource, result);
+            return result;
+        }
+
+        @Nullable
+        private Pattern producerOf(final ResourceKey resource) {
+            for (final Pattern pattern : this.patterns) {
+                for (final ResourceAmount output : pattern.layout().outputs()) {
+                    if (output.resource().equals(resource)) {
+                        return pattern;
+                    }
+                }
+            }
+            return null;
+        }
+
+        private static long outputAmount(final Pattern pattern, final ResourceKey resource) {
+            for (final ResourceAmount output : pattern.layout().outputs()) {
+                if (output.resource().equals(resource)) {
+                    return output.amount();
+                }
+            }
+            return 0L;
+        }
+    }
+
+    /** Past this the answer is "far too many", and an exact one would overflow. */
+    public static final long EXPANSION_CAP = 1_000_000_000_000_000L;
+
+    public static long saturatingMultiply(final long a, final long b) {
+        if (a == 0L || b == 0L) {
+            return 0L;
+        }
+        if (a > EXPANSION_CAP / b) {
+            return EXPANSION_CAP;
+        }
+        return Math.min(EXPANSION_CAP, a * b);
+    }
+
+    private static long saturatingAdd(final long a, final long b) {
+        return Math.min(EXPANSION_CAP, a + b);
     }
 
     public static Graph build(final PatternRepository repository,

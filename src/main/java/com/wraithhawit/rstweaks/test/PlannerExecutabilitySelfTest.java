@@ -1167,6 +1167,30 @@ public final class PlannerExecutabilitySelfTest {
             repo.add(recipe("ingot", 2, List.of(ing(1, "ore")), List.of(out("slag", 1))), 0);
         }, Map.of("ore", 512L), "ingot", 64L, true));
 
+        // A compression chain: no byproducts, no cycle, and nothing wrong with it -- stock
+        // Refined Storage plans it perfectly correctly and then cannot finish, because
+        // CraftingTree.calculateIngredient loops once per expanded item. Five tiers of nine at
+        // 320 is 18.9 million of those, and in game the nine-tier version came back as "this
+        // request took too long to calculate" after freezing the server thread for five seconds.
+        //
+        // Here to pin the gate: this is the shape the planner declined by design until 0.10.0,
+        // and the assertion is simply that it takes it now. The solver's own cost is unaffected
+        // by the amount, which is the whole reason it can.
+        out.add(new Scenario("compression chain, far too big for the tree", repo -> {
+            for (int tier = 1; tier <= 5; tier++) {
+                repo.add(recipe("t" + tier, 1, List.of(ing(9, "t" + (tier - 1))), List.of()), 0);
+            }
+        }, Map.of("t0", 18_895_680L), "t5", 320L, true));
+
+        // The same chain, small. Still no byproducts and no cycle, and now well within what the
+        // tree handles, so it must stay on stock Refined Storage -- the gate has to be a
+        // threshold and not a licence to take everything.
+        out.add(new Scenario("compression chain, small enough for the tree", repo -> {
+            for (int tier = 1; tier <= 3; tier++) {
+                repo.add(recipe("t" + tier, 1, List.of(ing(9, "t" + (tier - 1))), List.of()), 0);
+            }
+        }, Map.of("t0", 46_656L), "t3", 64L, false));
+
         // A bidirectional container/fluid pair. rstweaks' own fluid substitution, which used to
         // generate this shape, was removed in 0.2.81 — but the shape itself is not going anywhere:
         // it is what any mod doing fluid substitution produces, and a degenerate cycle whose net

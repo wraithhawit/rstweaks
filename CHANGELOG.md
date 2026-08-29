@@ -8,6 +8,76 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.10.0
+
+**The LP planner was gated out of the one case it is best at.** Requesting 320
+`allthecompressed:netherrack_9x` in game gave "this request took too long to calculate, and was
+cancelled". The log said why:
+
+```
+[rstweaks] LP planner declined allthecompressed:netherrack_9x:
+  no byproducts and no cycle -- stock RS already plans this correctly
+```
+
+It does plan it correctly. It just cannot finish. The gate asked *does Refined Storage get this
+wrong?* when the question that mattered was *can Refined Storage complete this?*
+
+### Why the tree cannot, stated exactly
+
+`CraftingTree.calculateIngredient`:
+
+```java
+long remaining = ingredientState.amount() * this.amount.iterations();
+while (remaining > 0L) { ... }
+```
+
+**One loop iteration per expanded item.** A nine-times-compressed block is 9⁹ ≈ 387 million, so 320
+of them is about 1.2×10¹¹ — and Refined Storage spends its five-second timeout on the *server
+thread*, so the world stops for a hundred ticks before telling you no.
+
+The solver is O(patterns). New `compressionProbe` measures it rather than asserting it:
+
+```
+tiers  requested   base stock       outcome      ms
+9      320         plenty         9 patterns    0.71
+9      1           plenty         9 patterns    0.93
+9      1000000     plenty         9 patterns    0.40
+9      320         none        no integer sol   0.40
+```
+
+One, 320 and a million all cost the same, which is the design's central claim holding in
+measurement: the requested amount is a right-hand side, not a dimension of the problem. And with no
+stock it proves impossibility in 0.4 ms — where the tree cannot answer at all, it can say *which
+resource you are short of*.
+
+### The gate now asks the right question
+
+The planner also takes a request when its **expansion** — amount × base items per unit, computed
+saturating over the pattern DAG — reaches `lpPlannerExpansionThreshold`, default 10 million.
+Below that, nothing changes and stock Refined Storage keeps every craft it has today:
+
+```
+tiers  requested  expands to      gate
+1      64         576             left to RS
+3      64         46656           left to RS
+5      320        18895680        TAKEN
+9      320        123974556480    TAKEN
+```
+
+Two scenarios pin it, deliberately in both directions: a five-tier chain at 320 must be **taken**,
+and a three-tier chain at 64 must be **left alone**, because a threshold that takes everything is
+not a threshold. Raising the threshold out of reach makes the first fail, which is how I know it
+discriminates.
+
+### Credit where it is due
+
+This came out of Nodrance's own notes on his LP planner, which the user passed along. His design
+routes *most* crafts to LP behind a `shouldUseLpSystem` compatibility check — the opposite polarity
+from ours, which only took what RS got wrong. His summary of what LP supports ("all crafts the
+traditional algorithm can't calculate, that don't involve loops") is the shape ours should have been
+aiming at, and his "if no solution exists, tell the user what's missing" is exactly what a timed-out
+request should have given you.
+
 ## 0.9.1
 
 **The profile said the bottleneck was us.** Spark `zyyN62neOS`, taken on a large craft with batching

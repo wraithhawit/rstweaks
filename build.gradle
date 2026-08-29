@@ -90,6 +90,13 @@ tasks.named('check') {
         'schedulerCheck', 'batchCheck'
 }
 
+tasks.register('compressionProbe', JavaExec) {
+    group = 'verification'
+    description = 'Times the LP solver on a compression chain, which the gate currently excludes.'
+    classpath = sourceSets.main.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'com.wraithhawit.rstweaks.test.CompressionProbe'
+}
+
 tasks.register('sparkProfile', JavaExec) {
     group = 'verification'
     description = 'Decodes a spark profile: ./gradlew sparkProfile --args="<url|code|file>"'

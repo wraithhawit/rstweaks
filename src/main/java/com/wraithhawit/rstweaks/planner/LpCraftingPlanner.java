@@ -84,10 +84,19 @@ public final class LpCraftingPlanner {
                 repository, rootStorage, target,
                 Config.intOrDefault(Config.MAX_PLANNER_PATTERNS, 4096));
 
-            if (!graph.needsLpPlanner()) {
-                // Acyclic and byproduct-free: stock RS already gets this right, and
-                // leaving it alone keeps the blast radius to the cases that need us.
-                //
+            // Acyclic and byproduct-free means stock RS plans it *correctly*, which is the
+            // reason this planner used to stand aside. It is not the same as stock RS being
+            // able to *finish*: CraftingTree.calculateIngredient loops once per expanded item,
+            // so a nine-times-compressed block counts to about 1.2e11 and dies on its
+            // five-second timeout, on the server thread. This solver is O(patterns) and does
+            // not care what the amount is, so those are exactly the ones worth taking.
+            final long expansion = graph.needsLpPlanner()
+                ? 0L
+                : CraftingGraph.saturatingMultiply(amount, graph.expansionOf(target));
+            final boolean tooBigForTheTree =
+                expansion >= Config.longOrDefault(Config.LP_PLANNER_EXPANSION_THRESHOLD, 10_000_000L);
+
+            if (!graph.needsLpPlanner() && !tooBigForTheTree) {
                 // Logged because "declined" and "not installed" look identical from
                 // in-game, and the reason is the only way to tell a correct decline
                 // from a subgraph that outgrew the pattern cap.
@@ -97,6 +106,10 @@ public final class LpCraftingPlanner {
                     : "no byproducts and no cycle -- stock RS already plans this correctly");
                 ++Stats.lpPlannerDeclined;
                 return Attempt.DECLINED;
+            }
+            if (tooBigForTheTree) {
+                RSTweaks.LOGGER.info("[rstweaks] taking {}x {} because it expands to about {} base"
+                    + " items, which stock RS calculates one at a time", amount, target, expansion);
             }
 
             final PlanMatrix.Outcome outcome = PlanMatrix.solve(

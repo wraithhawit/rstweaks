@@ -10,6 +10,28 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.10.0
+-----
+  THE LP PLANNER WAS GATED OUT OF THE CASE IT IS BEST AT. 320 allthecompressed:netherrack_9x gave
+  "this request took too long to calculate" in game, and the log said "LP planner declined: no
+  byproducts and no cycle -- stock RS already plans this correctly". It does plan it correctly; it
+  cannot FINISH. The gate asked "does RS get this wrong" when it should have asked "can RS complete
+  this".
+  WHY THE TREE CANNOT: CraftingTree.calculateIngredient is `remaining = amount * iterations; while
+  (remaining > 0)` -- ONE LOOP ITERATION PER EXPANDED ITEM. 9x compressed is 9^9 each, so 320 of
+  them is ~1.2e11, and RS spends its 5s timeout ON THE SERVER THREAD (100 frozen ticks).
+  The solver is O(patterns). New compressionProbe measures it: 9 tiers at 320 solves in 0.71ms, and
+  1 / 320 / 1,000,000 all cost the same (0.93 / 0.48 / 0.40ms) -- the amount is a right-hand side,
+  not a dimension. With no stock it proves infeasibility in 0.4ms and can say what you are short of.
+  New gate: also take a request whose EXPANSION (amount x base items per unit, saturating over the
+  pattern DAG) reaches lpPlannerExpansionThreshold, default 10 million. Below that nothing changes.
+  Two scenarios pin it BOTH WAYS -- 5 tiers at 320 must be taken, 3 tiers at 64 must be left alone,
+  because a threshold that takes everything is not a threshold. Verified by raising the threshold
+  out of reach and watching the first one fail.
+  Came out of Nodrance's own notes: his design routes MOST crafts to LP behind a shouldUseLpSystem
+  compatibility check -- the opposite polarity from ours.
+
+
 0.9.1
 -----
   THE PROFILE SAID THE BOTTLENECK WAS US. Spark zyyN62neOS (large craft, batching off) breaks down
