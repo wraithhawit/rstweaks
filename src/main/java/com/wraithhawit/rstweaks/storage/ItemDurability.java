@@ -28,9 +28,47 @@ public final class ItemDurability implements Durability {
     private ItemDurability() {
     }
 
+    /**
+     * Which tool family this resource belongs to, or {@link #NOT_A_TOOL}.
+     *
+     * <p>Two resources are the same tool exactly when they share a family, so {@link #sameTool}
+     * becomes one lookup each and an {@code int} comparison. That matters because
+     * {@code findWornTool} asks it once per resource in the task's internal storage, per
+     * ingredient, per iteration.
+     *
+     * <p>Caching {@link #withoutDamage} (0.9.1) removed the {@code ItemStack} allocation from that
+     * comparison and left the expensive half behind: comparing two cached results still means
+     * {@code DataComponentPatch.equals}, which is {@code AbstractCollection.containsAll} over the
+     * component maps — 8.97% plus 5.79% of the server thread in profile {@code K7rNc1lhrw}, with
+     * {@code maxDamage}'s per-call map lookup another 11.80% on top. An integer has none of that.
+     */
+    private static int family(final ItemResource resource) {
+        final Integer cached = FAMILY.get(resource);
+        if (cached != null) {
+            return cached;
+        }
+        final int family;
+        if (maxDamage(resource) <= 0) {
+            family = NOT_A_TOOL;
+        } else {
+            // Everything but the damage decides the family, so a differently enchanted tool gets
+            // its own — two of those are not interchangeable wear levels of one another.
+            family = FAMILY_OF_CANONICAL.computeIfAbsent(
+                withoutDamage(resource), key -> NEXT_FAMILY.getAndIncrement());
+        }
+        FAMILY.put(resource, family);
+        return family;
+    }
+
+    private static final int NOT_A_TOOL = -1;
+    private static final Map<ItemResource, Integer> FAMILY = new ConcurrentHashMap<>();
+    private static final Map<ItemResource, Integer> FAMILY_OF_CANONICAL = new ConcurrentHashMap<>();
+    private static final java.util.concurrent.atomic.AtomicInteger NEXT_FAMILY =
+        new java.util.concurrent.atomic.AtomicInteger();
+
     @Override
     public boolean isDurable(final ResourceKey resource) {
-        return resource instanceof ItemResource item && maxDamage(item) > 0;
+        return resource instanceof ItemResource item && family(item) != NOT_A_TOOL;
     }
 
     @Override
@@ -70,12 +108,11 @@ public final class ItemDurability implements Durability {
         if (!(a instanceof ItemResource left) || !(b instanceof ItemResource right)) {
             return false;
         }
-        if (!left.item().equals(right.item()) || maxDamage(left) <= 0) {
-            return false;
-        }
-        // Same item and both damageable is not enough: two differently enchanted tools
-        // are not interchangeable. Compare everything except the damage.
-        return withoutDamage(left).equals(withoutDamage(right));
+        // Same item and both damageable is not enough: two differently enchanted tools are not
+        // interchangeable. That distinction is baked into the family, so this stays an int
+        // comparison rather than becoming a component-map equality on the hot path.
+        final int family = family(left);
+        return family != NOT_A_TOOL && family == family(right);
     }
 
     /**

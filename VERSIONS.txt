@@ -10,6 +10,22 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.10.1
+-----
+  A TOOL FAMILY IS AN INTEGER NOW. 0.9.1 cached withoutDamage and killed the ItemStack allocation in
+  every tool comparison; profile K7rNc1lhrw shows what was left: HashMap.hash 19.37% self,
+  ItemDurability.maxDamage 11.80%, AbstractCollection.containsAll 8.97%, ItemResource.equals 5.79%.
+  sameTool was still doing withoutDamage(a).equals(withoutDamage(b)), which is DataComponentPatch
+  equality, and maxDamage did a map lookup per call -- both asked once per resource in internal
+  storage, per ingredient, per iteration. Now each resource resolves once to an int family and
+  sameTool is a lookup each plus an int compare. Differently enchanted tools get different families.
+  Break-tested: one family for everything fails "a pickaxe is not an axe" and the issue-9 assertion.
+  DURABILITY FIX, MEASURED PROPERLY (crystal craft both sides, batching off both sides):
+  extractAll 70.63%->48.97%, substituteWornTool 68.53%->43.35%, findWornTool 62.71%->29.06%,
+  ItemStack.<init> gone from the self frames. An earlier claim that it went to nothing was WRONG --
+  that compared a netherrack craft against a crystal one, and netherrack has no tools in it.
+
+
 0.10.0
 -----
   THE LP PLANNER WAS GATED OUT OF THE CASE IT IS BEST AT. 320 allthecompressed:netherrack_9x gave

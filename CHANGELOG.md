@@ -8,6 +8,47 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.10.1
+
+**A tool family is an integer now.** 0.9.1 cached `withoutDamage` and removed the `ItemStack`
+allocation from every tool comparison; profile `K7rNc1lhrw` shows what that left behind:
+
+```
+19.37%  java.util.HashMap.hash                  (self)
+11.80%  ItemDurability.maxDamage                (self)
+ 8.97%  java.util.AbstractCollection.containsAll
+ 5.79%  ItemResource.equals
+```
+
+`sameTool` was still doing `withoutDamage(a).equals(withoutDamage(b))`, and comparing two
+`DataComponentPatch`es is that `containsAll`/`equals` pair. `maxDamage` did a map lookup on every
+call. `findWornTool` asks both once per resource in the task's internal storage, per ingredient,
+per iteration.
+
+So each resource now resolves once to an `int` family — same item, same components except damage —
+and `sameTool` is a lookup each plus an integer comparison. The distinction that matters is baked
+into the family rather than recomputed: two differently enchanted tools land in different families,
+because they are not interchangeable wear levels of one another.
+
+Broken on purpose before being believed: making every tool share a family fails
+`a pickaxe is not an axe` and `a differently-componented one is not interchangeable either` — the
+two assertions that exist for issue #9.
+
+### Where the durability fix actually stands
+
+Measured properly this time, crystal craft on both sides, batching off on both:
+
+| | 0.9.0 | 0.10.0 |
+|---|---|---|
+| `extractAll` | 70.63% | 48.97% |
+| `substituteWornTool` | 68.53% | 43.35% |
+| `findWornTool` | 62.71% | 29.06% |
+| `ItemStack.<init>` self | 13.7–20.8% | gone |
+
+An earlier draft of this file claimed that fix took the cost to nothing. It did not: that reading
+compared a netherrack craft against a crystal one, and netherrack has no tools in it, so the code
+being measured never ran. Two workloads, not two versions. The numbers above are the honest ones.
+
 ## 0.10.0
 
 **The LP planner was gated out of the one case it is best at.** Requesting 320
