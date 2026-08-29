@@ -8,6 +8,114 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.4.0
+
+**The Inventory Interface.** The first thing this mod adds rather than makes cheaper:
+[refinedmods/refinedstorage-quartz-arsenal#3](https://github.com/refinedmods/refinedstorage-quartz-arsenal/issues/3),
+implemented here. A Wireless or Portable Grid now files items away and restocks you while it sits
+in your inventory.
+
+The issue has been open upstream since RS2 started, with no assignee and an `art-necessary` label.
+That label is the reason it never moved, and it is not a reason it had to stay still: Refined
+Storage already ships every sprite this needs except two, and the filter screen it needs is one
+Refined Storage draws for its own Exporter.
+
+**The design.** Upstream asks for auto-insert, auto-export, and "filtering options". The RS1
+requests it cites say what people actually wanted —
+[refinedstorage#2573](https://github.com/refinedmods/refinedstorage/issues/2573) ("a filter in the
+portable grid so it automatically inserts items from the world") and
+[refinedstorageaddons#4](https://github.com/refinedmods/refinedstorageaddons/issues/4) ("a bag
+that auto-inserts item drops, whitelist/blacklist") — and both are about a grid that works **while
+it sits in your inventory**, not while its screen is open.
+
+So: **one** filter list of nine slots, and the amount on a filter slot means the same thing in
+both directions — how many of that resource to keep on you.
+
+| | |
+|---|---|
+| Auto-insert, `ALLOW` | files away the listed resources, keeping the amount on each |
+| Auto-insert, `BLOCK` | files away everything *except* the listed resources, which it leaves alone entirely |
+| Auto-export | tops the listed resources back up to their amount |
+
+Auto-export reads the list whichever mode the filter is in, because topping up is a whitelist by
+nature. That is what makes `BLOCK` + export coherent rather than contradictory: "these are mine,
+do not put them away, and keep me stocked with them". Both toggles on is a maintained stock — 64
+cobblestone on you, no more, no less, which is the "maintains a stack in your inventory" behaviour
+RS1 asked for, falling out of the two toggles rather than needing a third mode.
+
+**What it refuses to touch.** Auto-insert is the half that can ruin an afternoon: a `BLOCK` filter
+is a standing instruction to file away everything you did not name, and what you did not name
+includes the blocks you are placing. It never takes the held item, armour, the offhand, or another
+grid, and by default nothing from the hotbar at all. The hotbar rule is the one that is a judgement
+rather than a safety rail, so it is the one that is config
+(`inventoryInterfaceInsertFromHotbar`, off).
+
+**Compatibility, and why it is by id.** Supported items are an allowlist
+(`inventoryInterfaceItems`): Refined Storage's Wireless and Portable Grids, Quartz Arsenal's
+Wireless Crafting Grid, Universal Grid's Wireless Universal Grid, and the creative variants of
+each. The obvious class test — anything extending `AbstractNetworkEnergyItem` — also catches the
+Wireless Autocrafting Monitor and the Wireless Security Manager, neither of which has an inventory
+to interface with, and would silently adopt every future network-bound item an addon adds. Ids
+also mean nothing here references a class belonging to either addon, so neither becomes a
+dependency, neither needs a mixin config, and an id from a mod you do not have simply matches
+nothing. It is config, so an addon grid nobody here has heard of is a line in a file rather than a
+build.
+
+**The gesture is an event, not a mixin, and that is the same compatibility argument.** Sneak +
+right-click in the air is free on all four items: crouch-right-click on a *block* is already taken
+(a wireless grid binds, a portable grid places) but that is `RightClickBlock`, a different event.
+`AbstractNetworkEnergyItem.use` would have been the obvious mixin target and would have covered
+Refined Storage's own grids — but an addon is free to override `use`, and Quartz Arsenal and
+Universal Grid both do, so the mixin would have silently not run for exactly the two mods this was
+meant to support. `PlayerInteractEvent.RightClickItem` fires ahead of `Item.use` for every item
+there is, so there is nothing to override.
+
+**How little of it is ours.** The state is a data component attached to *Refined Storage's* stacks
+— any component can be attached to any stack, so carrying our configuration on somebody else's
+item needs no fork and no cooperation. The screen extends `AbstractResourceContainerMenu`, which
+means Refined Storage's `ResourceSlotChangePacket`, `ResourceSlotAmountChangePacket` and
+`PropertyChangePacket` already serve it: all three dispatch on the base class, so editing a filter
+slot, setting its amount and toggling a button all arrive without this mod registering a packet.
+The filter-mode and fuzzy buttons are Refined Storage's own widgets driven by its own property
+types. The background is its `generic_filter.png`, which is why the filter is nine slots and one
+row. Storage is `NetworkItemHelper.createContext` for the wireless grids — the same call
+`WirelessGridItem.use` makes, so range, binding and dimension are decided by Refined Storage — and
+`DiskInventory.resolve` for the portable one. Energy drains through Refined Storage's own paths at
+its own configured rates, and a transfer whose fee cannot be paid does not happen.
+
+Two sprites are ours to draw. Two things are registered, both in our namespace: a data component
+and a menu type. Uninstall this mod and a Wireless Grid is a Wireless Grid.
+
+**One new mixin**, an `@Accessor` for `PortableGridBlockItem.type`. Refined Storage answers
+"creative or not" three ways and all three are out of reach: `isCreative` is private,
+`createEnergyStorageInternal` (the one that substitutes `CreativeEnergyStorage`) is private, and
+the public `createEnergyStorage(stack)` deliberately reports the stored number rather than the
+effective one. `getRenderInfo` does answer it but reaches the client-only storage repository on the
+way. Without the accessor a creative Portable Grid reads as flat and the feature silently does
+nothing on it.
+
+**Cost.** One pass every `inventoryInterfaceIntervalTicks` (20 by default), staggered across
+players by entity id. A pass on a player carrying no configured grid is 41 data-component lookups;
+nothing resolves a network, touches a disk, or allocates until a stack turns up carrying a
+configuration that is switched on.
+
+**Testing.** `InventoryInterfaceGameTest`, four tests, against a real creative Portable Grid with a
+real disk: `ALLOW` keeps the amount and files the surplus, `BLOCK` protects the list and files
+everything else, export tops up to the amount and stops, and an empty `BLOCK` filter — "file away
+everything", the most destructive setting this has — leaves the held item and both grids alone. 17
+gametests pass.
+
+The first draft of those tests was wrong in a way worth writing down: it set the inventory up and
+waited for `PlayerTickEvent` to arrive. It never does. A gametest's mock player is placed in the
+level and logs in, but is never ticked — the server reports zero players for the whole run. The
+tests did not fail loudly; they reported that the feature did nothing, which is indistinguishable
+from the feature being broken, and it took a probe on an unrelated listener to tell the two apart.
+They now post a real `PlayerTickEvent.Post` on the real bus, which still fails if the listener was
+never registered.
+
+**Block pick** (`quartz-arsenal#4`) is deliberately not in this. Upstream lists it under #3 as an
+extra but files it separately, and it is a different interaction with a different failure mode.
+
 ## 0.3.1
 
 **The external storage provider layer now has gametest coverage. It had none.**

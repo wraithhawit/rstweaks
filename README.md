@@ -286,6 +286,53 @@ Remaining spike cost is ~22% disk I/O (`IOUtilities.atomicWrite`,
 `NbtIo.writeCompressed`) — world autosave on a drive with 1.43 GB free. That is now
 the best remaining action, and it is not a code change.
 
+## Inventory Interface
+
+The first thing here that adds something rather than making something cheaper.
+[refinedmods/refinedstorage-quartz-arsenal#3](https://github.com/refinedmods/refinedstorage-quartz-arsenal/issues/3),
+implemented: a Wireless or Portable Grid that files items away and restocks you while it
+sits in your inventory. It has been open upstream since RS2 started, labelled
+`art-necessary` — which is the reason it never moved, and not a reason it has to stay
+still, because Refined Storage already ships every sprite this needs except two.
+
+**Sneak + right-click in the air** on a grid to configure it. One filter list of nine
+slots, and the amount on a filter slot means the same thing in both directions: **how
+many of that resource to keep on you.**
+
+| | |
+|---|---|
+| Auto-insert, `ALLOW` | Files away the listed resources, keeping the amount on each |
+| Auto-insert, `BLOCK` | Files away everything *except* the listed resources, which it leaves alone entirely |
+| Auto-export | Tops the listed resources back up to their amount. Reads the list whichever mode it is in — topping up is a whitelist by nature |
+
+Both on gives you a maintained stock: 64 cobblestone on you, no more, no less. It is also
+what makes `BLOCK` + export coherent rather than contradictory — "these are mine, do not
+put them away, and keep me stocked with them".
+
+Auto-insert never takes the item you are holding, your armour, your offhand, or another
+grid, and by default takes nothing from the hotbar at all
+(`inventoryInterfaceInsertFromHotbar`). A `BLOCK` filter is a standing instruction to file
+away everything you did not name, and what you did not name includes the blocks you are
+placing.
+
+Supported items are an allowlist (`inventoryInterfaceItems`), covering Refined Storage's
+Wireless and Portable Grids, Quartz Arsenal's Wireless Crafting Grid and Universal Grid's
+Wireless Universal Grid, plus creative variants. Nothing is looked up by class, so neither
+addon becomes a dependency and an id from a mod you do not have matches nothing — which is
+also why an addon grid nobody here has heard of is a line in a config file rather than a
+build.
+
+Everything under the screen is Refined Storage's: the filter slots and their packets, the
+filter-mode and fuzzy-mode buttons, the `generic_filter.png` background, and both storage
+paths (`NetworkItemHelper.createContext` for the wireless grids, `DiskInventory.resolve`
+for the portable one). Energy is drained through RS's own paths at RS's own configured
+rates. This mod registers exactly two things for it, both in its own namespace: a data
+component and a menu type. Uninstall it and a Wireless Grid is a Wireless Grid again.
+
+A pass runs every `inventoryInterfaceIntervalTicks` (20 by default), staggered across
+players by entity id. On a player carrying no configured grid it is 41 data-component
+lookups and nothing else.
+
 ## Testing
 
 Three harnesses, in the order you should reach for them.
@@ -456,6 +503,7 @@ libs/                     RS + addon jars, compile-only
 worlds/survival-rstweaks/   the actual world data (junctioned into the instance)
 decompiled/               Vineflower output for RS, Step Crafter, Cable Tiers
 src/main/java/.../mixin/  optimizations
+src/main/java/.../iface/  the Inventory Interface (the one feature, not a tweak)
 src/main/resources/
   rstweaks.mixins.json      mixin registry; add each class here
   META-INF/neoforge.mods.toml

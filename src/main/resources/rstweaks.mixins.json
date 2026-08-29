@@ -20,6 +20,7 @@
     "ItemHandlerExtractableStorageMixin",
     "MutablePatternPlanAccessor",
     "PatternHolderMixin",
+    "PortableGridBlockItemAccessor",
     "PatternRepositoryImplMixin",
     "MutablePatternPlanMixin",
     "MutableResourceListEntryMixin",

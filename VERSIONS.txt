@@ -10,6 +10,34 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.4.0
+-----
+  The Inventory Interface, and the first thing this mod adds rather than makes cheaper.
+  refinedmods/refinedstorage-quartz-arsenal#3, open upstream since RS2 started and labelled
+  art-necessary, which is why it never moved -- Refined Storage already ships every sprite it
+  needs except two. A Wireless or Portable Grid now files items away and restocks you while it
+  sits in your inventory. Sneak + right-click in the air to configure. ONE filter list of nine
+  slots, and the amount on a slot means the same thing in both directions: how many to keep on
+  you. Auto-insert in ALLOW files away the listed resources beyond their amount; in BLOCK it
+  files away everything NOT listed and leaves the list alone entirely; auto-export tops the list
+  back up to its amount and reads the list whichever mode it is in, because topping up is a
+  whitelist by nature -- which is what makes BLOCK + export coherent ("these are mine, do not put
+  them away, and keep me stocked with them") rather than contradictory. Both on is a maintained
+  stock. Auto-insert refuses the held item, armour, the offhand and any other grid, and by
+  default the whole hotbar (inventoryInterfaceInsertFromHotbar). Compatible with Quartz Arsenal's
+  Wireless Crafting Grid and Universal Grid's Wireless Universal Grid, by an ALLOWLIST OF IDS
+  rather than a class test: nothing references a class from either mod, so neither is a
+  dependency and an unknown addon grid is a config line rather than a build. The gesture is a
+  PlayerInteractEvent listener for the same reason -- a mixin on AbstractNetworkEnergyItem.use
+  would have covered RS's own grids and silently not run for the two addons, which both override
+  it. Everything under the screen is Refined Storage's: filter slots and their packets, the
+  filter-mode and fuzzy buttons, generic_filter.png, and both storage paths. This mod registers
+  two things, both in its own namespace: a data component and a menu type. Four new gametests
+  drive it through a real event on the real bus against a real disk; 17 pass. The first draft of
+  those tests waited for PlayerTickEvent instead, which never arrives -- a gametest's mock player
+  is placed but never ticked, so the tests reported a feature that did nothing.
+
+
 0.3.1
 -----
   The external storage PROVIDER layer now has gametest coverage; it had none. Found by

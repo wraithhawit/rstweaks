@@ -1,2 +1,13 @@
 {
+  "gui.rstweaks.inventory_interface": "Inventory Interface",
+  "gui.rstweaks.inventory_interface.filter_help": "The resources this grid manages, and how many of each to keep on you.",
+  "gui.rstweaks.inventory_interface.auto_insert": "Auto-insert",
+  "gui.rstweaks.inventory_interface.auto_insert.help": "Files surplus items from your inventory into storage while this grid is in your inventory. Never takes what you are holding, your armour, your offhand, or another grid.",
+  "gui.rstweaks.inventory_interface.auto_export": "Auto-export",
+  "gui.rstweaks.inventory_interface.auto_export.help": "Tops the filtered resources back up to their amount out of storage. Reads the filter list whichever mode it is in, because topping up is a whitelist by nature.",
+  "gui.rstweaks.inventory_interface.filter_mode.allow_help": "Auto-insert only files away the filtered resources, and only what you have beyond their amount.",
+  "gui.rstweaks.inventory_interface.filter_mode.block_help": "Auto-insert files away everything except the filtered resources, which it leaves alone entirely.",
+  "item.rstweaks.inventory_interface.hint": "Sneak + right-click: Inventory Interface",
+  "item.rstweaks.inventory_interface.auto_insert": "Auto-inserting into storage",
+  "item.rstweaks.inventory_interface.auto_export": "Auto-exporting to your inventory"
 }

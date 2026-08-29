@@ -18,11 +18,15 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 
 import com.wraithhawit.rstweaks.gate.UpstreamGate;
+import com.wraithhawit.rstweaks.iface.InventoryInterfaceContent;
+import com.wraithhawit.rstweaks.iface.InventoryInterfaceOpener;
+import com.wraithhawit.rstweaks.iface.InventoryInterfaceTicker;
 import com.wraithhawit.rstweaks.mekanism.MekanismQio;
 import com.wraithhawit.rstweaks.planner.Durability;
 import com.wraithhawit.rstweaks.storage.DrawerDenylist;
 import com.wraithhawit.rstweaks.storage.ItemDurability;
 import com.wraithhawit.rstweaks.test.CraftingGridRefillGameTest;
+import com.wraithhawit.rstweaks.test.InventoryInterfaceGameTest;
 import com.wraithhawit.rstweaks.test.RSTweaksGameTests;
 import com.wraithhawit.rstweaks.test.SelfTestCommand;
 
@@ -31,11 +35,16 @@ import org.slf4j.Logger;
 /**
  * Entry point for the Refined Storage tick-time optimizations.
  *
- * <p>This mod registers no content. All behaviour lives in {@code mixin/}, applied via
- * {@code rstweaks.mixins.json}. It briefly registered one data component, for fluid substitution;
- * that feature and its component were removed when a dedicated mod took over the job. The class
- * exists so FML has something to construct for the {@code rstweaks} modid, and so there is one
- * obvious place to log which optimizations are active when reading a spark profile back.
+ * <p>Almost all behaviour lives in {@code mixin/}, applied via {@code rstweaks.mixins.json}. The
+ * exception is the Inventory Interface in {@code iface/}, which is the first thing here that adds
+ * something rather than making something cheaper, and so the first thing that registers: one data
+ * component and one menu type, both in our own namespace and neither attached to a Refined Storage
+ * registry. (One data component was registered here before, for fluid substitution; it went when a
+ * dedicated mod took that job over.)
+ *
+ * <p>The class also exists so FML has something to construct for the {@code rstweaks} modid, and
+ * so there is one obvious place to log which optimizations are active when reading a spark profile
+ * back.
  */
 @Mod(RSTweaks.MODID)
 public class RSTweaks {
@@ -73,6 +82,13 @@ public class RSTweaks {
         NeoForge.EVENT_BUS.register(DrawerDenylist.class);
         NeoForge.EVENT_BUS.register(ChatReporter.class);
         NeoForge.EVENT_BUS.register(SelfTestCommand.class);
+        // The Inventory Interface is the one feature here that is content rather than a tweak to
+        // how Refined Storage spends a tick, which is why it is also the only thing this mod
+        // registers: a data component and a menu type. Both are ours and neither touches Refined
+        // Storage's registries, so removing this mod leaves a Wireless Grid a Wireless Grid.
+        InventoryInterfaceContent.register(modEventBus);
+        NeoForge.EVENT_BUS.register(InventoryInterfaceOpener.class);
+        NeoForge.EVENT_BUS.register(InventoryInterfaceTicker.class);
         // Only fires when -Dneoforge.enabledGameTestNamespaces includes this mod;
         // the command above is the version that works without a launch flag.
         // Common setup rather than here: Refined Storage installs its API delegate and registers
@@ -89,6 +105,7 @@ public class RSTweaks {
         modEventBus.addListener(RegisterGameTestsEvent.class, event -> {
             event.register(RSTweaksGameTests.class);
             event.register(CraftingGridRefillGameTest.class);
+            event.register(InventoryInterfaceGameTest.class);
         });
         LOGGER.info("[rstweaks] v{} loaded", version);
     }
@@ -139,6 +156,9 @@ public class RSTweaks {
             }
             if (Config.durabilityAwarePlanning) {
                 features.add("tool durability");
+            }
+            if (Config.inventoryInterface) {
+                features.add("inventory interface");
             }
             activeFeatures = String.join(", ", features);
         }

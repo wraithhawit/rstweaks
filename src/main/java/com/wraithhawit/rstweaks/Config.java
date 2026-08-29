@@ -385,6 +385,13 @@ public final class Config {
         refillContainersInCraftingGrid = REFILL_CONTAINERS_IN_CRAFTING_GRID.get();
         containerGridClicks = CONTAINER_GRID_CLICKS.get();
         logGridViewDiagnostics = LOG_GRID_VIEW_DIAGNOSTICS.get();
+        inventoryInterface = INVENTORY_INTERFACE.get();
+        inventoryInterfaceIntervalTicks = INVENTORY_INTERFACE_INTERVAL_TICKS.getAsInt();
+        inventoryInterfaceInsertFromHotbar = INVENTORY_INTERFACE_INSERT_FROM_HOTBAR.get();
+        // The item list is resolved against the item registry and cached, so a reload has to be
+        // told to look again. Not resolved here: a config reload can arrive before the registries
+        // are frozen, and an id looked up too early resolves to nothing and stays that way.
+        com.wraithhawit.rstweaks.iface.SupportedGrids.invalidate();
         AutocraftingLogSpam.apply(SILENCE_AUTOCRAFTING_DEBUG_LOG.get());
     }
 
@@ -870,6 +877,82 @@ public final class Config {
             "skipped entirely when nothing changed since the last one."
         )
         .defineInRange("chatNotificationIntervalSeconds", 0, 0, 3600);
+
+    public static final ModConfigSpec.BooleanValue INVENTORY_INTERFACE = BUILDER
+        .comment(
+            "The Inventory Interface: a Wireless or Portable Grid that files items away and",
+            "restocks you while it sits in your inventory.",
+            "",
+            "Sneak and right-click one in the air to configure it. One filter list, and the",
+            "amount on a filter entry means the same thing in both directions -- how many of",
+            "that resource to keep on you. Auto-insert files away the surplus, auto-export",
+            "tops up the shortfall.",
+            "",
+            "Nothing happens on a grid nobody has configured, so this switch is a way to take",
+            "the feature away from a server rather than a performance setting. It also",
+            "removes the tooltip line and refuses to open the screen."
+        )
+        .define("inventoryInterface", true);
+
+    /** Read every player tick; mirrored by {@link #refresh()} like the other per-tick flags. */
+    public static volatile boolean inventoryInterface = true;
+
+    public static final ModConfigSpec.IntValue INVENTORY_INTERFACE_INTERVAL_TICKS = BUILDER
+        .comment(
+            "Ticks between Inventory Interface passes. 20 ticks = 1 second.",
+            "",
+            "Players are staggered across this window by entity id, so a busy server spreads",
+            "the work rather than doing every player on the same tick. A pass on somebody",
+            "carrying no configured grid is 41 data-component lookups and nothing else -- no",
+            "network is resolved and no disk is touched until a stack turns up carrying a",
+            "configuration that is switched on.",
+            "",
+            "Lower is more responsive and costs more. 1 makes it act on the tick you pick an",
+            "item up, which is the setting to use if you want it to feel like a magnet."
+        )
+        .defineInRange("inventoryInterfaceIntervalTicks", 20, 1, 1200);
+
+    /** Read every player tick. */
+    public static volatile int inventoryInterfaceIntervalTicks = 20;
+
+    public static final ModConfigSpec.BooleanValue INVENTORY_INTERFACE_INSERT_FROM_HOTBAR = BUILDER
+        .comment(
+            "Whether auto-insert may take items out of your hotbar.",
+            "",
+            "OFF BY DEFAULT, and the default is the interesting half of this option. A",
+            "BLOCK-mode filter is a standing instruction to file away everything you did not",
+            "name, and what you did not name includes the blocks you are placing. Watching",
+            "your building materials leave your hotbar one second at a time is the obvious",
+            "way for this feature to be hated.",
+            "",
+            "The item you are actually holding is never taken, whatever this is set to.",
+            "Neither is armour, the offhand, or another grid."
+        )
+        .define("inventoryInterfaceInsertFromHotbar", false);
+
+    /** Read once per inventory slot per pass. */
+    public static volatile boolean inventoryInterfaceInsertFromHotbar = false;
+
+    public static final ModConfigSpec.ConfigValue<java.util.List<? extends String>> INVENTORY_INTERFACE_ITEMS =
+        BUILDER
+            .comment(
+                "Which items can carry an Inventory Interface.",
+                "",
+                "Ids rather than a class test, for two reasons. The obvious class test --",
+                "anything network-bound -- also catches the Wireless Autocrafting Monitor and",
+                "the Wireless Security Manager, neither of which has an inventory to interface",
+                "with. And ids mean this mod names no class belonging to Quartz Arsenal or",
+                "Universal Grid, so neither is a dependency and an id from a mod you do not",
+                "have simply matches nothing.",
+                "",
+                "Which also makes this the place to add an addon grid nobody here has heard of,",
+                "without waiting for a build."
+            )
+            .defineListAllowEmpty(
+                "inventoryInterfaceItems",
+                com.wraithhawit.rstweaks.iface.SupportedGrids.DEFAULTS,
+                () -> "",
+                entry -> entry instanceof String id && net.minecraft.resources.ResourceLocation.tryParse(id) != null);
 
     /**
      * A spec value, or the given default when no config file has been loaded.
