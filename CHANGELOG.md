@@ -8,6 +8,45 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.9.1
+
+**The profile said the bottleneck was us.** Spark `zyyN62neOS`, taken on a large craft with batching
+off, breaks the 99% in `InternalTaskPattern.step` down for the first time:
+
+```
+ 70.63%  AbstractTaskPattern.extractAll
+ 68.53%    rstweaks$substituteWornTool      <- ours
+ 62.71%      findWornTool
+```
+
+Self time is `ItemStack.<init>` at 13.7%, plus another 25% of component-map copying between
+`ensureMapOwnership`, `verifyComponentsAfterLoad` and `isPatchSanitized`. Every earlier profile
+attributed this cost to Refined Storage stepping one iteration at a time. It is not: **two thirds of
+the server thread was our own durability substitution**, and phase 05 was aimed at the wrong target.
+
+### What it was doing
+
+`findWornTool` scans the task's whole internal storage calling `sameTool` on every candidate, and
+`sameTool` called `withoutDamage` on **both sides of every comparison** — each one building an
+`ItemStack`, mutating its component map, and rebuilding an `ItemResource`. `damage()` built an
+entire stack to read a single integer, once per candidate.
+
+So `withoutDamage` is now cached per `ItemResource` — a record, so it has real value equality;
+keying that cache on `ItemStack` would silently make it an identity map that never hits, which is a
+mistake this project has already paid for once. And `damage()` reads the component patch directly,
+falling back to a per-item cached default only when the resource carries no damage at all.
+
+### And `ItemDurability` had no tests
+
+Which only became obvious while rewriting it. The task-engine scenarios install a `FakeDurability` —
+they are about the planner and the executor, not about how damage is read — so the class that
+answers this in game had no coverage. `DurabilitySelfTest` is a gametest against the real registry,
+35 assertions, and its central one is **differential**: the patch-reading answer must equal what
+`toItemStack(1L).getDamageValue()` says, so the slow path it replaced serves as the oracle. All 28
+gametests pass.
+
+No behaviour change intended and none observed. The next profile is what says whether it worked.
+
 ## 0.9.0
 
 **Phase 05 executes.** `BatchedStepMixin` runs many iterations of one pattern in a single

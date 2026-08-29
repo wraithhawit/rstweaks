@@ -191,6 +191,17 @@ public final class RSTweaksGameTests {
         report(helper, "batched stepping", batched);
     }
 
+    /**
+     * {@link com.wraithhawit.rstweaks.storage.ItemDurability} against the real item registry.
+     *
+     * <p>The task-engine scenarios install a fake, so the class that answers this in game had no
+     * coverage until its {@code damage()} was rewritten to read the component patch directly.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void durabilityIsReadFromTheGame(final GameTestHelper helper) {
+        report(helper, "durability", DurabilitySelfTest.run());
+    }
+
     private static void report(final GameTestHelper helper,
                                final String what,
                                final CraftingPlanSelfTest.Result result) {

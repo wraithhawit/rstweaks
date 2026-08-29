@@ -10,6 +10,26 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.9.1
+-----
+  THE PROFILE SAID THE BOTTLENECK WAS US. Spark zyyN62neOS (large craft, batching off) breaks down
+  the 99% in InternalTaskPattern.step for the first time: extractAll 70.63%, and inside it
+  rstweaks$substituteWornTool 68.53% with findWornTool 62.71%. Self time is ItemStack.<init> 13.7%
+  plus ~25% of component-map copying. Every earlier profile blamed RS's one-at-a-time stepping;
+  two thirds of the server thread was OUR durability substitution, and phase 05 aimed at the wrong
+  target.
+  Cause: findWornTool scans the whole internal storage calling sameTool per candidate, and sameTool
+  called withoutDamage on BOTH sides of every comparison -- each building an ItemStack, mutating its
+  component map and rebuilding an ItemResource. damage() built a whole stack to read one int.
+  Fix: withoutDamage cached per ItemResource (a RECORD, so real value equality -- keying on
+  ItemStack would silently be an identity map that never hits), and damage() reads the component
+  patch directly with a per-item cached default fallback.
+  ItemDurability HAD NO TESTS -- the task-engine scenarios install a FakeDurability. DurabilitySelfTest
+  is a new gametest against the real registry, 35 assertions, and the central one is DIFFERENTIAL:
+  the patch-read must equal toItemStack(1L).getDamageValue(), so the slow path it replaced is the
+  oracle. 28 gametests pass. No behaviour change intended or observed; the next profile decides.
+
+
 0.9.0
 -----
   PHASE 05 EXECUTES. BatchedStepMixin runs many iterations of one pattern in a single extraction and

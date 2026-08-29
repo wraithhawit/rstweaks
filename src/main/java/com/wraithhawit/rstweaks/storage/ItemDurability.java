@@ -5,6 +5,7 @@ import com.refinedmods.refinedstorage.common.support.resource.ItemResource;
 import com.wraithhawit.rstweaks.planner.Durability;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 import javax.annotation.Nullable;
@@ -77,11 +78,32 @@ public final class ItemDurability implements Durability {
         return withoutDamage(left).equals(withoutDamage(right));
     }
 
+    /**
+     * The same tool with its damage forgotten, so two wear levels compare equal.
+     *
+     * <p><b>Cached, and that cache is worth more than it looks.</b> Building this means creating an
+     * {@code ItemStack}, mutating its component map and rebuilding an {@code ItemResource} — and
+     * {@link #sameTool} needs it for <em>both</em> sides of every comparison, inside a scan over the
+     * task's whole internal storage. On a large craft with a wearing tool that was <b>62% of the
+     * server thread</b> in profile {@code zyyN62neOS}: {@code ItemStack.<init>} 13.7% self,
+     * component-map copying another 25% between them.
+     *
+     * <p>Keyed on {@link ItemResource}, which is a record and therefore has real value equality.
+     * Keying a cache on {@code ItemStack} would silently make it an identity map and it would never
+     * hit — the mistake this project has already paid for once.
+     *
+     * <p>Bounded in practice: one entry per distinct wear level of each tool actually handled, so a
+     * few hundred at worst, and nothing is added for items that are not durable.
+     */
     private static ItemResource withoutDamage(final ItemResource resource) {
-        final ItemStack stack = resource.toItemStack(1L);
-        stack.remove(DataComponents.DAMAGE);
-        return ItemResource.ofItemStack(stack);
+        return WITHOUT_DAMAGE.computeIfAbsent(resource, key -> {
+            final ItemStack stack = key.toItemStack(1L);
+            stack.remove(DataComponents.DAMAGE);
+            return ItemResource.ofItemStack(stack);
+        });
     }
+
+    private static final Map<ItemResource, ItemResource> WITHOUT_DAMAGE = new ConcurrentHashMap<>();
 
     /**
      * Cached per item, because the only way to ask is to build an {@link ItemStack} and
@@ -102,7 +124,23 @@ public final class ItemDurability implements Durability {
         });
     }
 
+    /**
+     * How damaged this one is, read off the component patch instead of built into a stack.
+     *
+     * <p>{@code toItemStack(1L).getDamageValue()} allocates a stack and copies a component map to
+     * read a single integer, and {@code findWornTool} calls it once per candidate in storage. The
+     * patch already carries the answer whenever the resource has been damaged at all; only an
+     * undamaged one falls through to the item's own default, and that is cached per item.
+     */
     private static int damage(final ItemResource resource) {
-        return resource.toItemStack(1L).getDamageValue();
+        final Optional<? extends Integer> patched = resource.components().get(DataComponents.DAMAGE);
+        if (patched != null) {
+            // Present but empty means the component was explicitly removed, which is undamaged.
+            return patched.isPresent() ? patched.get() : 0;
+        }
+        return DEFAULT_DAMAGE.computeIfAbsent(resource.item(),
+            item -> new ItemStack(item).getDamageValue());
     }
+
+    private static final Map<Item, Integer> DEFAULT_DAMAGE = new ConcurrentHashMap<>();
 }
