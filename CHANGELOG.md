@@ -8,6 +8,38 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.8.2
+
+**Withdrawing yesterday's withdrawal.** 0.8.1 said batching a self-feeding pattern was futile
+rather than dangerous. That is true of stock Refined Storage and **false of this mod**, and reading
+`InternalTaskPatternMixin` while planning the executor is what turned it up.
+
+That mixin ages a byproduct from the tool actually consumed, so a crystal comes back one step more
+worn each iteration instead of being handed back at the damage the pattern was encoded with —
+without it, a worn tool is a repair station. Batch N iterations and that ageing happens **once, for
+N tools**: the progression collapses and the tool stops wearing out. With that mixin and without
+this rule, a batch is a durability duplication glitch.
+
+### And the rule would not have caught it
+
+`crystal@0` and `crystal@1` are different `ResourceKey`s. They are the same **column** only after
+`Pools` folds a tool's wear levels together, so the set intersection is empty in the space the
+executor actually works in, and a wearing tool looks perfectly batchable.
+
+So the API now makes the requirement impossible to miss rather than documenting it:
+
+- `feedsItself(needs, produces)` is public and named, with the column-space precondition stated on
+  it.
+- `decide(needs, available, left, cap, feedsItself)` lets a caller that holds resource keys answer
+  the question from `Durability` instead.
+- The test asserts **both** directions: pooled into one column a wearing tool runs serially, and the
+  same tool in resource space does *not* look self-feeding — which is the assertion that would have
+  caught me writing the executor the obvious way.
+
+Nothing executes yet; this is still the decision half. But it is the second time in two versions
+that the interesting finding came from the interaction between this rebuild and a tweak this mod
+already ships, rather than from Refined Storage.
+
 ## 0.8.1
 
 **Phase 05, the decision half.** `BatchPolicy` answers one question: how many iterations of a

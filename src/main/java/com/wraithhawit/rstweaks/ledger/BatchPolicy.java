@@ -25,13 +25,17 @@ import java.util.Set;
  * back, and the plan's ingredient budget lists it precisely because it expects that. Ask for both
  * at once and the extraction cannot be satisfied.
  *
- * <p><b>Futile, not dangerous, and the distinction is worth being exact about.</b> An earlier
- * version of this file claimed batching a self-feeding pattern could destroy items. It cannot: an
- * extraction is bounded by what the task is holding, so the worst case is a batch whose simulation
- * fails and a step wasted retrying it. A catalyst batched against sixty-four crystals in storage
- * genuinely extracts sixty-four and returns sixty-four, which is the same place serial ends up. The
- * rule earns its keep by not paying for that failure on every step of every crafting tool — not by
- * preventing a loss.
+ * <p><b>In stock Refined Storage this is futile rather than dangerous</b>, and the distinction was
+ * worth chasing down. An extraction is bounded by what the task is holding, so a batch can never
+ * take more than exists: a catalyst batched against sixty-four crystals extracts sixty-four and
+ * returns sixty-four, ending where serial ends.
+ *
+ * <p><b>In this mod it is dangerous, because of another tweak.</b> {@code InternalTaskPatternMixin}
+ * ages a byproduct from the tool actually consumed, so the crystal comes back one step more worn
+ * each iteration instead of being handed back at the damage the pattern was encoded with. Batch N
+ * iterations and that ageing happens once, for N tools: the progression collapses and the tool
+ * stops wearing out. Without that mixin a worn tool is a repair station; with it and without this
+ * rule, a batch is a durability duplication glitch.
  *
  * <p>The real item-loss risk in this phase belongs to the executor, not here: a throw after a
  * partial extraction, on a path where {@code TaskContainer.step} treats any exception as
@@ -73,16 +77,48 @@ public final class BatchPolicy {
                                   final Map<Integer, Long> available,
                                   final long iterationsLeft,
                                   final long cap) {
+        return decide(needsPerIteration, available, iterationsLeft, cap,
+            feedsItself(needsPerIteration, produces));
+    }
+
+    /**
+     * Whether a pattern consumes what it produces, <b>in column space</b>.
+     *
+     * <p>This is the subtlety that makes the overload above dangerous to call carelessly, and it
+     * is worth being exact. {@code crystal@0} and {@code crystal@1} are different resources; they
+     * are the same <em>column</em> only after {@link Pools} has folded a tool's wear levels
+     * together. Hand this raw resource keys and a wearing tool looks like an ordinary pattern,
+     * because the level it consumes and the level it returns are two different keys.
+     *
+     * <p>A caller that has not pooled its keys must work out the answer some other way — asking
+     * whether any input is durable is enough — and use
+     * {@link #decide(Map, Map, long, long, boolean)} instead of this.
+     */
+    public static boolean feedsItself(final Map<Integer, Long> needsPerIteration,
+                                      final Set<Integer> produces) {
+        return needsPerIteration.entrySet().stream()
+            .anyMatch(need -> need.getValue() > 0L && produces.contains(need.getKey()));
+    }
+
+    /**
+     * The decision with {@code feedsItself} already settled by a caller that knows how.
+     *
+     * <p>The executor uses this one: it holds {@code ResourceKey}s rather than columns, so it
+     * answers the question from {@code Durability} instead of from set intersection.
+     */
+    public static Decision decide(final Map<Integer, Long> needsPerIteration,
+                                  final Map<Integer, Long> available,
+                                  final long iterationsLeft,
+                                  final long cap,
+                                  final boolean feedsItself) {
         if (iterationsLeft <= 0L || cap <= 0L) {
             return new Decision(0L, "nothing left to run");
         }
-        for (final Map.Entry<Integer, Long> need : needsPerIteration.entrySet()) {
-            if (need.getValue() > 0L && produces.contains(need.getKey())) {
-                // The one unsafe shape. Serial is not a fallback here, it is the correct answer:
-                // the next iteration is meant to consume what this one hands back.
-                return new Decision(Math.min(1L, affordable(needsPerIteration, available)),
-                    "runs serially: it consumes what it produces");
-            }
+        if (feedsItself) {
+            // Serial is not a fallback here, it is the correct answer: the next iteration is
+            // meant to consume what this one hands back.
+            return new Decision(Math.min(1L, affordable(needsPerIteration, available)),
+                "runs serially: it consumes what it produces");
         }
 
         final long affordable = affordable(needsPerIteration, available);

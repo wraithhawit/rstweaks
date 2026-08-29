@@ -10,6 +10,20 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.8.2
+-----
+  WITHDRAWS 0.8.1's claim. Batching a self-feeding pattern is futile in stock RS and DANGEROUS in
+  this mod: InternalTaskPatternMixin ages a byproduct from the tool actually consumed, so batching
+  N iterations does that ageing ONCE for N tools and the tool stops wearing out -- a durability
+  duplication glitch. Found by reading our own mixin while planning the executor.
+  AND THE RULE WOULD NOT HAVE CAUGHT IT: crystal@0 and crystal@1 are different ResourceKeys and the
+  same COLUMN only after Pools folds wear levels together, so set intersection is empty in the space
+  the executor works in. feedsItself() is now public and named with that precondition on it, and
+  decide(..., feedsItself) lets a resource-key caller answer from Durability instead. The test
+  asserts both directions, including that a tool in resource space does NOT look self-feeding.
+  Still decision-only; nothing executes.
+
+
 0.8.1
 -----
   Phase 05, DECISION HALF ONLY: BatchPolicy says how many iterations of a pattern may run as one

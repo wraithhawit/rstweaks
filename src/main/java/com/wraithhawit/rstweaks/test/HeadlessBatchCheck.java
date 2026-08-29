@@ -85,18 +85,34 @@ public final class HeadlessBatchCheck {
         expect("and says why", decision.reason().contains("consumes what it produces"));
     }
 
-    /** The same thing one step at a time: iteration two wants the tool iteration one handed back. */
+    /**
+     * A wearing tool, and the trap in getting there.
+     *
+     * <p>In <b>column</b> space every wear level of a crystal is one column, so the pattern plainly
+     * consumes what it produces and the rule fires. In <b>resource</b> space — which is where the
+     * executor lives — {@code crystal@0} and {@code crystal@1} are two different keys and the
+     * intersection is empty, so the same pattern looks perfectly batchable. That is the trap, and
+     * batching it would collapse our own wear-ageing into one step for N tools.
+     */
     private static void aWornToolRefusesToBatch() {
-        final int crystalFresh = 1;
-        final int crystalWorn = 2;
-        final BatchPolicy.Decision decision = BatchPolicy.decide(
-            Map.of(crystalFresh, 1L, crystalWorn, 0L, 3, 1L),
-            Set.of(crystalWorn, 4),
-            Map.of(crystalFresh, 1L, 3, 64L), 64L, 1000L);
-        // The budget lists the worn level at zero for this iteration and it is still an input of
-        // the pattern; what makes it serial is that the pattern produces a level it also consumes.
-        expect("a wearing tool runs serially",
-            decision.iterations() == 1L || decision.reason().contains("consumes what it produces"));
+        final int crystalColumn = 1;
+        final int material = 3;
+        final BatchPolicy.Decision pooled = BatchPolicy.decide(
+            Map.of(crystalColumn, 1L, material, 1L),
+            Set.of(crystalColumn, 4),
+            Map.of(crystalColumn, 64L, material, 64L), 64L, 1000L);
+        expect("pooled into one column, a wearing tool runs serially", pooled.iterations() == 1L);
+
+        final int fresh = 1;
+        final int worn = 2;
+        expect("but the same tool in resource space does NOT look self-feeding, which is why the"
+            + " executor must not use set intersection",
+            !BatchPolicy.feedsItself(Map.of(fresh, 1L, material, 1L), Set.of(worn, 4)));
+
+        final BatchPolicy.Decision told = BatchPolicy.decide(
+            Map.of(fresh, 1L, material, 1L),
+            Map.of(fresh, 64L, material, 64L), 64L, 1000L, true);
+        expect("and a caller that knows better can say so", told.iterations() == 1L);
     }
 
     /**
