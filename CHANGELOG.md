@@ -8,6 +8,68 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.3.0
+
+**Mutation testing, and the four test gaps it found.**
+
+No gameplay change. The mod behaves exactly as 0.2.125 did; everything here is test
+infrastructure and the tests it justified.
+
+`./gradlew mutationTest -PpitTarget='<glob>'` runs PIT over a package. It breaks our own
+code on purpose — flips a comparison, deletes a call, changes a constant — and reports
+which breakages no test catches. That is a measurement of the safety net, not of the mod:
+it can never catch a mixin regression or a pack-integration break, which is where most of
+this mod's real bugs have come from. Those stay the gametests' job.
+
+**Three obstacles, all documented in `build.gradle` so they are not rediscovered.**
+
+1. PIT cannot drive a `main()` that calls `System.exit` — that kills its minion JVM. So a
+   JUnit source set now sits in `src/test` beside the `Headless*Check` gradle tasks, which
+   are unchanged and still the thing you run day to day.
+2. PIT's class globs sweep in the mixins, and loading a mixin outside a Mixin environment
+   kills the coverage minion with a bare `UNKNOWN_ERROR`. Needs an explicit exclusion.
+3. `pitest-junit5-plugin` pulls JUnit Platform 1.9.2, and PIT prepends its own launch
+   classpath, so the old `ReflectionUtils` wins over the one the tests compile against and
+   discovery dies on `NoSuchMethodError`.
+
+`HeadlessBackoffCheck`, `HeadlessPatternOrderCheck` and `HeadlessTraceCheck` now expose a
+`run()` returning a `Result` — the shape `PatternOrderSelfTest` and `MaxCraftableSelfTest`
+already used — so their 145 scenarios can be measured. Their `main()` methods print and
+exit exactly as before, and all five gradle `*Check` tasks report identical scenario counts.
+
+**What it found.** Four gaps, all now closed, and **no code defects** — everything it
+pointed at was correct, merely unguarded:
+
+- `Rational` had **no direct tests at all**, only whole-plan scenarios. Those work almost
+  entirely in whole numbers, so the two things the class exists for — exact fractions across
+  simplex pivots and a canonical sign — were barely exercised. Nothing ever built a
+  `Rational` with a negative denominator, so both negations in `of()` could be deleted
+  silently. 50% → 76%.
+- `BranchAndBound` could **drop the push of its second child** and still return a valid
+  plan, just a costlier one. `4x+5y>=13, min 2x+3y` is the discriminating case: the up
+  branch gives `[4,0]` at cost 8, and the true optimum `[2,1]` at cost 7 only exists down
+  the other side. 64% → 84%.
+- `SlotBackoff` could **drop `applyCostFloor` on the slow-*success* branch** — the branch
+  this class was written for, per its own 2026-08-23 measurement. The existing 96 scenarios
+  use elapsed times small enough that the ladder already dominates the floor, so removing
+  the floor changed none of their numbers.
+- `BudgetedCancellationToken` never checked that **`cancel()` reaches the delegate**, and
+  every scenario started its clock at zero, where `now - startedAt` and `now + startedAt`
+  are the same number. 73% → 100%.
+
+**Left open, deliberately.** `Simplex`'s pivot that drives a still-basic artificial out of
+the basis survives mutation; a probe showed it executes *exactly once* across the whole
+planner suite and deleting it fails no test, so the guarantee it exists to provide is
+unverified. Constructing an LP where skipping it corrupts the plan is real work and was not
+faked. `Rational.ceil()` and `toDouble()` have zero callers — dead code, not a coverage gap.
+`PlanMatrix` (48%) and `LpCraftingPlanner` (32%) are not cheap wins: their entry points take
+a `CraftingGraph.Graph` built from RS `Pattern`/`TaskPlan` objects, so raising them means
+authoring new crafting scenarios, not building a harness.
+
+49 JUnit tests across 9 classes; 71% of mutants killed across planner, backoff, pattern and
+gate. Not wired into `check` — see the note there on why a score is a tool, not a gate.
+
+
 ## 0.2.125
 
 **Two of our tweaks got upstreamed, so they now stand down on their own.**

@@ -219,3 +219,78 @@ tasks.withType(ProcessResources).configureEach {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
+
+// ============================================================================
+// Mutation testing spike. Scoped to com.wraithhawit.rstweaks.gate for now.
+//
+// PIT needs a JUnit suite: it re-runs tests against mutated bytecode and needs
+// per-test coverage to know which tests to re-run for a given mutant. The
+// Headless*Check mains cannot serve -- they aggregate failures and System.exit,
+// which would kill PIT's minion JVM. So src/test carries a JUnit transcription
+// of the scenarios, and the gradle *Check tasks stay exactly as they were.
+// ============================================================================
+configurations {
+    pitest
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // Same compileOnly jars main gets; the tests touch Refined Storage types.
+    // On the test RUNTIME classpath, not just compile: PIT actually executes the planner
+    // suite, and PlannerExecutabilitySelfTest builds real Refined Storage resources.
+    testImplementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    pitest 'org.pitest:pitest-command-line:1.17.4'
+    pitest 'org.pitest:pitest-junit5-plugin:1.2.1'
+    // The junit5 plugin pulls JUnit Platform 1.9.2, and PIT prepends its own launch
+    // classpath ahead of the code-under-test one. The minion then loads 1.9.2's
+    // ReflectionUtils under Jupiter 5.11's engine and dies on NoSuchMethodError
+    // (returnsPrimitiveVoid). Naming the platform here lets Gradle's conflict
+    // resolution bump the whole configuration to the version the tests compile against.
+    pitest 'org.junit.platform:junit-platform-launcher:1.11.4'
+    pitest 'org.junit.platform:junit-platform-commons:1.11.4'
+    pitest 'org.junit.platform:junit-platform-engine:1.11.4'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging { events 'passed', 'failed', 'skipped' }
+}
+
+// Deliberately NOT wired into `check`. A mutation score is a tool for investigating one class,
+// not a gate: it is slow, and a meaningful share of surviving mutants are provably equivalent
+// (a `> 0` on a branch already guarded by `!= 0`; a `>=` that assigns the same value it read),
+// so a threshold would fail builds for changes that are correct. Run it when you touch a
+// pure-logic class, read the survivors, and do not chase the number.
+tasks.register('mutationTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs PIT over the pure-logic packages against the JUnit suite.'
+    dependsOn 'testClasses'
+    mainClass = 'org.pitest.mutationtest.commandline.MutationCoverageReport'
+    classpath = configurations.pitest
+
+    // PIT takes the code-under-test classpath as an argument, not as its own.
+    doFirst {
+        final underTest = sourceSets.test.runtimeClasspath.files.collect { it.absolutePath }
+        args = [
+            '--classPath', underTest.join(','),
+            '--targetClasses', (project.findProperty('pitTarget') ?: 'com.wraithhawit.rstweaks.planner.*'),
+            // Without this PIT mutates the JUnit classes too -- every "removed call to
+            // Assertions::assertTrue" survives trivially and drowns the real survivors.
+            '--excludedClasses', 'com.wraithhawit.rstweaks.*.*Test',
+            '--targetTests', 'com.wraithhawit.rstweaks.*.*Test',
+            // The hand-rolled Headless*Check/SelfTest suites live in ...rstweaks.test and
+            // match that glob too. PIT loads every candidate test class to scan it, and
+            // those touch Minecraft and Refined Storage types, which kills the minion.
+            '--excludedTestClasses', 'com.wraithhawit.rstweaks.test.*',
+            '--sourceDirs', "${projectDir}/src/main/java",
+            '--reportDir', "${buildDir}/reports/pitest",
+            '--outputFormats', 'HTML,XML',
+            '--timestampedReports', 'false',
+            '--threads', '4',
+
+        ]
+    }
+}

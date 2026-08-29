@@ -24,6 +24,28 @@ public final class HeadlessTraceCheck {
     }
 
     public static void main(final String[] args) {
+        final CraftingPlanSelfTest.Result result = run();
+        System.out.printf("scenarios: %d%n", result.scenarios());
+        if (result.failures().isEmpty()) {
+            System.out.println("PASS");
+            return;
+        }
+        result.failures().forEach(f -> System.out.println("FAIL  " + f));
+        System.out.printf("%d of %d scenarios failed%n", result.failures().size(), result.scenarios());
+        System.exit(1);
+    }
+
+    /**
+     * The same scenarios, returning their failures instead of printing them and calling
+     * {@code System.exit}. That exit is why PIT could not drive this suite: it kills the minion
+     * JVM. Shaped like {@code PatternOrderSelfTest.run()}, which already did it this way.
+     *
+     * <p>Resets the static counters first. A mutation run calls this thousands of times in one
+     * JVM, and without the reset every call would inherit the last one's failures.
+     */
+    public static CraftingPlanSelfTest.Result run() {
+        FAILURES.clear();
+        checks = 0;
         cheapCalculationCollectsNothing();
         detailStartsAtTheThreshold();
         supplierIsNotCalledBelowTheThreshold();
@@ -33,14 +55,7 @@ public final class HeadlessTraceCheck {
         branchingFactorIsReported();
         percentagesAreRelativeToWhatWasObserved();
 
-        System.out.printf("scenarios: %d%n", checks);
-        if (FAILURES.isEmpty()) {
-            System.out.println("PASS");
-            return;
-        }
-        FAILURES.forEach(f -> System.out.println("FAIL  " + f));
-        System.out.printf("%d of %d scenarios failed%n", FAILURES.size(), checks);
-        System.exit(1);
+        return new CraftingPlanSelfTest.Result(checks, List.copyOf(FAILURES));
     }
 
     private static void cheapCalculationCollectsNothing() {

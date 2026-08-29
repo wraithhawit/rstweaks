@@ -4,9 +4,11 @@ package com.wraithhawit.rstweaks.test;
  * Runs {@link PlannerExecutabilitySelfTest} from a plain JVM, with no Minecraft and no
  * mod loader, so the planner can be verified between builds instead of only in-game.
  *
- * <p>Kept in the mod source rather than a test source set because the planner's
- * dependencies are the Refined Storage API and nothing else, and a second source set
- * would need its own copy of the compile classpath to reach it.
+ * <p>Kept in the mod source because it predates {@code src/test}, and because it is the entry
+ * point that {@code ./gradlew plannerCheck} runs. The claim that once stood here -- that a second
+ * source set could not reach the planner's compile classpath -- is no longer true. {@code src/test}
+ * does exactly that, and {@code PlannerSuiteTest} drives these same suites from JUnit so that a
+ * mutation run can measure what they actually pin.
  *
  * <p>Not referenced by any mod code — dead weight in the jar, and worth it.
  */

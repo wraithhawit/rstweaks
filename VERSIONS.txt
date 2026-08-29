@@ -10,6 +10,27 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.3.0
+-----
+  Mutation testing, and the test gaps it found. No gameplay change: the mod behaves exactly
+  as 0.2.125 did. `./gradlew mutationTest -PpitTarget='<glob>'` runs PIT over a package,
+  breaking our own code on purpose to see which breakages no test catches. Three obstacles
+  had to be cleared first and are documented in build.gradle: PIT cannot drive a main() that
+  System.exits, so a JUnit source set now sits beside the Headless*Check tasks (which are
+  unchanged); PIT's globs sweep in the mixins and loading one outside a Mixin environment
+  kills its minion; and pitest-junit5-plugin drags in an older JUnit Platform that wins over
+  ours. HeadlessBackoffCheck, HeadlessPatternOrderCheck and HeadlessTraceCheck now expose
+  run() returning a Result, the shape PatternOrderSelfTest already used, so their 145
+  scenarios can be measured. It found FOUR real test gaps, now closed: Rational had no
+  direct tests at all and the plan scenarios work in whole numbers, so exact fractions and
+  sign normalisation were unpinned; BranchAndBound could drop the push of its second child
+  and still return a valid-but-costlier plan; SlotBackoff could drop applyCostFloor on the
+  slow-SUCCESS branch, the branch the class exists for; and BudgetedCancellationToken never
+  checked that cancel() reaches the delegate. It found NO code defects -- everything it
+  pointed at was correct, just unguarded. 49 JUnit tests, 71% mutants killed across
+  planner+backoff+pattern+gate.
+
+
 0.2.125
 -------
   Two of our addon tweaks were SHIPPED UPSTREAM by their author, so they now stand down on
