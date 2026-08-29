@@ -124,11 +124,20 @@ public final class InventoryInterfaceTicker {
      */
     private static boolean isProtected(final Inventory inventory,
                                        final SlotReference slotReference,
+                                       final InventoryInterfaceState state,
                                        final int slot) {
         if (slotReference.isDisabledSlot(slot) || slot == inventory.selected) {
             return true;
         }
-        return !Config.inventoryInterfaceInsertFromHotbar && slot < Inventory.getSelectionSize();
+        // Two switches answering different questions. The config is a server-level policy about
+        // whether this feature may touch hotbars at all; the mask is the player's own choice of
+        // which slots within what the server allows. Neither can override the other, which is why
+        // the screen greys the hotbar row when the config forbids it rather than letting somebody
+        // tick a slot that will never be read.
+        if (!Config.inventoryInterfaceInsertFromHotbar && slot < Inventory.getSelectionSize()) {
+            return true;
+        }
+        return !state.insertSlotEnabled(slot);
     }
 
     private static void insert(final Inventory inventory,
@@ -150,7 +159,7 @@ public final class InventoryInterfaceTicker {
         // -- which counts the whole inventory -- disagrees with the insert half about the same
         // number. Sixteen in the hotbar and sixty-four in the bag would settle at eighty.
         for (int slot = 0; slot < mainSize; ++slot) {
-            if (!isProtected(inventory, slotReference, slot)) {
+            if (!isProtected(inventory, slotReference, state, slot)) {
                 continue;
             }
             final ItemStack stack = inventory.getItem(slot);
@@ -163,7 +172,7 @@ public final class InventoryInterfaceTicker {
             }
         }
         for (int slot = 0; slot < mainSize; ++slot) {
-            if (isProtected(inventory, slotReference, slot)) {
+            if (isProtected(inventory, slotReference, state, slot)) {
                 continue;
             }
             final ItemStack stack = inventory.getItem(slot);
@@ -174,7 +183,11 @@ public final class InventoryInterfaceTicker {
             final int match = indexOf(state, resource);
             final long surplus;
             if (state.filterMode() == FilterMode.ALLOW) {
-                if (match < 0) {
+                // A listed resource whose slot is not set to insert is simply not part of this
+                // half: not filed away, and not protected either, because in ALLOW mode nothing
+                // unlisted is touched anyway. That is what makes "file away my cobblestone, keep
+                // me stocked with torches" one configuration instead of two grids.
+                if (match < 0 || !state.slotMode(match).insert()) {
                     continue;
                 }
                 final long kept = Math.min(stack.getCount(), keepLeft[match]);
@@ -210,8 +223,13 @@ public final class InventoryInterfaceTicker {
                                final InventoryInterfaceState state,
                                final InventoryInterfaceTarget target,
                                final Actor actor) {
-        for (final Optional<ResourceAmount> entry : state.filter()) {
+        final List<Optional<ResourceAmount>> filter = state.filter();
+        for (int i = 0; i < filter.size(); ++i) {
+            final Optional<ResourceAmount> entry = filter.get(i);
             if (entry.isEmpty() || !(entry.get().resource() instanceof ItemResource resource)) {
+                continue;
+            }
+            if (!state.slotMode(i).export()) {
                 continue;
             }
             final long want = entry.get().amount();

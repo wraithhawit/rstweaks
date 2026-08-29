@@ -18,6 +18,7 @@ import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.RSTweaks;
 import com.wraithhawit.rstweaks.iface.InventoryInterfaceContent;
 import com.wraithhawit.rstweaks.iface.InventoryInterfaceState;
+import com.wraithhawit.rstweaks.iface.SlotMode;
 
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -84,7 +85,7 @@ public final class InventoryInterfaceGameTest {
     public static void autoInsertKeepsTheFilterAmountAndFilesAwayTheSurplus(final GameTestHelper helper) {
         run(helper, (player, grid) -> {
             player.getInventory().setItem(CARGO_SLOT, new ItemStack(net.minecraft.world.item.Items.IRON_INGOT, 64));
-            configure(grid, state -> new InventoryInterfaceState(
+            configure(grid, state -> InventoryInterfaceState.of(
                 true, false, FilterMode.ALLOW, false, filter(iron(), 16L)));
         }, (helper2, player, grid) -> {
             expect("iron kept on the player", countCarried(player, iron()), 16L);
@@ -102,7 +103,7 @@ public final class InventoryInterfaceGameTest {
         run(helper, (player, grid) -> {
             player.getInventory().setItem(CARGO_SLOT, new ItemStack(net.minecraft.world.item.Items.IRON_INGOT, 64));
             player.getInventory().setItem(SECOND_CARGO_SLOT, new ItemStack(net.minecraft.world.item.Items.GOLD_INGOT, 32));
-            configure(grid, state -> new InventoryInterfaceState(
+            configure(grid, state -> InventoryInterfaceState.of(
                 true, false, FilterMode.BLOCK, false, filter(iron(), 16L)));
         }, (helper2, player, grid) -> {
             expect("listed iron untouched", countCarried(player, iron()), 64L);
@@ -127,7 +128,7 @@ public final class InventoryInterfaceGameTest {
             player.getInventory().selected = 0;
             player.getInventory().setItem(1, new ItemStack(net.minecraft.world.item.Items.IRON_INGOT, 10));
             player.getInventory().setItem(CARGO_SLOT, new ItemStack(net.minecraft.world.item.Items.IRON_INGOT, 64));
-            configure(grid, state -> new InventoryInterfaceState(
+            configure(grid, state -> InventoryInterfaceState.of(
                 true, false, FilterMode.ALLOW, false, filter(iron(), 16L)));
         }, (helper2, player, grid) -> {
             expect("iron kept across the whole inventory", countCarried(player, iron()), 16L);
@@ -137,12 +138,91 @@ public final class InventoryInterfaceGameTest {
         });
     }
 
+    /**
+     * Per-slot modes: one entry files away, another tops up, in the same configuration.
+     *
+     * <p>The thing the two master switches alone cannot say. Before slot modes, both switches on
+     * meant every listed resource was pinned at its amount, so "put my cobblestone away and keep me
+     * stocked with torches" needed two grids. Cobblestone is INSERT, torches are EXPORT, and both
+     * master switches are on.
+     *
+     * <p>Cobblestone keeps ONE rather than none, and that is a floor rather than a choice: Refined
+     * Storages {@code ResourceAmount} refuses an amount of zero, so a listed entry always keeps at
+     * least one. "File away every last one" is BLOCK mode with the resource left off the list, which
+     * is what BLOCK is for.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void perSlotModesSplitTheTwoDirections(final GameTestHelper helper) {
+        run(helper, (player, grid) -> {
+            // Iron: below its amount with stock available, so an unrestricted pass WOULD top it up.
+            // The slot says insert only, so nothing may happen to it.
+            PortableGridFixture.store(helper, grid, iron(), 64L);
+            player.getInventory().setItem(CARGO_SLOT,
+                new ItemStack(net.minecraft.world.item.Items.IRON_INGOT, 10));
+            // Gold: above its amount, so an unrestricted pass WOULD file the surplus away. The slot
+            // says export only, so nothing may happen to it either.
+            player.getInventory().setItem(SECOND_CARGO_SLOT,
+                new ItemStack(net.minecraft.world.item.Items.GOLD_INGOT, 40));
+            // Torches: an ordinary BOTH entry, present so a pass that did nothing at all cannot
+            // pass this test by accident.
+            PortableGridFixture.store(helper, grid, torch(), 64L);
+
+            final List<Optional<ResourceAmount>> filter =
+                new java.util.ArrayList<>(InventoryInterfaceState.EMPTY.filter());
+            filter.set(0, Optional.of(new ResourceAmount(iron(), 32L)));
+            filter.set(1, Optional.of(new ResourceAmount(gold(), 8L)));
+            filter.set(2, Optional.of(new ResourceAmount(torch(), 16L)));
+            configure(grid, state -> InventoryInterfaceState
+                .of(true, true, FilterMode.ALLOW, false, filter)
+                .withSlotMode(0, SlotMode.INSERT)
+                .withSlotMode(1, SlotMode.EXPORT));
+        }, (helper2, player, grid) -> {
+            expect("insert-only iron was not topped up", countCarried(player, iron()), 10L);
+            expect("insert-only iron left in storage",
+                PortableGridFixture.countStored(helper2, grid, iron()), 64L);
+            expect("export-only gold was not filed away", countCarried(player, gold()), 40L);
+            expect("export-only gold stayed out of storage",
+                PortableGridFixture.countStored(helper2, grid, gold()), 0L);
+            expect("the ordinary entry still ran", countCarried(player, torch()), 16L);
+        });
+    }
+
+    /**
+     * An excluded inventory slot is not taken from, and its contents still count towards the keep
+     * budget — the same rule the hotbar follows, for the same reason.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void anExcludedSlotIsLeftAloneAndStillCounts(final GameTestHelper helper) {
+        run(helper, (player, grid) -> {
+            // Sixty-four in the excluded slot against a keep of sixteen. The size matters: with a
+            // smaller stack the keep budget would absorb it either way and the test would pass
+            // whether or not the exclusion was read at all, which is how its first version was
+            // wrong. At sixty-four, an unrestricted pass would file forty-eight of them.
+            player.getInventory().setItem(CARGO_SLOT,
+                new ItemStack(net.minecraft.world.item.Items.IRON_INGOT, 64));
+            // And an included stack, to show the excluded one still spent the whole budget: with
+            // sixty-four already accounted for there is nothing left to keep, so this goes entirely.
+            player.getInventory().setItem(SECOND_CARGO_SLOT,
+                new ItemStack(net.minecraft.world.item.Items.IRON_INGOT, 20));
+            configure(grid, state -> InventoryInterfaceState
+                .of(true, false, FilterMode.ALLOW, false, filter(iron(), 16L))
+                .withInsertSlot(CARGO_SLOT, false));
+        }, (helper2, player, grid) -> {
+            expect("the excluded slot is untouched",
+                player.getInventory().getItem(CARGO_SLOT).getCount(), 64L);
+            expect("the included slot went entirely, its keep already spent",
+                player.getInventory().getItem(SECOND_CARGO_SLOT).getCount(), 0L);
+            expect("only the included stack was filed away",
+                PortableGridFixture.countStored(helper2, grid, iron()), 20L);
+        });
+    }
+
     /** Export tops the player back up to the filter's amount, and stops there. */
     @GameTest(template = "empty", timeoutTicks = 400)
     public static void autoExportTopsUpToTheFilterAmount(final GameTestHelper helper) {
         run(helper, (player, grid) -> {
             PortableGridFixture.store(helper, grid, iron(), 64L);
-            configure(grid, state -> new InventoryInterfaceState(
+            configure(grid, state -> InventoryInterfaceState.of(
                 false, true, FilterMode.ALLOW, false, filter(iron(), 40L)));
         }, (helper2, player, grid) -> {
             expect("iron handed to the player", countCarried(player, iron()), 40L);
@@ -167,7 +247,7 @@ public final class InventoryInterfaceGameTest {
                 player.getInventory().setItem(0, new ItemStack(net.minecraft.world.item.Items.DIAMOND, 5));
                 player.getInventory().setItem(CARGO_SLOT, new ItemStack(net.minecraft.world.item.Items.COBBLESTONE, 16));
                 player.getInventory().setItem(OTHER_GRID_SLOT, new ItemStack(Items.INSTANCE.getWirelessGrid()));
-                configure(grid, state -> new InventoryInterfaceState(
+                configure(grid, state -> InventoryInterfaceState.of(
                     true, false, FilterMode.BLOCK, false, InventoryInterfaceState.EMPTY.filter()));
             }, (helper2, player, grid) -> {
                 expect("unprotected cobblestone filed away",
@@ -210,7 +290,7 @@ public final class InventoryInterfaceGameTest {
             player.getInventory().clearContent();
 
             final ItemStack grid = PortableGridFixture.portableGrid(helper, player);
-            configure(grid, state -> new InventoryInterfaceState(
+            configure(grid, state -> InventoryInterfaceState.of(
                 true, false, FilterMode.ALLOW, false, filter(iron(), 16L)));
             player.getInventory().setItem(CARGO_SLOT,
                 new ItemStack(net.minecraft.world.item.Items.IRON_INGOT, 64));
@@ -359,6 +439,14 @@ public final class InventoryInterfaceGameTest {
 
     private static ItemResource gold() {
         return new ItemResource(net.minecraft.world.item.Items.GOLD_INGOT);
+    }
+
+    private static ItemResource cobblestone() {
+        return new ItemResource(net.minecraft.world.item.Items.COBBLESTONE);
+    }
+
+    private static ItemResource torch() {
+        return new ItemResource(net.minecraft.world.item.Items.TORCH);
     }
 
     private static long countCarried(final Player player, final ItemResource resource) {

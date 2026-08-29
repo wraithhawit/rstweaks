@@ -59,6 +59,18 @@ public class InventoryInterfaceMenu extends AbstractResourceContainerMenu {
     @Nullable
     private final ItemStack gridStack;
 
+    /**
+     * The client's copy, because there is no stack to read on that side and the screen has to draw
+     * the per-slot markers from something.
+     *
+     * <p>Updated locally the moment a marker is clicked, then the same change is sent. That is how
+     * Refined Storage's own {@code ClientProperty} behaves — set locally, send, let the server be
+     * authoritative — and it is what keeps a marker from lagging a round trip behind the click that
+     * changed it. The two cannot meaningfully diverge: the server applies the identical edit, and a
+     * rejected one only happens when the screen is not open, in which case there is nothing to draw.
+     */
+    private InventoryInterfaceState clientState = InventoryInterfaceState.EMPTY;
+
     private final ResourceContainer filter;
 
     public InventoryInterfaceMenu(final int syncId,
@@ -66,13 +78,14 @@ public class InventoryInterfaceMenu extends AbstractResourceContainerMenu {
                                   final InventoryInterfaceData data) {
         super(InventoryInterfaceContent.MENU.get(), syncId);
         this.gridStack = null;
+        this.clientState = data.state();
         this.disabledSlot = data.slotReference().orElse(null);
         this.filter = ResourceContainerImpl.createForFilter(
             RefinedStorageApi.INSTANCE.getItemResourceFactory(), data.filter());
-        registerProperty(new ClientProperty<>(INSERT, data.insert()));
-        registerProperty(new ClientProperty<>(EXPORT, data.export()));
-        registerProperty(new ClientProperty<>(PropertyTypes.FILTER_MODE, data.filterMode()));
-        registerProperty(new ClientProperty<>(PropertyTypes.FUZZY_MODE, data.fuzzyMode()));
+        registerProperty(new ClientProperty<>(INSERT, data.state().insert()));
+        registerProperty(new ClientProperty<>(EXPORT, data.state().export()));
+        registerProperty(new ClientProperty<>(PropertyTypes.FILTER_MODE, data.state().filterMode()));
+        registerProperty(new ClientProperty<>(PropertyTypes.FUZZY_MODE, data.state().fuzzyMode()));
         addSlots(playerInventory.player);
     }
 
@@ -115,18 +128,54 @@ public class InventoryInterfaceMenu extends AbstractResourceContainerMenu {
         transferManager.addFilterTransfer(player.getInventory());
     }
 
-    private InventoryInterfaceState state() {
+    /** The item on the server, the synced copy on the client. */
+    InventoryInterfaceState state() {
         if (gridStack == null) {
-            return InventoryInterfaceState.EMPTY;
+            return clientState;
         }
         return gridStack.getOrDefault(InventoryInterfaceContent.STATE.get(), InventoryInterfaceState.EMPTY);
     }
 
     private void mutate(final UnaryOperator<InventoryInterfaceState> change) {
         if (gridStack == null) {
+            clientState = change.apply(clientState);
             return;
         }
         gridStack.set(InventoryInterfaceContent.STATE.get(), change.apply(state()));
+    }
+
+    /**
+     * Applies one per-slot edit. Called on the server by {@link ConfigureSlotPacket}, and on the
+     * client by the screen the instant the marker is clicked so it does not lag the round trip.
+     *
+     * <p>The index is bounds-checked inside {@code withSlotMode} and {@code withInsertSlot}, which
+     * return the state unchanged rather than throwing — this is reached from a packet, and an index
+     * from the network is not a promise.
+     */
+    void configureSlot(final ConfigureSlotPacket.Kind kind, final int index, final int value) {
+        switch (kind) {
+            case FILTER_SLOT_MODE -> mutate(state -> state.withSlotMode(index, SlotMode.byId(value)));
+            case INSERT_SLOT -> mutate(state -> state.withInsertSlot(index, value != 0));
+        }
+    }
+
+    /** What the screen draws in a filter slot's corner. */
+    public SlotMode slotMode(final int index) {
+        return state().slotMode(index);
+    }
+
+    /** Whether auto-insert may take from one player inventory slot, for the screen's overlay. */
+    public boolean insertSlotEnabled(final int slot) {
+        return state().insertSlotEnabled(slot);
+    }
+
+    /**
+     * Sends one per-slot edit and applies it locally. Client side only — {@code gridStack} is null
+     * there, so {@link #mutate} writes to the synced copy rather than to an item that is not here.
+     */
+    public void sendSlotConfiguration(final ConfigureSlotPacket packet) {
+        configureSlot(packet.kind(), packet.index(), packet.value());
+        net.neoforged.neoforge.network.PacketDistributor.sendToServer(packet);
     }
 
 

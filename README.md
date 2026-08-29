@@ -309,6 +309,18 @@ Both on gives you a maintained stock: 64 cobblestone on you, no more, no less. I
 what makes `BLOCK` + export coherent rather than contradictory — "these are mine, do not
 put them away, and keep me stocked with them".
 
+**Each filter slot can override that.** A 10×10 marker in the slot's bottom-right corner
+cycles **both → insert only → export only → off** when clicked, so one configuration can
+file your cobblestone away *and* keep you stocked with torches. Note that a listed entry
+always keeps at least one — RS's `ResourceAmount` refuses zero — so "file away every last
+one" is `BLOCK` mode with the resource left off the list.
+
+**And you choose which of your own slots auto-insert may take from.** The *choose slots*
+side button turns your inventory into a picker; excluded slots are washed red. It is a
+mode rather than a modifier because those are real inventory slots you need for dragging
+items into filters. This is finer-grained than `inventoryInterfaceInsertFromHotbar`, which
+stays as the server-level question of whether hotbars may be touched at all.
+
 Auto-insert never takes the item you are holding, your armour, your offhand, or another
 grid, and by default takes nothing from the hotbar at all
 (`inventoryInterfaceInsertFromHotbar`). A `BLOCK` filter is a standing instruction to file

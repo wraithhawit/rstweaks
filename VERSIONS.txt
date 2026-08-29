@@ -10,6 +10,32 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.6.0
+-----
+  Per-slot control on both halves of the Inventory Interface, asked for after RS Insert Export
+  Upgrade (1.20.1). TWO different things, because that mod's checkmarks are on YOUR INVENTORY slots
+  while the obvious reading is the FILTER slots, and both were wanted.
+  (1) Every filter slot now carries a mode -- both / insert only / export only / off -- drawn as a
+  10x10 marker in the slot's bottom-right corner, the same corner and geometry RS uses for
+  renderExportingIndicators. Clicking the marker cycles it. Until now the two master switches
+  applied to the whole list, so with both on every listed resource was pinned at its amount and
+  "file away my cobblestone, keep me stocked with torches" needed two grids.
+  (2) A "choose slots" side button turns the player inventory into a picker: click a slot to
+  include or exclude it from auto-insert, excluded ones washed red. A MODE rather than a modifier,
+  because those are real inventory slots you need for dragging items into filters and quietly
+  changing what a plain click does to somebody's inventory is how a screen eats a stack.
+  Getting a click onto the filter markers took RS's own canInteractWithResourceSlot hook rather
+  than a new gesture -- a filter slot's clicks are all spoken for (plain opens the amount screen,
+  shift clears, click-with-item sets), and the hook hands back just the marker's ten pixels.
+  Defaults preserve old behaviour exactly: every slot BOTH, every inventory slot allowed.
+  NOTE a floor: RS's ResourceAmount refuses zero, so a listed entry always keeps at least one.
+  "File away every last one" is BLOCK mode with the resource left off the list.
+  Two new gametests, and BOTH of their first versions were WRONG -- they passed with the feature
+  ripped out, because the scenarios happened to produce identical results either way. The keep
+  budget absorbed the excluded stack whichever path ran, and the mode test's two entries had
+  nothing to do in either configuration. Rewritten until the controls failed. 25 pass.
+
+
 0.5.2
 -----
   A grid worn in a CURIOS slot now works -- for block pick and for the Inventory Interface, both of

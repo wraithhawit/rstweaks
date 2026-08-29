@@ -21,6 +21,7 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import com.wraithhawit.rstweaks.gate.UpstreamGate;
 import com.wraithhawit.rstweaks.iface.BlockPick;
 import com.wraithhawit.rstweaks.iface.BlockPickPacket;
+import com.wraithhawit.rstweaks.iface.ConfigureSlotPacket;
 import com.wraithhawit.rstweaks.iface.InventoryInterfaceContent;
 import com.wraithhawit.rstweaks.iface.InventoryInterfaceOpener;
 import com.wraithhawit.rstweaks.iface.InventoryInterfaceTicker;
@@ -99,7 +100,9 @@ public class RSTweaks {
         modEventBus.addListener(RegisterPayloadHandlersEvent.class, event -> event
             .registrar("1")
             .optional()
-            .playToServer(BlockPickPacket.TYPE, BlockPickPacket.STREAM_CODEC, BlockPick::handle));
+            .playToServer(BlockPickPacket.TYPE, BlockPickPacket.STREAM_CODEC, BlockPick::handle)
+            .playToServer(ConfigureSlotPacket.TYPE, ConfigureSlotPacket.STREAM_CODEC,
+                ConfigureSlotPacket::handle));
         // Only fires when -Dneoforge.enabledGameTestNamespaces includes this mod;
         // the command above is the version that works without a launch flag.
         // Common setup rather than here: Refined Storage installs its API delegate and registers

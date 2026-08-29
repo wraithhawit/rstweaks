@@ -129,12 +129,7 @@ public final class InventoryInterfaceOpener {
             stack.getOrDefault(InventoryInterfaceContent.STATE.get(), InventoryInterfaceState.EMPTY)
                 .withFilter(filter)));
         final InventoryInterfaceData data = new InventoryInterfaceData(
-            Optional.of(slotReference),
-            state.insert(),
-            state.export(),
-            state.filterMode(),
-            state.fuzzyMode(),
-            ResourceContainerData.of(filter));
+            Optional.of(slotReference), state, ResourceContainerData.of(filter));
         player.openMenu(new Provider(stack, filter, slotReference),
             (RegistryFriendlyByteBuf buf) -> InventoryInterfaceData.STREAM_CODEC.encode(buf, data));
     }

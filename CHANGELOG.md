@@ -8,6 +8,74 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.6.0
+
+**Per-slot control, on both halves.** Asked for after
+[RS Insert Export Upgrade](https://modrinth.com/mod/rs-insert-export-upgrade) (1.20.1) — and it
+turned out to be two different features, because that mod's checkmarks are on **your inventory
+slots** while the obvious reading of "toggle individual slots" is the **filter slots**. Both were
+wanted, so both are here.
+
+### Filter slots carry a mode
+
+Each of the nine gets **both / insert only / export only / off**, drawn as a 10×10 marker in the
+slot's bottom-right corner — the same corner and the same geometry Refined Storage uses for
+`renderExportingIndicators`, so it looks like something an Exporter would do. Clicking the marker
+cycles it.
+
+This closes a real gap. Until now the two side buttons applied to the whole list, so with both on
+every listed resource was pinned at its amount, and *"file away my cobblestone, and keep me stocked
+with torches"* needed two grids to say. Now it is one screen.
+
+Getting a click onto the marker took a **seam rather than a new gesture**. A filter slot's clicks
+are all spoken for: plain click opens the amount screen, shift-click clears the filter, click with
+an item sets it. `AbstractBaseScreen.canInteractWithResourceSlot(slot, mouseX, mouseY)` is Refined
+Storage's own hook for precisely this — returning false over the marker hands back those ten pixels
+and leaves every other click in the slot behaving exactly as it did.
+
+One floor worth knowing: Refined Storage's `ResourceAmount` refuses an amount of zero, so a listed
+entry always keeps **at least one**. "File away every last one" is `BLOCK` mode with the resource
+left off the list, which is what BLOCK is for.
+
+### Player inventory slots carry a tick
+
+A **"choose slots"** side button turns your inventory into a picker: click a slot to include or
+exclude it from auto-insert, and excluded slots are washed red. This is the RS Insert Export Upgrade
+model, and it is finer-grained than `inventoryInterfaceInsertFromHotbar` — protect two hotbar slots
+and free the rest, rather than all or nothing.
+
+A **mode rather than a modifier**, deliberately. Those are real inventory slots you need for
+dragging items into filters, and quietly changing what a plain click does to somebody's own
+inventory is how a screen eats a stack. With the mode off, the screen behaves exactly as before.
+
+The mask and the config answer different questions and neither overrides the other: the config is a
+server-level policy about whether this feature may touch hotbars at all, the mask is the player's
+choice of which slots within what the server allows.
+
+### Plumbing
+
+Two new fields on the component and one new packet. Refined Storage's property mechanism would have
+carried these for free, but a property is an `int` and the inventory mask is thirty-six bits, so
+half of it would not fit and the other half would be two properties pretending to be one. The menu
+data record now carries the whole state rather than a field at a time, since the per-slot settings
+are not data slots and this is their only delivery. Defaults preserve the old behaviour exactly:
+every filter slot `BOTH`, every inventory slot allowed.
+
+### Both new tests were wrong first
+
+Worth writing down, because they passed. `perSlotModesSplitTheTwoDirections` and
+`anExcludedSlotIsLeftAloneAndStillCounts` were both **green with the feature ripped out**, because
+the scenarios happened to produce identical results either way: the keep budget absorbed the
+excluded stack whichever path ran, and the mode test's two entries had nothing to do in either
+configuration. A test that cannot tell the two apart is not a weak test, it is a green light for
+nothing at all.
+
+Rewritten until the controls failed. The excluded slot now holds sixty-four against a keep of
+sixteen, so an unrestricted pass would file forty-eight of them; the mode test now puts iron below
+its amount with stock available (an unrestricted pass would top it up) and gold above its amount (an
+unrestricted pass would file it away), with a third ordinary entry so a pass that did nothing at all
+cannot pass by accident. 25 gametests pass.
+
 ## 0.5.2
 
 **A grid worn in a Curios slot now works.** Reported from the world during the 0.5.1 test pass:
