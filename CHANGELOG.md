@@ -8,6 +8,55 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.3.1
+
+**The external storage provider layer now has gametest coverage. It had none.**
+
+No gameplay change.
+
+**How the gap was found.** Grepping `Mixing <X>Mixin` out of a `runGameTestServer` log and
+diffing against the mixin package: 22 of 32 mixins actually loaded during a full gametest run.
+Mixin *application* failure was already covered — every config sets `"required": true` with
+`injectors.defaultRequire = 1`, so a mixin that cannot apply crashes the server at startup. The
+invisible case is a mixin that applies cleanly and never runs, which is exactly what Cable Tiers
+once did to our injections.
+
+Of the ten that never loaded, five targeted Refined Storage itself and were simply never reached.
+Three of those are now covered.
+
+**`ExternalStorageProviderGameTest`** builds a real network — creative controller, Crafting Grid,
+an External Storage block facing a vanilla chest — and checks that items serve and insert through
+the composite, and that the chest's contents really change. A plain chest is enough: Refined
+Storage builds the composite over *every* registered provider factory regardless of what the
+target block offers, so a chest yields an item provider and a fluid provider side by side.
+
+The assertion that matters runs the same request with `skipMismatchedStorageTypes` on and off and
+demands the identical answer. An optimization that changes an answer is not an optimization.
+
+| now covered | why it mattered |
+|---|---|
+| `CompositeExternalStorageProviderMixin` | a `@Redirect` on **both** `extract` and `insert` — the same layer where a stale index destroyed an in-progress extraction in every build up to 0.2.55 |
+| `ItemHandlerExternalStorageProviderMixin` | declares "serves items only" |
+| `FluidHandlerExternalStorageProviderMixin` | declares "serves fluids only" |
+
+`ExtractionSelfTest` does not cover any of this — it builds over `ItemHandlerExtractableStorage`,
+one level below the provider.
+
+**The first draft of the equivalence test was wrong, and failed against a working mixin.** It
+extracted an *item*. `CompositeExternalStorageProvider.extract` returns on the first provider that
+yields anything, so an item request against a chest short-circuits at the item provider and never
+reaches the fluid one — there is nothing to skip. Extracting a *fluid* is the faithful case, and
+the one actually measured in the wild: Refined Types' Network Energizer pulling power every tick
+made every item inventory on the network answer a question it could not possibly answer.
+
+**Still uncovered**, and honestly so: `PreviewCraftingCalculatorListenerMixin` and
+`TimeoutableCancellationTokenMixin` target Refined Storage and are still never loaded by any test.
+The rest are client-only mixins (which a dedicated server never loads) or addon mixins for mods
+that `stageGameTestServerMods` deliberately does not stage.
+
+All 13 gametests pass.
+
+
 ## 0.3.0
 
 **Mutation testing, and the four test gaps it found.**

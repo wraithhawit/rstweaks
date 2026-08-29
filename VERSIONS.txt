@@ -10,6 +10,27 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.3.1
+-----
+  The external storage PROVIDER layer now has gametest coverage; it had none. Found by
+  diffing "Mixing <X>Mixin" out of a runGameTestServer log against the mixin package: 22 of
+  32 mixins actually loaded, and five of the ten that did not target Refined Storage itself.
+  Mixin APPLICATION failure was already loud -- every config sets required:true with
+  defaultRequire 1 -- but a mixin that applies and never runs was invisible, which is exactly
+  what Cable Tiers once did to us. New ExternalStorageProviderGameTest builds a creative
+  controller, a Crafting Grid, an External Storage facing a vanilla chest, and checks that
+  items serve and insert through the composite and that the chest really changes. The
+  assertion that matters runs the same request with skipMismatchedStorageTypes on and off and
+  demands the identical answer -- an optimization that changes an answer is not one. Three
+  mixins went from never-loaded to covered: CompositeExternalStorageProvider (a @Redirect on
+  BOTH extract and insert, the same layer that destroyed items up to 0.2.55) and the item and
+  fluid provider type declarations. The first draft of the equivalence test was WRONG and
+  failed against a working mixin: it extracted an item, and the composite returns on the first
+  provider that yields anything, so it short-circuited at the item provider and never reached
+  the fluid one. Extracting a fluid from a chest is the faithful case and the one actually
+  measured in the wild. All 13 gametests pass. No gameplay change.
+
+
 0.3.0
 -----
   Mutation testing, and the test gaps it found. No gameplay change: the mod behaves exactly
