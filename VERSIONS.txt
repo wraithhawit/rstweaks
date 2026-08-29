@@ -10,6 +10,28 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.5.1
+-----
+  Block pick no longer works in spectator, and 0.5.0's claim that nothing else does this was
+  wrong. AE2WTLib has had network pick block for a long time: MinecraftMixin injects at
+  INVOKE_ASSIGN on Inventory.findSlotMatchingItem inside Minecraft.pickBlock, captures the locals
+  with MixinExtras @Local, and fires on the same i == -1 seam ours does. It also does not cancel.
+  Reading it turned up a guard we were missing: getAbilities().instabuild is FALSE in spectator, so
+  the creative check does not cover a spectator, and a spectator could pick blocks out of a network
+  from anywhere they could see one. Guarded now on both sides -- the client injection to save the
+  round trip, the server because it is the one that decides. NO GAMETEST for it, deliberately: a
+  gametest's mock player is GameTestHelper$2, which overrides isSpectator() to return false however
+  the game mode is set, so getGameModeForPlayer() reports SPECTATOR while isSpectator() reports
+  false on the same object in the same statement. A test written against that passes for the wrong
+  reason. 22 pass.
+
+  Two differences from AE2WTLib worth knowing, neither changed here: their packet carries the
+  ItemStack the client computed, ours carries the BlockPos and derives the item server-side; and
+  theirs is opt-in per terminal (a PICK_BLOCK data component, default off) while ours is a global
+  config, default on. Both mods inject into the same method and neither cancels, so a player
+  carrying both an RS grid and an AE2 terminal with pick block enabled gets a stack from each.
+
+
 0.5.0
 -----
   Block pick, out of the network. refinedmods/refinedstorage-quartz-arsenal#4, the other half of

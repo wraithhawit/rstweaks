@@ -62,8 +62,10 @@ public abstract class MinecraftPickBlockMixin {
         if (!Config.blockPick || player == null || level == null) {
             return;
         }
-        // Creative already hands over anything, including things no network has.
-        if (player.getAbilities().instabuild) {
+        // Creative already hands over anything, including things no network has. Spectator is a
+        // separate question and not covered by it — instabuild is false in spectator — and the
+        // server refuses it too; this is only to save the round trip.
+        if (player.getAbilities().instabuild || player.isSpectator()) {
             return;
         }
         if (!(hitResult instanceof BlockHitResult blockHit) || hitResult.getType() != HitResult.Type.BLOCK) {

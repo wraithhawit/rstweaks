@@ -77,6 +77,13 @@ public final class BlockPick {
         if (!Config.blockPick) {
             return false;
         }
+        // Spectators look at every block in the world and have an inventory that is not theirs to
+        // fill. The creative check does not cover this: getAbilities().instabuild is FALSE in
+        // spectator, so without this line a spectator picks blocks out of somebody's network. Found
+        // by reading AE2WTLib's equivalent injection, which checks it and says why it has to.
+        if (player.isSpectator()) {
+            return false;
+        }
         final ServerLevel level = player.serverLevel();
         if (!level.isLoaded(pos) || !player.canInteractWithBlock(pos, REACH_PADDING)) {
             return false;

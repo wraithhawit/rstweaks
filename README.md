@@ -348,7 +348,14 @@ and a full inventory refuses the pick.
 The packet carries **where you were looking**, not what you want — the server derives the
 item from its own copy of the block, checks the chunk is loaded and that you could reach
 it (`canInteractWithBlock`, the same question that decides whether you could break it).
-Config: `blockPick`.
+Creative and spectator are both left alone. Config: `blockPick`.
+
+**AE2WTLib does this too**, for AE2 wireless terminals — same target method, same
+`findSlotMatchingItem` seam, and it also does not cancel. Two differences: its packet
+carries the client's `ItemStack` where ours carries the position, and it is opt-in per
+terminal (default off) where ours is a global config (default on). They coexist, but a
+player carrying both an RS grid and an AE2 terminal with pick block enabled gets a stack
+from each. Turn one off if that bothers you.
 
 ### Under the screen
 

@@ -30,6 +30,14 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
  * {@link #pickRefusesRatherThanOverwriteAFullInventory}: vanilla's creative equivalent,
  * {@code Inventory.setPickedItem}, will overwrite the selected hotbar slot when it has nowhere to
  * put its contents, which costs nothing in creative and would destroy something you mined here.
+ *
+ * <p><b>The spectator guard cannot be covered here.</b> A gametest's mock player is
+ * {@code GameTestHelper$2}, an anonymous subclass that overrides {@code isSpectator()} to return
+ * false whatever the game mode is set to — {@code getGameModeForPlayer()} reports {@code SPECTATOR}
+ * while {@code isSpectator()} reports false, on the same object, in the same statement. A test
+ * written against it passes for the wrong reason and claims coverage of a branch it never entered,
+ * so there is deliberately no such test rather than a green one. The guard itself is in
+ * {@link BlockPick#pick} and in the client injection.
  */
 @GameTestHolder(RSTweaks.MODID)
 @PrefixGameTestTemplate(false)

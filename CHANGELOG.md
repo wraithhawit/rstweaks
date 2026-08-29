@@ -8,6 +8,50 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.5.1
+
+**Block pick no longer works in spectator**, and 0.5.0's claim that nothing else does this was
+wrong.
+
+**AE2WTLib has had network pick block for a long time.** `MinecraftMixin` injects into
+`Minecraft.pickBlock` at `INVOKE_ASSIGN` on `Inventory.findSlotMatchingItem`, captures the locals
+with MixinExtras `@Local`, and fires on the same `i == -1` seam ours does — and, like ours, does
+not cancel:
+
+```java
+if (player.getAbilities().instabuild) return;
+if (player.isSpectator()) return;
+if (i != -1) return;
+AE2wtlibEvents.pickBlock(itemstack);
+```
+
+That second line is the guard we did not have. **`getAbilities().instabuild` is false in
+spectator**, so the creative check does not cover it, and a spectator could pick blocks out of any
+network they were carrying a grid for, from anywhere they could see. Now refused in the client
+injection to save the round trip, and refused on the server because that is the side that decides.
+
+**There is deliberately no gametest for it.** A gametest's mock player is `GameTestHelper$2`, an
+anonymous subclass that overrides `isSpectator()` to return false whatever the game mode is set to:
+`getGameModeForPlayer()` reports `SPECTATOR` while `isSpectator()` reports false, on the same
+object, in the same statement. The test that found this passed for the wrong reason, and a test
+that cannot enter the branch it names is worse than no test — it claims the coverage. The class
+javadoc says so, so nobody adds it back. 22 gametests pass.
+
+**Two differences from AE2WTLib, neither changed here.** Their packet carries the `ItemStack` the
+client computed; ours carries the `BlockPos` and derives the item from the server's own copy of the
+block, which is the difference between a request that can be checked and one that has to be
+trusted. And theirs is opt-in per terminal — a `PICK_BLOCK` data component, default off — while
+ours is a global config, default on. Ours is the only network pick block an RS grid has, so
+default-on is the right side of that trade; theirs sits beside a mod that already has several ways
+to do it.
+
+**They coexist, imperfectly.** Both mods inject into `Minecraft.pickBlock` and neither cancels, so
+a player carrying both an RS grid and an AE2 terminal with pick block switched on gets a stack from
+each. Nothing is destroyed — our destination is chosen before anything is extracted and refuses
+rather than overwriting — but two stacks arrive where one was asked for. Left alone rather than
+guessed at: the fix depends on which one somebody wants to win, and their default-off makes the
+collision unlikely to be hit by accident.
+
 ## 0.5.0
 
 **Block pick, out of the network.**
