@@ -149,6 +149,18 @@ public final class RSTweaksGameTests {
         helper.succeed();
     }
 
+    /**
+     * The ledger model's one game-side adapter, asked of the real item registry.
+     *
+     * <p>Since 0.7.2 the planner reads {@code Remainder.Holder} on the autocrafting path, so what
+     * {@code ItemRemainder} answers here is what it reasons with. No headless suite can ask this:
+     * they all install a fake, and a fixture agreeing with itself says nothing about the adapter.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void craftingRemaindersAreReadFromTheGame(final GameTestHelper helper) {
+        report(helper, "remainder", RemainderSelfTest.run());
+    }
+
     private static void report(final GameTestHelper helper,
                                final String what,
                                final CraftingPlanSelfTest.Result result) {

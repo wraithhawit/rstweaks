@@ -8,6 +8,26 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.7.3
+
+**The one thing no headless suite can ask.** 0.7.2 quietly promoted `ItemRemainder` to a production
+path — `CraftingGraph` reads `Remainder.Holder` on the autocrafting thread now — and that adapter
+had never been executed against a real item in its life. Every headless suite installs a fake, and a
+fixture agreeing with itself is not evidence about the adapter.
+
+So it is a gametest: `craftingRemaindersAreReadFromTheGame`, 17 assertions against the real item
+registry. Milk, water and lava buckets leave a bucket; a honey bottle leaves a glass bottle; stone,
+diamonds and an empty bucket leave nothing. A diamond pickaxe and a netherite axe leave nothing
+either — wear is `Durability`'s question, and answering it in two places is how two rules start to
+disagree. A resource that is not an item is refused rather than thrown at. And the cake case runs
+end to end — registry to `ItemRemainder` to `PatternTransforms` — to see one slot with a fate rather
+than an ingredient and an unrelated byproduct.
+
+Broken on purpose before being believed: with the adapter always answering "nothing", 7 of the 17
+fail, naming each container. Restored, all 26 gametests pass.
+
+No behaviour change. `./gradlew runGameTestServer`, about a minute, no human.
+
 ## 0.7.2
 
 **The planner now computes its effects through the ledger model.** `CraftingGraph.buildEffects` used

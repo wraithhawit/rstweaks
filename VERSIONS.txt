@@ -10,6 +10,19 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.7.3
+-----
+  Gametest for ItemRemainder, which 0.7.2 promoted to a production path (CraftingGraph reads
+  Remainder.Holder on the autocrafting thread) without it ever having run against a real item --
+  every headless suite installs a fake, and a fixture agreeing with itself is not evidence about
+  the adapter. 17 assertions against the real registry: buckets and the honey bottle come back,
+  ordinary items and DAMAGEABLE TOOLS do not (wear is Durability's question, and answering it in
+  two places is how two rules start to disagree), a non-item resource is refused quietly, and the
+  cake case runs end to end into PatternTransforms.
+  Broken on purpose first: always-answering-nothing fails 7 of the 17. All 26 gametests pass.
+  No behaviour change. ./gradlew runGameTestServer, about a minute, no human needed.
+
+
 0.7.2
 -----
   The planner computes its per-pattern effects through the ledger model now. CraftingGraph's four
