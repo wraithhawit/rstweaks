@@ -8,6 +8,59 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.7.2
+
+**The planner now computes its effects through the ledger model.** `CraftingGraph.buildEffects` used
+to read a pattern's three flat lists and apply four separate rules to them — an ingredient is
+consumption, an output is production, a byproduct is production *unless* its class is a tool, and a
+tool ingredient costs a wear step measured by hand. That is now one rule, a slot with a fate, and all
+four fall out of subtraction. `ClassPools` is the bridge: the planner's resource classes and the
+ledger's columns turn out to be the same structure seen twice, so a class becomes a column addressed
+by its representative resource.
+
+**Every emitted plan is byte-identical.** The 36 plans the planner suite produces were captured
+before the swap and diffed after: no change, not one iteration count or requirement. That is the
+result worth reporting, and it is a *refactor*, not a fix — the LP planner already handled
+containers and catalysts correctly. What changes is that it now says so in one rule instead of four,
+and the four were where the bugs used to live.
+
+### Gross for ordinary columns, net for pooled ones
+
+The one piece of real design here, and it is not arbitrary in either direction:
+
+- **Gross is what working capital needs.** A catalyst is consumed and produced in equal measure. It
+  nets to nothing, but you must still *own* one before the craft can run, and the gross figures are
+  how it reaches `initialRequirements`.
+- **Net is what a pool needs.** A tool column is denominated in crafts remaining, so a half-worn
+  crystal can still run the recipe; charging the gross thousand would say it cannot.
+
+The hand-written version encoded exactly this by skipping the tool byproduct. Both directions are
+now proven load-bearing by breaking them: forcing gross everywhere makes four durability scenarios
+decline, and forcing net everywhere loses the catalyst — `requisitions [] matching 'master_crystal',
+expected 1` — and breaks self-duplication.
+
+### One rule, one copy
+
+`DurabilityClasses` loses 102 lines: its own `isWearAndReturn` and both `wearStep` overloads. The
+wear-and-return rule now lives once, in `ToolPools`, and `DurabilityClasses` calls it. Two copies of
+"is this tool actually handed back" is exactly the duplication that drifts, and the half that drifts
+is the half nobody is running.
+
+`ToolPools` stays as the standalone path — patterns without a graph, which is where phases 04 and 05
+will live — while the planner uses `ClassPools`. Its docs now say which is which instead of
+promising a merge that has happened.
+
+### One behaviour difference, and nothing tests it
+
+A pattern whose **output is an already-worn tool** used to be credited a full `maxUses`; it is now
+credited what that tool actually has left. That is a correction — the old number would over-supply
+the pool — but no scenario in the suite covers it, and I would rather flag it than let a green run
+imply otherwise. Building a faithful scenario needs the wear-substitution semantics that
+`durabilityAwarePlanning` still gates, so it belongs with that work rather than guessed at here.
+
+`plannerCheck` still stays out of `check`: it is seconds rather than instant, which was always the
+real reason, and re-typing this did not change it.
+
 ## 0.7.1
 
 **The differential check, and what it caught immediately.** 0.7.0's ledger suite was built from

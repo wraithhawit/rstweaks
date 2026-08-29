@@ -6,6 +6,11 @@ import com.refinedmods.refinedstorage.api.autocrafting.PatternRepository;
 import com.refinedmods.refinedstorage.api.resource.ResourceAmount;
 import com.refinedmods.refinedstorage.api.resource.ResourceKey;
 import com.refinedmods.refinedstorage.api.storage.root.RootStorage;
+import com.wraithhawit.rstweaks.ledger.ResourceIndex;
+import com.wraithhawit.rstweaks.ledger.Transform;
+import com.wraithhawit.rstweaks.ledger.rs.ClassPools;
+import com.wraithhawit.rstweaks.ledger.rs.PatternTransforms;
+import com.wraithhawit.rstweaks.ledger.rs.Remainder;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -160,7 +165,7 @@ public final class CraftingGraph {
         final Map<ResourceKey, Integer> classOf = merged.classOf();
         final List<ResourceClass> classes = materialiseClasses(
             classOf, rootStorage, merged.toolClasses(), durability);
-        final List<PatternEffect> effects = buildEffects(
+        final List<PatternEffect> effects = buildEffectsViaLedger(
             patterns, classOf, merged.toolClasses(), durability);
         final boolean hasCycle = detectCycle(effects);
 
@@ -282,64 +287,90 @@ public final class CraftingGraph {
         return classes;
     }
 
-    private static List<PatternEffect> buildEffects(final List<Pattern> patterns,
-                                                    final Map<ResourceKey, Integer> classOf,
-                                                    final Set<Integer> toolClasses,
-                                                    final Durability durability) {
+    /**
+     * The same per-iteration effects, derived from the ledger model instead of by hand.
+     *
+     * <p>{@link #buildEffects} below reads a pattern's three flat lists and applies four separate
+     * rules to them: an ingredient is consumption, an output is production, a byproduct is
+     * production <em>unless</em> its class is a tool, and a tool ingredient costs a wear step read
+     * off the pattern. Here there is one rule — a slot has a fate — and all four fall out of
+     * subtraction. See {@link Slot}.
+     *
+     * <p><b>Gross for ordinary columns, net for pooled ones</b>, and the split is not arbitrary.
+     * The gross figures are what working capital needs: a catalyst is consumed and produced in
+     * equal measure, which nets to nothing but still means you must <em>own</em> one before the
+     * craft can run, and that is how it reaches {@code initialRequirements}. Net is what a pool
+     * needs: a tool column is denominated in crafts remaining, so a half-worn crystal can still run
+     * the recipe, and charging the gross thousand would say it cannot. The hand-written version
+     * below encodes exactly this distinction by skipping the tool byproduct.
+     */
+    static List<PatternEffect> buildEffectsViaLedger(final List<Pattern> patterns,
+                                                     final Map<ResourceKey, Integer> classOf,
+                                                     final Set<Integer> toolClasses,
+                                                     final Durability durability) {
+        final ResourceIndex index = new ResourceIndex();
+        final ClassPools pools = ClassPools.build(index, classOf, toolClasses, durability);
+        final Remainder remainder = Remainder.Holder.get();
+
         final List<PatternEffect> effects = new ArrayList<>(patterns.size());
         for (int p = 0; p < patterns.size(); p++) {
             final Pattern pattern = patterns.get(p);
+            final Transform transform =
+                PatternTransforms.build(pattern, index, durability, remainder).transform();
+
+            final Map<Integer, Long> grossConsumed = transform.consumed(pools);
+            final Map<Integer, Long> grossProduced = transform.produced(pools);
+            final Map<Integer, Long> net = transform.net(pools);
+
             final Map<Integer, Long> consumed = new LinkedHashMap<>();
             final Map<Integer, Long> produced = new LinkedHashMap<>();
-            final List<IngredientSlot> slots = new ArrayList<>();
+            final Set<Integer> columns = new LinkedHashSet<>(grossConsumed.keySet());
+            columns.addAll(grossProduced.keySet());
+            for (final int column : columns) {
+                final int cls = pools.classOfColumn(column);
+                if (cls < 0) {
+                    // A resource the graph never classified: outside the subgraph, and outside
+                    // the program. The hand-written version drops these the same way.
+                    continue;
+                }
+                if (pools.isToolColumn(column)) {
+                    final long remaining = net.getOrDefault(column, 0L);
+                    if (remaining < 0L) {
+                        consumed.merge(cls, -remaining, Math::addExact);
+                    } else if (remaining > 0L) {
+                        produced.merge(cls, remaining, Math::addExact);
+                    }
+                    continue;
+                }
+                final long takes = grossConsumed.getOrDefault(column, 0L);
+                final long gives = grossProduced.getOrDefault(column, 0L);
+                if (takes > 0L) {
+                    consumed.merge(cls, takes, Math::addExact);
+                }
+                if (gives > 0L) {
+                    produced.merge(cls, gives, Math::addExact);
+                }
+            }
 
-            final List<Ingredient> ingredients = pattern.layout().ingredients();
-            for (int i = 0; i < ingredients.size(); i++) {
-                final Ingredient ingredient = ingredients.get(i);
-                // Every alternative shares a class by construction when they are
-                // interchangeable; if they do not, the first input decides the column
-                // and the others simply go unused by this slot.
-                final Integer cls = classOf.get(ingredient.inputs().getFirst());
-                if (cls == null) {
-                    continue;
-                }
-                // A tool class counts durability, not items, and one iteration does not
-                // always cost one point — the pattern says how much, in the gap between
-                // the tool it takes and the one it returns.
-                final long perIteration = toolClasses.contains(cls)
-                    ? Math.multiplyExact(ingredient.amount(),
-                        DurabilityClasses.wearStep(pattern, classOf, cls, durability))
-                    : ingredient.amount();
-                consumed.merge(cls, perIteration, Long::sum);
-                slots.add(new IngredientSlot(i, cls, ingredient.amount()));
-            }
-            for (final ResourceAmount output : pattern.layout().outputs()) {
-                final Integer cls = classOf.get(output.resource());
-                if (cls == null) {
-                    continue;
-                }
-                // Crafting a tool supplies a whole tool's worth of crafts, not one item.
-                produced.merge(cls, toolClasses.contains(cls)
-                    ? Math.multiplyExact(output.amount(), durability.maxUses(output.resource()))
-                    : output.amount(), Long::sum);
-            }
-            for (final ResourceAmount byproduct : pattern.layout().byproducts()) {
-                final Integer cls = classOf.get(byproduct.resource());
-                if (cls == null) {
-                    continue;
-                }
-                if (toolClasses.contains(cls)) {
-                    // The worn tool coming back is not production. The item returns, but
-                    // a use is gone for good, and the consumption above already recorded
-                    // it. Counting the return would net the class to zero and let the
-                    // program promise a crystal that never wears out.
-                    continue;
-                }
-                produced.merge(cls, byproduct.amount(), Long::sum);
-            }
-            effects.add(new PatternEffect(p, pattern, consumed, produced, slots));
+            effects.add(new PatternEffect(p, pattern, consumed, produced,
+                slotsOf(pattern, classOf)));
         }
         return effects;
+    }
+
+    /** The emitted plan still names concrete resources per ingredient slot; unchanged by the model. */
+    private static List<IngredientSlot> slotsOf(final Pattern pattern,
+                                                final Map<ResourceKey, Integer> classOf) {
+        final List<IngredientSlot> slots = new ArrayList<>();
+        final List<Ingredient> ingredients = pattern.layout().ingredients();
+        for (int i = 0; i < ingredients.size(); i++) {
+            final Ingredient ingredient = ingredients.get(i);
+            final Integer cls = classOf.get(ingredient.inputs().getFirst());
+            if (cls != null) {
+                slots.add(new IngredientSlot(i, cls, ingredient.amount()));
+            }
+        }
+        return slots;
     }
 
     /**

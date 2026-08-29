@@ -10,6 +10,29 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.7.2
+-----
+  The planner computes its per-pattern effects through the ledger model now. CraftingGraph's four
+  hand-written rules (ingredient=consumption, output=production, byproduct=production UNLESS tool,
+  tool ingredient costs a hand-measured wear step) collapse into one: a slot with a fate, netted by
+  subtraction. ClassPools bridges them -- the planner's resource classes and the ledger's columns
+  are the same structure seen twice.
+  EVERY EMITTED PLAN IS BYTE-IDENTICAL. All 36 plans captured before the swap and diffed after: no
+  change. This is a refactor, not a fix; the LP planner already got containers and catalysts right.
+  The gain is one rule instead of four, and the four were where the bugs lived.
+  The one real design call: GROSS for ordinary columns, NET for pooled ones. Gross is what working
+  capital needs (a catalyst nets to zero but you must still own one, which is how it reaches
+  initialRequirements); net is what a pool needs (a half-worn crystal can still run the recipe).
+  Both directions proven load-bearing by breaking them -- gross-everywhere declines four durability
+  scenarios, net-everywhere loses the catalyst requisition and self-duplication.
+  DurabilityClasses loses 102 lines: its isWearAndReturn and both wearStep overloads. The rule now
+  lives once, in ToolPools, and DurabilityClasses calls it. ToolPools stays as the standalone path
+  (patterns without a graph) for phases 04/05; the planner uses ClassPools.
+  ONE UNTESTED BEHAVIOUR DIFFERENCE: a pattern that OUTPUTS an already-worn tool used to be credited
+  a full maxUses and is now credited what it has left. A correction, but no scenario covers it --
+  a faithful one needs the wear-substitution semantics durabilityAwarePlanning still gates.
+
+
 0.7.1
 -----
   LedgerParitySelfTest: runs the ledger over the plans the SHIPPING planner emits, using

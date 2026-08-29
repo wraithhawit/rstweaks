@@ -4,6 +4,7 @@ import com.refinedmods.refinedstorage.api.autocrafting.Ingredient;
 import com.refinedmods.refinedstorage.api.autocrafting.Pattern;
 import com.refinedmods.refinedstorage.api.resource.ResourceAmount;
 import com.refinedmods.refinedstorage.api.resource.ResourceKey;
+import com.wraithhawit.rstweaks.ledger.rs.ToolPools;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -49,7 +50,10 @@ final class DurabilityClasses {
                         final List<Pattern> patterns,
                         final Durability durability) {
         final List<Set<ResourceKey>> groups = groupByTool(classOf.keySet(), durability);
-        groups.removeIf(group -> !isWearAndReturn(group, patterns, durability));
+        // The rule lives in ToolPools, which asks the same question of a family it builds
+        // pools for. Two copies of "is this tool actually handed back" is exactly the kind of
+        // duplication that drifts, and the half that drifts is the half nobody is running.
+        groups.removeIf(group -> !ToolPools.isWearAndReturn(group, patterns, durability));
         if (groups.isEmpty()) {
             return new Result(classOf, Set.of());
         }
@@ -172,102 +176,6 @@ final class DurabilityClasses {
         // would change nothing and only widen the blast radius.
         groups.removeIf(group -> group.size() < 2);
         return groups;
-    }
-
-    /**
-     * Whether every pattern touching this tool wears it and gives it back one for one.
-     *
-     * <p>A pattern that consumes the tool without returning it destroys it, and a pattern
-     * returning more than it took would be a duplication glitch; either way the uses
-     * model does not describe what happens, so the whole group stays as items.
-     */
-    private static boolean isWearAndReturn(final Set<ResourceKey> group,
-                                           final List<Pattern> patterns,
-                                           final Durability durability) {
-        boolean wornBySomething = false;
-        for (final Pattern pattern : patterns) {
-            long consumed = 0L;
-            for (final Ingredient ingredient : pattern.layout().ingredients()) {
-                for (final ResourceKey input : ingredient.inputs()) {
-                    if (group.contains(input)) {
-                        consumed += ingredient.amount();
-                        break;
-                    }
-                }
-            }
-            if (consumed == 0L) {
-                continue;
-            }
-            long returned = 0L;
-            for (final ResourceAmount byproduct : pattern.layout().byproducts()) {
-                if (group.contains(byproduct.resource())) {
-                    returned += byproduct.amount();
-                }
-            }
-            if (returned != consumed) {
-                return false;
-            }
-            // A recipe that costs no durability, or hands back a *less* worn tool, is not
-            // wear-and-return and must not be modelled as a supply of uses — treating it
-            // that way would make the tool immortal in the ledger.
-            if (wearStep(pattern, group, durability) < 1L) {
-                return false;
-            }
-            wornBySomething = true;
-        }
-        return wornBySomething;
-    }
-
-    /**
-     * How much durability one iteration of this pattern costs, read off the pattern
-     * rather than assumed.
-     *
-     * <p>Assuming one is wrong and quietly so: a recipe that burns five per craft would
-     * have its tool last five times too long, the planner would under-order replacements,
-     * and the executor would age the tool too slowly — a duplication bug wearing the
-     * costume of a working feature. The pattern already carries the answer, in the gap
-     * between the tool it consumes and the one it hands back.
-     */
-    static long wearStep(final Pattern pattern,
-                         final Set<ResourceKey> group,
-                         final Durability durability) {
-        ResourceKey consumed = null;
-        for (final Ingredient ingredient : pattern.layout().ingredients()) {
-            for (final ResourceKey input : ingredient.inputs()) {
-                if (group.contains(input)) {
-                    consumed = input;
-                    break;
-                }
-            }
-            if (consumed != null) {
-                break;
-            }
-        }
-        ResourceKey returned = null;
-        for (final ResourceAmount byproduct : pattern.layout().byproducts()) {
-            if (group.contains(byproduct.resource())) {
-                returned = byproduct.resource();
-                break;
-            }
-        }
-        if (consumed == null || returned == null) {
-            return 0L;
-        }
-        return (long) durability.usesLeft(consumed) - durability.usesLeft(returned);
-    }
-
-    /** The wear step for a class index, for callers that only have {@code classOf}. */
-    static long wearStep(final Pattern pattern,
-                         final Map<ResourceKey, Integer> classOf,
-                         final int cls,
-                         final Durability durability) {
-        final Set<ResourceKey> group = new LinkedHashSet<>();
-        classOf.forEach((resource, index) -> {
-            if (index == cls) {
-                group.add(resource);
-            }
-        });
-        return Math.max(1L, wearStep(pattern, group, durability));
     }
 
     /**

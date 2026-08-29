@@ -35,9 +35,14 @@ import java.util.Set;
  * back, one for one, more worn than it went in. Anything else stays an ordinary item, which is no
  * worse than the model Refined Storage ships.
  *
- * <p>This mirrors {@code DurabilityClasses.isWearAndReturn}, deliberately: the ledger model is not
- * yet wired into the planner, so for now the two carry the same rule. When the planner moves onto
- * this package, that one goes away rather than drifting.
+ * <h2>Where this is used, and where {@link ClassPools} is instead</h2>
+ *
+ * <p>The planner does not build its pools here. It already merges resources into classes of its
+ * own — fuzzy alternatives as well as wear levels — so it uses {@link ClassPools}, which wraps
+ * those classes as columns. This one is the standalone path, for code that has patterns and no
+ * graph: the parity suite, and the later phases that will not go through {@code CraftingGraph} at
+ * all. {@link #isWearAndReturn} is shared between the two, because that rule is too load-bearing
+ * to exist twice.
  */
 public final class ToolPools implements Pools {
     private final Map<Integer, Integer> columnOf;
@@ -135,11 +140,16 @@ public final class ToolPools implements Pools {
     /**
      * Whether every pattern touching this family wears the tool and gives it back.
      *
+     * <p>Public because {@code DurabilityClasses} asks the same question when it merges the
+     * planner's resource classes, and the rule is too load-bearing to exist twice: it is the only
+     * thing standing between "one crystal covers sixty-four crafts" and a plan that promises crafts
+     * from a tool nothing hands back.
+     *
      * <p>A pattern that consumes the tool without returning it destroys it; one returning more
      * than it took would be a duplication glitch; one returning it no more worn than it went in
      * would make the tool immortal in the ledger. Any of the three and the family is not a pool.
      */
-    private static boolean isWearAndReturn(final Set<ResourceKey> family,
+    public static boolean isWearAndReturn(final Set<ResourceKey> family,
                                            final List<Pattern> patterns,
                                            final Durability durability) {
         boolean wornBySomething = false;
