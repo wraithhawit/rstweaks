@@ -8,6 +8,61 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.7.1
+
+**The differential check, and what it caught immediately.** 0.7.0's ledger suite was built from
+patterns written to exercise it. This one is built from nothing: `LedgerParitySelfTest` takes
+`PlannerExecutabilitySelfTest`'s scenarios — the rice slimeball, the cake cycle, the fluid swap,
+every one of them a case that was a real bug once — asks the **shipping** planner for a plan, and
+audits it three ways. It runs in `plannerCheck`, not `check`, because it drags in the planner and
+`Config`.
+
+1. **The inference may not invent or destroy.** A fate is only a reattribution, so on any unpooled
+   column the ledger's totals must equal the raw `PatternLayout` read the way Refined Storage reads
+   it.
+2. **The plan must be funded** — the rice-slimeball bug as arithmetic instead of a replay.
+3. **The plan must produce what was asked for.**
+
+It passed on the first run, with 30 checks over 10 real plans. **That pass was worthless**, and the
+only reason we know is that the next step was to break the inference on purpose and watch it fail.
+It didn't fail. Two different deliberate breaks passed.
+
+The probe said why, and it is worth writing down: **every slot in every plan came back
+`becomes = NOTHING`.** Not one fate was ever inferred. The container scenarios all need
+`Remainder`, which had no implementation, so the ledger was agreeing with Refined Storage by
+behaving exactly like Refined Storage. A differential test between two identical things is a mirror.
+
+### So `Remainder` now exists
+
+`ItemRemainder` reads `getCraftingRemainingItem` — the game's own answer to what a milk bucket
+leaves behind — cached per item, installed beside `ItemDurability` at mod construction. Nothing
+reads it yet, and it is installed anyway so the adapter is exercised by every launch instead of
+only by the slice that wires the planner on.
+
+**What it reaches:** vanilla crafting containers. Buckets, bottles, anything declaring a
+`craftRemainder`. **What it does not:** a container returned by a *machine* — a crucible from a
+smelter, an empty can — declares no such relationship anywhere, so those byproducts stay
+unattributed, exactly as Refined Storage leaves them today. The headless fixture is held to the
+same limit deliberately: it maps the bucket family and nothing else, because a fixture more
+generous than the real adapter would be testing a capability this mod does not have.
+
+**A remainder is a candidate, not a conclusion.** It is only ever used to match a byproduct the
+pattern already lists, which is what makes it safe against the mods that roll dice when handing an
+ingredient back — Refined Storage froze one draw at encode time, and if our answer disagrees with
+it, nothing matches and the slot is simply consumed.
+
+### And now the suite bites
+
+With fates actually firing, the same deliberate breaks fail loudly:
+
+- double-crediting a byproduct → four scenarios throw;
+- dropping an unattributed byproduct → `two independent containers: the ledger and the raw layout
+  disagree by {can=-40, crucible=-40}`, plus the funding check catching the same thing from the
+  other side.
+
+There is also a `fates > 0` assertion on the run itself now, so the day this suite goes back to
+proving nothing, it says so instead of going green.
+
 ## 0.7.0
 
 **The ledger model, phase one: the algebra.** Nothing in game changes in this version. This is the

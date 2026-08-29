@@ -10,6 +10,27 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.7.1
+-----
+  LedgerParitySelfTest: runs the ledger over the plans the SHIPPING planner emits, using
+  PlannerExecutabilitySelfTest's own scenarios. Three claims -- the inference may not invent or
+  destroy anything, the plan must be funded, the plan must produce what was asked for. In
+  plannerCheck, not check, since it needs the planner and Config.
+  IT PASSED FIRST RUN AND THE PASS WAS WORTHLESS. Two deliberate breaks of the inference also
+  passed. A probe found why: every slot in every plan came back becomes=NOTHING -- no fate was ever
+  inferred, because the container cases need Remainder and Remainder had no implementation. The
+  ledger agreed with RS by behaving exactly like RS. A differential test between two identical
+  things is a mirror.
+  So ItemRemainder now exists: reads getCraftingRemainingItem, cached per item, installed beside
+  ItemDurability at construction. Reaches vanilla crafting containers (buckets, bottles); does NOT
+  reach a container returned by a machine, which declares no such relationship -- those stay
+  unattributed exactly as RS leaves them. The headless fixture is held to the same limit on
+  purpose. Nothing reads it yet.
+  With fates firing the suite bites: the same breaks now fail, one of them reported as
+  "the ledger and the raw layout disagree by {can=-40, crucible=-40}". A fates>0 assertion guards
+  against the suite going vacuous again.
+
+
 0.7.0
 -----
   The ledger model, phase one: the algebra, and NOTHING WIRED TO IT YET -- no behaviour changes in

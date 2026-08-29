@@ -19,13 +19,17 @@ public final class HeadlessPlannerCheck {
     public static void main(final String[] args) {
         final CraftingPlanSelfTest.Result planner = PlannerExecutabilitySelfTest.run();
         final CraftingPlanSelfTest.Result maxAmount = MaxCraftableSelfTest.run();
+        final CraftingPlanSelfTest.Result parity = LedgerParitySelfTest.run();
 
-        final int scenarios = planner.scenarios() + maxAmount.scenarios();
+        final int scenarios = planner.scenarios() + maxAmount.scenarios() + parity.scenarios();
         final java.util.List<String> failures = new java.util.ArrayList<>(planner.failures());
         failures.addAll(maxAmount.failures());
+        failures.addAll(parity.failures());
 
         System.out.println("scenarios: " + scenarios
-            + "  (planner " + planner.scenarios() + ", max-craftable " + maxAmount.scenarios() + ")");
+            + "  (planner " + planner.scenarios() + ", max-craftable " + maxAmount.scenarios()
+            + ", ledger parity " + parity.scenarios() + ")");
+
         if (failures.isEmpty()) {
             System.out.println("PASS");
             return;

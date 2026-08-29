@@ -73,7 +73,7 @@ public final class PlannerExecutabilitySelfTest {
      *     "pass" by never being executed, which is the failure mode that already bit the
      *     crafting-plan fixtures once.
      */
-    private record Scenario(String name,
+    record Scenario(String name,
                             Consumer<PatternRepositoryImpl> patterns,
                             Map<String, Long> stored,
                             String request,
@@ -175,7 +175,7 @@ public final class PlannerExecutabilitySelfTest {
     }
 
     @Nullable
-    private static TaskPlan buildPlan(final Scenario scenario) {
+    static TaskPlan buildPlan(final Scenario scenario) {
         return attempt(scenario).plan();
     }
 
@@ -1125,7 +1125,7 @@ public final class PlannerExecutabilitySelfTest {
         return new ResourceAmount(res(id), amount);
     }
 
-    private static List<Scenario> scenarios() {
+    static List<Scenario> scenarios() {
         final List<Scenario> out = new ArrayList<>();
 
         // The bug, reduced. water_bucket consumes a bucket; slimeball hands it back.

@@ -25,10 +25,12 @@ import com.wraithhawit.rstweaks.iface.ConfigureSlotPacket;
 import com.wraithhawit.rstweaks.iface.InventoryInterfaceContent;
 import com.wraithhawit.rstweaks.iface.InventoryInterfaceOpener;
 import com.wraithhawit.rstweaks.iface.InventoryInterfaceTicker;
+import com.wraithhawit.rstweaks.ledger.rs.Remainder;
 import com.wraithhawit.rstweaks.mekanism.MekanismQio;
 import com.wraithhawit.rstweaks.planner.Durability;
 import com.wraithhawit.rstweaks.storage.DrawerDenylist;
 import com.wraithhawit.rstweaks.storage.ItemDurability;
+import com.wraithhawit.rstweaks.storage.ItemRemainder;
 import com.wraithhawit.rstweaks.test.BlockPickGameTest;
 import com.wraithhawit.rstweaks.test.CraftingGridRefillGameTest;
 import com.wraithhawit.rstweaks.test.InventoryInterfaceGameTest;
@@ -70,6 +72,11 @@ public class RSTweaks {
         // The planner package holds no Minecraft types so it can be run headlessly;
         // durability is the one thing only the game can answer, so it is handed in.
         Durability.Holder.set(ItemDurability.INSTANCE);
+        // Same arrangement for the ledger model's other game-side question: what a container
+        // leaves behind. Installed even though nothing reads it yet, so the adapter and its
+        // registration are exercised by every launch rather than only by the slice that wires
+        // the planner onto it.
+        Remainder.Holder.set(ItemRemainder.INSTANCE);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
         // The pattern-plan mixin reads its toggle on a path far too hot for a
         // config-spec lookup, so mirror it into a plain field whenever it changes.
