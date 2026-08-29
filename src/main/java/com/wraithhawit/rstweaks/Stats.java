@@ -224,6 +224,18 @@ public final class Stats {
      */
     public static long resourceAmountOverflowsClamped;
 
+    /**
+     * Crafting iterations run as part of a batch rather than one at a time.
+     *
+     * <p>Also the only way a test can tell batched stepping apart from a no-op. Every scenario in
+     * the task-engine suite passes with batching switched off — that is what it is for — so a run
+     * with it switched on proves nothing unless this number moved.
+     */
+    public static long batchedIterations;
+
+    /** Batches performed. {@code batchedIterations / batchedSteps} is the average batch width. */
+    public static long batchedSteps;
+
     private Stats() {
     }
 }

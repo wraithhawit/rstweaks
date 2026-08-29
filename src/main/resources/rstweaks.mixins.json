@@ -6,6 +6,7 @@
   "mixins": [
     "AbstractTaskPatternMixin",
     "AutocraftingNetworkComponentImplMixin",
+    "BatchedStepMixin",
     "TimeoutableCancellationTokenMixin",
     "CompositeExternalStorageProviderMixin",
     "CompositeStorageImplMixin",

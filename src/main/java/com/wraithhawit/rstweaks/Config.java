@@ -362,10 +362,52 @@ public final class Config {
     /** Cached: read once per ingredient per crafting-tree node, which is as hot as it gets. */
     public static volatile boolean sortPatternsByPriority = true;
 
+    public static final ModConfigSpec.BooleanValue BATCHED_EXECUTION = BUILDER
+        .comment(
+            "Run many iterations of one crafting pattern in a single extraction and",
+            "insertion, instead of one iteration at a time.",
+            "",
+            "Refined Storage steps a task by calling the pattern once per iteration, and",
+            "each call builds two resource lists, extracts twice and inserts per output.",
+            "Fed a hundred thousand steps a tick by a multiblock crafter, that loop is",
+            "94-99% of the server thread in both profiles taken of this pack.",
+            "",
+            "OFF BY DEFAULT while it is new. This is the only optimization here that",
+            "changes when items move rather than how they are found, so it gets the same",
+            "posture lpPlanner shipped with: prove it in your own world first.",
+            "",
+            "It refuses to batch anything delicate and falls back to Refined Storage's own",
+            "stepping, which is what you already have:",
+            "  - patterns with byproducts, which includes every container and every tool",
+            "  - patterns using an item that wears out",
+            "  - patterns that consume something they also produce",
+            "Anything it cannot prove safe, it does not touch."
+        )
+        .define("batchedExecution", false);
+
+    /** Cached: read once per pattern per step, on the hottest path in the mod. */
+    public static volatile boolean batchedExecution = false;
+
+    public static final ModConfigSpec.IntValue MAX_BATCHED_ITERATIONS = BUILDER
+        .comment(
+            "The most iterations batchedExecution will run in one go.",
+            "",
+            "A cap rather than a target. It bounds how much work one pattern can do before",
+            "the server thread gets a chance to do anything else, and it bounds the size of",
+            "a single extraction so a batch cannot ask for more than a storage can answer",
+            "in one call. Larger is faster and less fair; smaller is the opposite."
+        )
+        .defineInRange("maxBatchedIterations", 1024, 1, 1_000_000);
+
+    /** Cached alongside {@link #batchedExecution}. */
+    public static volatile int maxBatchedIterations = 1024;
+
     /** Called on config load and reload to refresh the hot-path caches. */
     public static void refresh() {
         lazyPatternPlanCopy = LAZY_PATTERN_PLAN_COPY.get();
         lpPlanner = LP_PLANNER.get();
+        batchedExecution = BATCHED_EXECUTION.get();
+        maxBatchedIterations = MAX_BATCHED_ITERATIONS.get();
         externalStorageSlotIndex = EXTERNAL_STORAGE_SLOT_INDEX.get();
         keepRecycledResourcesInTask = KEEP_RECYCLED_RESOURCES_IN_TASK.get();
         skipMismatchedStorageTypes = SKIP_MISMATCHED_STORAGE_TYPES.get();

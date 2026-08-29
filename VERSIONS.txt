@@ -10,6 +10,32 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.9.0
+-----
+  PHASE 05 EXECUTES. BatchedStepMixin runs many iterations of one pattern in a single extraction and
+  insertion instead of RS's one-at-a-time loop -- the loop that is 94-99% of the server thread in
+  both profiles. OFF BY DEFAULT (batchedExecution), lpPlanner's posture, because it is the first
+  thing here that changes WHEN ITEMS MOVE rather than how they are found. maxBatchedIterations
+  caps a batch at 1024.
+  Refuses: anything with byproducts (every container, catalyst and tool), anything using an item
+  that wears out (AbstractTaskPatternMixin substitutes worn tools inside extractAll, which a batched
+  path never calls), anything that consumes what it produces. Everything else falls through to RS
+  unchanged.
+  TWO BUGS FOUND BEFORE IT RAN. (1) The budget was spent on a draw that was then rejected, so the
+  committed budget was one iteration ahead of the work done -- ingredients quietly missing from the
+  rest of the plan. Found by re-reading, not by a test. (2) @Shadow DOES NOT WALK THE HIERARCHY:
+  pattern and ingredients live on AbstractTaskPattern, and shadowing them from the subclass mixin
+  fails at APPLY time -- and with injectors.defaultRequire=1 that took the whole task engine down.
+  Now routed through TaskPatternInternals (the WornToolAware arrangement), and the injection is
+  require=0 so an optimization that cannot apply stands down instead of crashing a pack.
+  Gametest runs the whole task-engine suite with batching ON and asserts the counter moved -- every
+  scenario passes with it off, so without that check a green run is just the serial run again.
+  Guard removed on purpose: "slag ended at 0, not the 16 the plan accounts for <-- ITEMS DESTROYED".
+  Restored: 27 gametests pass, 15 iterations batched across 6 scenarios.
+  UNPROVEN: small scenarios only, never batched at real-pack widths, never run beside Cable Tiers or
+  a multiblock crafter. Needs a launch, and a profile to say whether it was worth doing.
+
+
 0.8.2
 -----
   WITHDRAWS 0.8.1's claim. Batching a self-feeding pattern is futile in stock RS and DANGEROUS in

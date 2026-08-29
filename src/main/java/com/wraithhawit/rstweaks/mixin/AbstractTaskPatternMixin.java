@@ -10,15 +10,18 @@ import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.RSTweaks;
 import com.wraithhawit.rstweaks.planner.Durability;
 import com.wraithhawit.rstweaks.storage.TaskConsumption;
+import com.wraithhawit.rstweaks.storage.TaskPatternInternals;
 import com.wraithhawit.rstweaks.storage.WornToolAware;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import javax.annotation.Nullable;
 
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -50,7 +53,23 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * wrong wear levels, which is what this corrects.
  */
 @Mixin(targets = "com.refinedmods.refinedstorage.api.autocrafting.task.AbstractTaskPattern")
-public abstract class AbstractTaskPatternMixin implements WornToolAware {
+public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPatternInternals {
+    @Shadow
+    protected Pattern pattern;
+
+    @Shadow
+    protected Map<Integer, Map<ResourceKey, Long>> ingredients;
+
+    @Override
+    public Pattern rstweaks$pattern() {
+        return this.pattern;
+    }
+
+    @Override
+    public Map<Integer, Map<ResourceKey, Long>> rstweaks$ingredients() {
+        return this.ingredients;
+    }
+
     /**
      * The tools taken this iteration, so each byproduct can be aged to match.
      *

@@ -1,6 +1,7 @@
 package com.wraithhawit.rstweaks.test;
 
 import com.wraithhawit.rstweaks.ChatReporter;
+import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.RSTweaks;
 import com.wraithhawit.rstweaks.Stats;
 
@@ -159,6 +160,35 @@ public final class RSTweaksGameTests {
     @GameTest(template = "empty", timeoutTicks = 400)
     public static void craftingRemaindersAreReadFromTheGame(final GameTestHelper helper) {
         report(helper, "remainder", RemainderSelfTest.run());
+    }
+
+    /**
+     * Batched stepping, against the real task engine, differentially.
+     *
+     * <p>Every scenario in the task-engine suite already passes with batching off -- that is what
+     * it is for -- so running it again with batching on proves nothing on its own. The counter is
+     * what makes it a test: if no iteration was batched, the second run was the first run and the
+     * assertion says so instead of going green.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void batchedSteppingMatchesSerial(final GameTestHelper helper) {
+        final boolean originalBatching = Config.batchedExecution;
+        final long before = Stats.batchedIterations;
+        final CraftingPlanSelfTest.Result batched;
+        try {
+            Config.batchedExecution = true;
+            batched = TaskEngineSelfTest.run();
+        } finally {
+            Config.batchedExecution = originalBatching;
+        }
+        final long ran = Stats.batchedIterations - before;
+        if (ran == 0L) {
+            helper.fail("batched stepping never engaged, so this run was the serial run again");
+            return;
+        }
+        RSTweaks.LOGGER.info("[rstweaks] gametest batched {} iterations across {} scenarios",
+            ran, batched.scenarios());
+        report(helper, "batched stepping", batched);
     }
 
     private static void report(final GameTestHelper helper,

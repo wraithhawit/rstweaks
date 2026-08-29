@@ -8,6 +8,62 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.9.0
+
+**Phase 05 executes.** `BatchedStepMixin` runs many iterations of one pattern in a single
+extraction and insertion instead of Refined Storage's one-at-a-time loop — the loop that is 94–99%
+of the server thread in both profiles of this pack. **Off by default** (`batchedExecution`), the
+same posture `lpPlanner` shipped with, because this is the first thing in this mod that changes
+*when items move* rather than how they are found.
+
+### What it refuses to touch
+
+Wider than the arithmetic strictly requires, because the cost of being wrong here is a player's
+items:
+
+- **anything with byproducts** — every container, every catalyst, every tool;
+- **anything using an item that wears out** — `AbstractTaskPatternMixin` substitutes a worn tool
+  from inside `extractAll`, and a batched path does not call it;
+- **anything that consumes what it produces** — self-duplication, where iteration two needs what
+  iteration one made.
+
+Everything else falls through to Refined Storage's own stepping unchanged. A pattern it cannot
+prove safe costs the optimization and nothing else.
+
+### Two bugs found before it ever ran
+
+**The budget was spent on a draw that was rejected.** The loop drew an iteration from the ingredient
+budget, then checked whether the task's storage covered it, and broke out if not — having already
+spent the draw. The committed budget would have been one iteration further on than the work actually
+done, quietly removing ingredients from the rest of the plan. Found by re-reading the commit path,
+not by a test; the draw is now applied only after the storage has been shown to cover it.
+
+**`@Shadow` does not walk the class hierarchy.** `pattern` and `ingredients` live on
+`AbstractTaskPattern`, and shadowing them from a mixin on the subclass fails at *apply* time — and
+with `injectors.defaultRequire = 1`, that failure took the entire task engine down rather than just
+the optimization. The superclass's own mixin now exposes them through `TaskPatternInternals`, the
+same arrangement `WornToolAware` already uses. The injection itself is `require = 0`, because an
+optimization that cannot apply should stand down, not crash somebody's pack.
+
+### Verified in game, and made to fail first
+
+A new gametest runs the whole task-engine suite — real crafting tasks, real task engine — with
+batching switched on, and asserts the counter moved. That second half is the test: every scenario
+already passes with batching off, so without it a green run would just be the serial run again.
+
+Then the guard was removed on purpose. The suite failed with exactly the right words:
+
+```
+byproduct returned at the end: slag ended at 0, not the 16 the plan
+accounts for (0 stored + 16 made - 0 used)  <-- ITEMS DESTROYED
+```
+
+Restored: 27 gametests pass, 15 iterations batched across 6 scenarios.
+
+**What is still unproven:** the scenarios are small, so nothing here has batched at the widths a
+real pack reaches, and none of it has run beside Cable Tiers or a multiblock crafter. That needs a
+real launch, and the profile is the only thing that can say whether it was worth doing.
+
 ## 0.8.2
 
 **Withdrawing yesterday's withdrawal.** 0.8.1 said batching a self-feeding pattern was futile
