@@ -10,6 +10,29 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.8.0
+-----
+  Phase 04 of the ledger model: Scheduler turns solved flows into an ORDER every step of which is
+  affordable when it runs. Backtracking greedy -- widest affordable batch now, roll back to a
+  narrower one when an ordering dead-ends. Ported from Nodrance's ExecutionPlanner; ATTRIBUTION.md
+  (new) says what was taken, what was not, and what changed. NOTHING IS WIRED TO IT: no dispatcher,
+  no task object, no persistence -- his createSnapshot omits pendingSteps, so a task outliving a
+  save comes back holding items with no work left, and that risk is not worth inheriting yet.
+  The port's one required change: affordability reads the per-iteration effect, GROSS for ordinary
+  resources and NET for pooled ones. A direct port charges the full 1000 uses of a crystal to run
+  one craft and then stalls. Same distinction as 0.7.2, arriving somewhere I did not expect it.
+  Tests pin CORRECTNESS via an independent replay (500 random cycles + the cake cycle, the seed
+  duplicated before spending, a greedy batch that is a trap, a plan nothing can start). 24 checks.
+  They do NOT pin the heuristics: mutation score 62%, and the survivors are the sort order, the
+  batch sizes and cycle detection -- mutating those keeps every correctness test green because the
+  search still finds a valid order, just slower. Their COST is pinned instead: every random cycle
+  ordered within 32 attempts.
+  Two honest gaps: a scenario meant to expose a rolled-back branch leaking its outputs did not bite
+  (my trace of when it matters was wrong), and the step-merging path is near-unreachable.
+  Backtracking IS covered, and only because mutation testing said it was not -- every earlier
+  scenario succeeded on its first choice, so rollback and shrink could have been deleted.
+
+
 0.7.3
 -----
   Gametest for ItemRemainder, which 0.7.2 promoted to a production path (CraftingGraph reads

@@ -69,8 +69,18 @@ tasks.register('ledgerCheck', JavaExec) {
     mainClass = 'com.wraithhawit.rstweaks.test.HeadlessLedgerCheck'
 }
 
+// Phase 04 of the ledger model: turning solved flows into an order every step of which is
+// affordable when it runs. Pure arithmetic, no Minecraft, microseconds.
+tasks.register('schedulerCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the execution-order self-tests headlessly.'
+    classpath = sourceSets.main.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'com.wraithhawit.rstweaks.test.HeadlessSchedulerCheck'
+}
+
 tasks.named('check') {
-    dependsOn 'backoffCheck', 'patternOrderCheck', 'traceCheck', 'gateCheck', 'ledgerCheck'
+    dependsOn 'backoffCheck', 'patternOrderCheck', 'traceCheck', 'gateCheck', 'ledgerCheck',
+        'schedulerCheck'
 }
 
 tasks.register('sparkProfile', JavaExec) {

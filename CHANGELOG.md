@@ -8,6 +8,52 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.8.0
+
+**Phase 04: the flows get an order.** A solved plan says "run this forty times and that twelve
+times". It does not say *when*, and for anything with a cycle in it the order is the whole problem —
+you must duplicate the smithing template before you spend it, and empty a bucket before you can fill
+the next. `Scheduler` puts the time back: a backtracking greedy that takes the widest batch it can
+afford right now, and rolls back to a narrower one when an ordering dead-ends.
+
+Ported from Nodrance's `ExecutionPlanner`; see the new `ATTRIBUTION.md` for what was taken, what was
+not, and what changed. **Nothing is wired to it yet** — no dispatcher, no task object, no
+persistence. That is deliberate: his `LpTaskDispatcher.createSnapshot()` omits its own pending steps,
+so a dispatcher task that outlives a save comes back holding items with no work left to do, and
+there is no reason to inherit that risk before the arithmetic is trusted.
+
+### The one thing that had to change in the port
+
+Affordability reads the planner's per-iteration effect, which counts ordinary resources **gross** and
+pooled ones **net**. A direct port charges the full thousand uses of a crystal to run one craft, then
+finds 999 left and stalls — the same gross/net distinction 0.7.2 established, arriving again in a
+place I did not expect it. That the ledger model had already made the distinction available is the
+first time this rebuild has paid rather than cost.
+
+### What the tests actually pin, stated exactly
+
+The property is an **independent replay**: walk the emitted steps against the starting stock, and if
+any column ever goes negative the order is wrong. Five hundred random container cycles plus the
+hand-built cases — the cake cycle on three buckets, the seed duplicated before it is spent, a greedy
+batch that is a trap, a plan nothing can start. 24 checks.
+
+**And what they do not pin.** A mutation run put the score at 62%, and reading the survivors rather
+than chasing them: the sort order, the batch sizes tried, and cycle detection are **heuristics**, and
+mutating them keeps every correctness test green because the search still finds a valid order — it
+just backtracks more on the way. Their cost claim is pinned instead: every random cycle must be
+ordered within 32 attempts.
+
+Two things I tried and could not make bite, said plainly rather than left implied. I built a scenario
+meant to expose a rolled-back branch leaking its outputs into the search's inventory, and it did not
+fail under mutation — my trace of when the leak matters was wrong, and I do not currently have a case
+that proves the produced-side rollback is load-bearing. The step-merging path is likewise close to
+unreachable: consecutive same-recipe steps outside a cycle turn out to be rare, because a batch takes
+everything affordable in one go.
+
+Backtracking itself *is* covered, and only because the mutation run said it was not: every scenario
+before that one succeeded on its first choice, so `rollback` and `shrink` could both have been
+deleted with the suite still green.
+
 ## 0.7.3
 
 **The one thing no headless suite can ask.** 0.7.2 quietly promoted `ItemRemainder` to a production
