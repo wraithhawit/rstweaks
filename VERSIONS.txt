@@ -10,6 +10,23 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.8.1
+-----
+  Phase 05, DECISION HALF ONLY: BatchPolicy says how many iterations of a pattern may run as one
+  extraction and insertion. Nothing executes yet. Rule: a pattern whose inputs intersect its own
+  outputs feeds itself across iterations, so a batch demands up front what only the previous
+  iteration supplies (the worn tool wants the crystal@1 iteration one handed back). Containers are
+  NOT self-feeding and batch fine.
+  I HAD THE REASON WRONG. Wrote it claiming a self-feeding batch could destroy items, then deleted
+  the rule to check the safety property caught it -- STILL GREEN. An extraction is bounded by what
+  the task holds, so a batch can never take more than exists: a batched catalyst extracts 64
+  crystals and returns 64, ending where serial ends; a worn tool's batch just fails its simulation.
+  FUTILE, NOT DANGEROUS. The rule is a performance claim, and the assertion that pins it is the one
+  reading the decision's stated reason, not the property that looks like it should.
+  The real item-loss risk is the EXECUTOR: a throw partway through a batched extraction, where
+  TaskContainer.step treats any exception as completion and drops the internal storage. Next slice.
+
+
 0.8.0
 -----
   Phase 04 of the ledger model: Scheduler turns solved flows into an ORDER every step of which is

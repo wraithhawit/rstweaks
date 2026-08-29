@@ -78,9 +78,16 @@ tasks.register('schedulerCheck', JavaExec) {
     mainClass = 'com.wraithhawit.rstweaks.test.HeadlessSchedulerCheck'
 }
 
+tasks.register('batchCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the bulk-execution batch policy self-tests headlessly.'
+    classpath = sourceSets.main.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'com.wraithhawit.rstweaks.test.HeadlessBatchCheck'
+}
+
 tasks.named('check') {
     dependsOn 'backoffCheck', 'patternOrderCheck', 'traceCheck', 'gateCheck', 'ledgerCheck',
-        'schedulerCheck'
+        'schedulerCheck', 'batchCheck'
 }
 
 tasks.register('sparkProfile', JavaExec) {

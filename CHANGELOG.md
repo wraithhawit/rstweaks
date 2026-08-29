@@ -8,6 +8,42 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.8.1
+
+**Phase 05, the decision half.** `BatchPolicy` answers one question: how many iterations of a
+pattern may run as a single extraction and insertion. Nothing executes yet — this is arithmetic in
+a plain JVM, and the executor that acts on it is the next slice.
+
+The rule is one line: **a pattern whose inputs intersect its own outputs feeds itself across
+iterations**, so a batch demands up front what only the previous iteration can supply. A worn tool
+is the clearest case: iteration two wants the `crystal@1` iteration one handed back, and the plan's
+ingredient budget lists it precisely because it expects that. Containers are not in that set and
+batch happily — the empties come back from a different pattern on a different step — and the rule
+tells them apart without knowing what either of them is.
+
+### I had the reason for that rule wrong, and the test said so
+
+I wrote this class claiming batching a self-feeding pattern could destroy items. Then I deleted the
+rule to check the safety property caught it, and **it stayed green**. Working out why corrected the
+reasoning:
+
+An extraction is bounded by what the task is holding, so a batch can never take more than exists. A
+catalyst batched against sixty-four crystals extracts sixty-four and returns sixty-four — exactly
+where serial ends up. A worn tool's batch simply fails its extraction simulation and nothing
+happens. **Futile, not dangerous.** The rule earns its keep by not paying for that failed attempt on
+every step of every crafting tool, which is a performance claim, not a safety one.
+
+So the docs now say that, and the suite says which assertion actually pins the rule: the one that
+reads the decision's stated reason, not the property that looks like it should. The property still
+earns its place — it pins that a batch never exceeds what serial could run, and gives up no
+throughput on the patterns it *is* allowed to batch, over three thousand random patterns including
+self-feeding ones.
+
+**Where the real item-loss risk lives**, now that it is not here: a throw partway through a batched
+extraction, on a path where `TaskContainer.step` treats any exception as completion, logs it, fires
+the toast and drops the task's internal storage. That is the executor's problem and it is the thing
+to be careful about next.
+
 ## 0.8.0
 
 **Phase 04: the flows get an order.** A solved plan says "run this forty times and that twelve
