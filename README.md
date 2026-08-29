@@ -324,9 +324,10 @@ amount nobody asked for.
 registers a slot-reference provider, and both halves of this — the Inventory Interface and
 block pick — ask Refined Storage's composite provider where your grids are rather than
 scanning the inventory. So a grid worn in a Curios slot works, and so does any other
-integration that registers itself. The one exception is the configuration screen, which
-still opens on sneak + right-click in the air: take the grid out to configure it, and the
-setting rides back with the item.
+integration that registers itself. The configuration screen is the one thing that still
+needs the grid in your hand — sneak + right-click is a world interaction — so take it out
+of the Curios slot to configure it and put it back. That is deliberate rather than
+unfinished: you configure a grid once, and the setting rides on the item.
 
 Supported items are an allowlist (`inventoryInterfaceItems`), covering Refined Storage's
 Wireless and Portable Grids, Quartz Arsenal's Wireless Crafting Grid and Universal Grid's

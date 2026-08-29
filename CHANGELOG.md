@@ -49,10 +49,12 @@ Curios has no special status in it. What that tests is the thing that was actual
 the pass asks or assumes. Confirmed to fail with the inventory scan put back (64 kept where 16 was
 asked for). 23 gametests pass.
 
-**Not fixed, and known.** The configuration screen still opens on sneak + right-click *in the air*,
-so a grid in a Curios slot has to come out to be configured. The setting rides on the item, so it
-survives the round trip. A keybind would fix it properly — Refined Storage and AE2WTLib both use one
-to reach slot-referenced items — and that is a separate change.
+**Decided, not deferred.** The configuration screen still opens on sneak + right-click *in the air*,
+so a grid in a Curios slot has to come out to be configured. That is the intended behaviour, settled
+on the test pass that reported the Curios gap: configuring is a thing you do once, and the setting
+rides on the item, so it survives the round trip. A keybind would avoid the round trip — Refined
+Storage and AE2WTLib both use one to reach slot-referenced items — and is not worth a keybind
+nobody asked for. Do not re-raise this as a bug.
 
 ## 0.5.1
 

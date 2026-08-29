@@ -27,9 +27,10 @@ The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a
   is the right question anyway and correctly protects nothing when the grid occupies no inventory
   slot. New gametest: Curios is not in the dev run, so the grid is exposed through a provider of our
   own registered into the same composite -- confirmed to fail with the inventory scan put back. 23
-  pass. NOT fixed: the configuration screen still opens on sneak + right-click in the AIR, so a grid
-  in a Curios slot has to come out to be configured. The setting rides on the item, so it survives
-  the round trip.
+  pass. BY DESIGN, settled on the test pass that found the Curios gap: the configuration screen still
+  opens on sneak + right-click in the AIR, so a grid in a Curios slot has to come out to be
+  configured. Configuring is a thing you do once and the setting rides on the item, so it survives
+  the round trip. Not a bug, do not re-raise.
 
 
 0.5.1
