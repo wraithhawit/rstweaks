@@ -2,7 +2,6 @@ package com.wraithhawit.rstweaks.iface;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 import com.refinedmods.refinedstorage.api.resource.ResourceAmount;
 import com.refinedmods.refinedstorage.api.resource.filter.FilterMode;
@@ -10,7 +9,6 @@ import com.refinedmods.refinedstorage.api.storage.Actor;
 import com.refinedmods.refinedstorage.common.api.storage.PlayerActor;
 import com.refinedmods.refinedstorage.common.api.support.slotreference.SlotReference;
 import com.refinedmods.refinedstorage.common.support.resource.ItemResource;
-import com.refinedmods.refinedstorage.common.support.slotreference.InventorySlotReferenceProvider;
 
 import com.wraithhawit.rstweaks.Config;
 
@@ -50,15 +48,6 @@ import org.jetbrains.annotations.Nullable;
  * judgement rather than a safety rail, so it is the one that is config.
  */
 public final class InventoryInterfaceTicker {
-    /**
-     * Refined Storage's own scanner. It returns a real {@code InventorySlotReference} per matching
-     * slot — the type Refined Storage's network-item machinery expects and the only one whose
-     * factory is in its registry, which matters because the same reference is handed to the menu
-     * and has to survive being written to the client. Constructing one directly is not possible
-     * from here: the class is public but its constructor is not.
-     */
-    private static final InventorySlotReferenceProvider SLOT_REFERENCES = new InventorySlotReferenceProvider();
-
     private InventoryInterfaceTicker() {
     }
 
@@ -100,7 +89,7 @@ public final class InventoryInterfaceTicker {
                               final int gridSlot,
                               final ItemStack gridStack,
                               final InventoryInterfaceState state) {
-        final SlotReference slotReference = referenceFor(player, gridSlot);
+        final SlotReference slotReference = InventoryInterfaceTarget.referenceFor(player, gridSlot);
         if (slotReference == null) {
             return;
         }
@@ -131,26 +120,6 @@ public final class InventoryInterfaceTicker {
             return true;
         }
         return !Config.inventoryInterfaceInsertFromHotbar && slot < Inventory.getSelectionSize();
-    }
-
-    /**
-     * The {@code SlotReference} for one inventory slot.
-     *
-     * <p>Refined Storage's provider answers "which slots hold one of these items", not "what is
-     * the reference for slot n", and the index it captured is private. {@code isDisabledSlot} is
-     * the public question that means "are you the reference for this slot" — it exists so a menu
-     * can grey out the slot its own item came from, which is exactly the identity being asked
-     * about here.
-     */
-    @Nullable
-    private static SlotReference referenceFor(final ServerPlayer player, final int slot) {
-        final Set<net.minecraft.world.item.Item> item = Set.of(player.getInventory().getItem(slot).getItem());
-        for (final SlotReference candidate : SLOT_REFERENCES.find(player, item)) {
-            if (candidate.isDisabledSlot(slot)) {
-                return candidate;
-            }
-        }
-        return null;
     }
 
     private static void insert(final Inventory inventory,

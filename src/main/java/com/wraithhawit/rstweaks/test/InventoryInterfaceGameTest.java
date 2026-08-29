@@ -3,32 +3,21 @@ package com.wraithhawit.rstweaks.test;
 import java.util.List;
 import java.util.Optional;
 
-import com.refinedmods.refinedstorage.api.core.Action;
 import com.refinedmods.refinedstorage.api.resource.ResourceAmount;
 import com.refinedmods.refinedstorage.api.resource.filter.FilterMode;
-import com.refinedmods.refinedstorage.api.storage.Actor;
-import com.refinedmods.refinedstorage.api.storage.Storage;
-import com.refinedmods.refinedstorage.common.api.RefinedStorageApi;
 import com.refinedmods.refinedstorage.common.content.Items;
-import com.refinedmods.refinedstorage.common.storage.DiskInventory;
-import com.refinedmods.refinedstorage.common.storage.ItemStorageVariant;
 import com.refinedmods.refinedstorage.common.support.resource.ItemResource;
-import com.refinedmods.refinedstorage.common.util.ContainerUtil;
 
 import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.RSTweaks;
 import com.wraithhawit.rstweaks.iface.InventoryInterfaceContent;
 import com.wraithhawit.rstweaks.iface.InventoryInterfaceState;
 
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.CustomData;
 
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
@@ -74,7 +63,6 @@ public final class InventoryInterfaceGameTest {
     private static final int GRID_SLOT = 10;
     private static final int OTHER_GRID_SLOT = 12;
 
-    private static final Actor ACTOR = () -> "rstweaks-inventory-interface-test";
 
     private InventoryInterfaceGameTest() {
     }
@@ -91,7 +79,7 @@ public final class InventoryInterfaceGameTest {
                 true, false, FilterMode.ALLOW, false, filter(iron(), 16L)));
         }, (helper2, player, grid) -> {
             expect("iron kept on the player", countCarried(player, iron()), 16L);
-            expect("iron filed away", countStored(helper2, grid, iron()), 48L);
+            expect("iron filed away", PortableGridFixture.countStored(helper2, grid, iron()), 48L);
         });
     }
 
@@ -109,9 +97,9 @@ public final class InventoryInterfaceGameTest {
                 true, false, FilterMode.BLOCK, false, filter(iron(), 16L)));
         }, (helper2, player, grid) -> {
             expect("listed iron untouched", countCarried(player, iron()), 64L);
-            expect("iron not in storage", countStored(helper2, grid, iron()), 0L);
+            expect("iron not in storage", PortableGridFixture.countStored(helper2, grid, iron()), 0L);
             expect("unlisted gold taken", countCarried(player, gold()), 0L);
-            expect("unlisted gold filed away", countStored(helper2, grid, gold()), 32L);
+            expect("unlisted gold filed away", PortableGridFixture.countStored(helper2, grid, gold()), 32L);
         });
     }
 
@@ -136,7 +124,7 @@ public final class InventoryInterfaceGameTest {
             expect("iron kept across the whole inventory", countCarried(player, iron()), 16L);
             expect("hotbar iron left where it was",
                 player.getInventory().getItem(1).getCount(), 10L);
-            expect("the rest filed away", countStored(helper2, grid, iron()), 58L);
+            expect("the rest filed away", PortableGridFixture.countStored(helper2, grid, iron()), 58L);
         });
     }
 
@@ -144,12 +132,12 @@ public final class InventoryInterfaceGameTest {
     @GameTest(template = "empty", timeoutTicks = 400)
     public static void autoExportTopsUpToTheFilterAmount(final GameTestHelper helper) {
         run(helper, (player, grid) -> {
-            store(helper, grid, iron(), 64L);
+            PortableGridFixture.store(helper, grid, iron(), 64L);
             configure(grid, state -> new InventoryInterfaceState(
                 false, true, FilterMode.ALLOW, false, filter(iron(), 40L)));
         }, (helper2, player, grid) -> {
             expect("iron handed to the player", countCarried(player, iron()), 40L);
-            expect("iron left in storage", countStored(helper2, grid, iron()), 24L);
+            expect("iron left in storage", PortableGridFixture.countStored(helper2, grid, iron()), 24L);
         });
     }
 
@@ -174,7 +162,7 @@ public final class InventoryInterfaceGameTest {
                     true, false, FilterMode.BLOCK, false, InventoryInterfaceState.EMPTY.filter()));
             }, (helper2, player, grid) -> {
                 expect("unprotected cobblestone filed away",
-                    countStored(helper2, grid, new ItemResource(net.minecraft.world.item.Items.COBBLESTONE)), 16L);
+                    PortableGridFixture.countStored(helper2, grid, new ItemResource(net.minecraft.world.item.Items.COBBLESTONE)), 16L);
                 expect("held diamonds untouched",
                     countCarried(player, new ItemResource(net.minecraft.world.item.Items.DIAMOND)), 5L);
                 if (!player.getInventory().getItem(GRID_SLOT).is(Items.INSTANCE.getCreativePortableGrid())) {
@@ -221,7 +209,7 @@ public final class InventoryInterfaceGameTest {
             final ServerPlayer player = (ServerPlayer) helper.makeMockServerPlayerInLevel();
             player.getInventory().clearContent();
 
-            final ItemStack grid = portableGrid(helper, player);
+            final ItemStack grid = PortableGridFixture.portableGrid(helper, player);
             player.getInventory().setItem(GRID_SLOT, grid);
             setup.apply(player, grid);
 
@@ -235,33 +223,6 @@ public final class InventoryInterfaceGameTest {
             Config.inventoryInterfaceIntervalTicks = originalInterval;
             Config.inventoryInterface = originalEnabled;
         }
-    }
-
-    /**
-     * A creative Portable Grid holding a creative disk.
-     *
-     * <p>The disk is ticked once in the player's inventory first, because that is what gives it a
-     * storage: Refined Storage assigns one in {@code AbstractStorageContainerItem.inventoryTick},
-     * so a disk that has never been carried resolves to nothing. Then it is written into the
-     * grid's block-entity data under {@code "inv"}, which is the same shape
-     * {@code AbstractPortableGridBlockEntity.writeDiskInventory} produces and the one the feature
-     * reads back.
-     */
-    private static ItemStack portableGrid(final GameTestHelper helper, final Player player) {
-        final ServerLevel level = helper.getLevel();
-        final ItemStack disk = new ItemStack(Items.INSTANCE.getItemStorageDisk(ItemStorageVariant.CREATIVE));
-        disk.getItem().inventoryTick(disk, level, player, 0, false);
-
-        final DiskInventory diskInventory = new DiskInventory((inventory, slot) -> {
-        }, 1);
-        diskInventory.setItem(0, disk);
-
-        final CompoundTag tag = new CompoundTag();
-        tag.put("inv", ContainerUtil.write(diskInventory, level.registryAccess()));
-
-        final ItemStack grid = new ItemStack(Items.INSTANCE.getCreativePortableGrid());
-        grid.set(DataComponents.BLOCK_ENTITY_DATA, CustomData.of(tag));
-        return grid;
     }
 
     private static void configure(final ItemStack grid,
@@ -284,17 +245,6 @@ public final class InventoryInterfaceGameTest {
         return new ItemResource(net.minecraft.world.item.Items.GOLD_INGOT);
     }
 
-    private static void store(final GameTestHelper helper,
-                              final ItemStack grid,
-                              final ItemResource resource,
-                              final long amount) {
-        final long inserted = storage(helper, grid).insert(resource, amount, Action.EXECUTE, ACTOR);
-        if (inserted != amount) {
-            throw new GameTestAssertionFailure(
-                "could not seed the disk: inserted " + inserted + " of " + amount);
-        }
-    }
-
     private static long countCarried(final Player player, final ItemResource resource) {
         long total = 0L;
         for (int slot = 0; slot < player.getInventory().items.size(); ++slot) {
@@ -304,33 +254,6 @@ public final class InventoryInterfaceGameTest {
             }
         }
         return total;
-    }
-
-    private static long countStored(final GameTestHelper helper,
-                                    final ItemStack grid,
-                                    final ItemResource resource) {
-        long total = 0L;
-        for (final ResourceAmount stored : storage(helper, grid).getAll()) {
-            if (resource.equals(stored.resource())) {
-                total += stored.amount();
-            }
-        }
-        return total;
-    }
-
-    /** Reads the grid's disk the same way the feature does, so the test can see what it did. */
-    private static Storage storage(final GameTestHelper helper, final ItemStack grid) {
-        final ServerLevel level = helper.getLevel();
-        final CustomData blockEntityData = grid.get(DataComponents.BLOCK_ENTITY_DATA);
-        if (blockEntityData == null) {
-            throw new GameTestAssertionFailure("the Portable Grid lost its block entity data");
-        }
-        final DiskInventory diskInventory = new DiskInventory((inventory, slot) -> {
-        }, 1);
-        ContainerUtil.read(blockEntityData.copyTag().getCompound("inv"), diskInventory, level.registryAccess());
-        diskInventory.setStorageRepository(RefinedStorageApi.INSTANCE.getStorageRepository(level));
-        return diskInventory.resolve(0).orElseThrow(() -> new GameTestAssertionFailure(
-            "the Portable Grid's disk resolved to no storage; Refined Storage never assigned it one"));
     }
 
     private static void expect(final String what, final long actual, final long expected) {

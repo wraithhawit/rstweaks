@@ -388,6 +388,7 @@ public final class Config {
         inventoryInterface = INVENTORY_INTERFACE.get();
         inventoryInterfaceIntervalTicks = INVENTORY_INTERFACE_INTERVAL_TICKS.getAsInt();
         inventoryInterfaceInsertFromHotbar = INVENTORY_INTERFACE_INSERT_FROM_HOTBAR.get();
+        blockPick = BLOCK_PICK.get();
         // The item list is resolved against the item registry and cached, so a reload has to be
         // told to look again. Not resolved here: a config reload can arrive before the registries
         // are frozen, and an id looked up too early resolves to nothing and stays that way.
@@ -932,6 +933,28 @@ public final class Config {
 
     /** Read once per inventory slot per pass. */
     public static volatile boolean inventoryInterfaceInsertFromHotbar = false;
+
+    public static final ModConfigSpec.BooleanValue BLOCK_PICK = BUILDER
+        .comment(
+            "Pick block reaches the network when your own inventory cannot answer it.",
+            "",
+            "In survival, vanilla's pick-block key can only find a block you are already",
+            "carrying; aim at one you are not and nothing happens. With a Wireless or Portable",
+            "Grid on you, that case now takes a stack out of the network instead.",
+            "",
+            "Uses whichever carried grid resolves first. It does NOT read the Inventory",
+            "Interface filter -- that filter is a standing instruction about what to do while",
+            "nobody is looking, and this is a key you pressed about the block in front of you.",
+            "The extraction is charged for and checked against network permissions exactly as",
+            "taking the same stack out of an open grid would be.",
+            "",
+            "Nothing is overwritten: if the hotbar is full and there is nowhere to move the",
+            "held stack to, the pick does not happen."
+        )
+        .define("blockPick", true);
+
+    /** Read on every pick-block press, on both sides. */
+    public static volatile boolean blockPick = true;
 
     public static final ModConfigSpec.ConfigValue<java.util.List<? extends String>> INVENTORY_INTERFACE_ITEMS =
         BUILDER

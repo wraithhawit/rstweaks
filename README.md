@@ -327,6 +327,31 @@ addon becomes a dependency and an id from a mod you do not have matches nothing 
 also why an addon grid nobody here has heard of is a line in a config file rather than a
 build.
 
+### Block pick
+
+[quartz-arsenal#4](https://github.com/refinedmods/refinedstorage-quartz-arsenal/issues/4).
+In survival, vanilla's pick-block key can only reach into your own inventory: aim at a
+block you are not carrying and nothing happens. With a Wireless or Portable Grid on you,
+that case takes a stack out of the network instead — which is what RS1 asked for, in the
+words of somebody tired of opening a grid every thirty seconds while building.
+
+It does **not** read the Inventory Interface filter. That filter is a standing instruction
+about what to do while nobody is looking; this is a key you pressed about the block in
+front of you. The extraction is charged for and checked against network permissions
+exactly as taking the same stack out of an open grid would be.
+
+Nothing is overwritten: vanilla's creative equivalent writes over the selected hotbar slot
+when it has nowhere to move its contents, which costs nothing in creative and would
+destroy something you mined here. The destination is chosen before anything is extracted,
+and a full inventory refuses the pick.
+
+The packet carries **where you were looking**, not what you want — the server derives the
+item from its own copy of the block, checks the chunk is loaded and that you could reach
+it (`canInteractWithBlock`, the same question that decides whether you could break it).
+Config: `blockPick`.
+
+### Under the screen
+
 Everything under the screen is Refined Storage's: the filter slots and their packets, the
 filter-mode and fuzzy-mode buttons, the `generic_filter.png` background, and both storage
 paths (`NetworkItemHelper.createContext` for the wireless grids, `DiskInventory.resolve`

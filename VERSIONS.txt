@@ -10,6 +10,29 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.5.0
+-----
+  Block pick, out of the network. refinedmods/refinedstorage-quartz-arsenal#4, the other half of
+  the pair 0.4.0 came from. In survival, vanilla's pick-block key can only reach into your own
+  inventory -- Minecraft.pickBlock calls findSlotMatchingItem, gets -1, and does nothing. That -1
+  is the whole feature: with a Wireless or Portable Grid on you, that case now takes a stack out
+  of the network. Deliberately NOT tied to the Inventory Interface filter, because that filter is
+  a standing instruction about what to do while nobody is looking and this is a key you pressed
+  about the block in front of you. A CLIENT MIXIN because NeoForge 21.1 fires no event around
+  pickBlock, and it deliberately DOES NOT CANCEL -- the case it acts on is the one where vanilla
+  does nothing anyway, so the original still runs and this injection cannot be why pick block
+  stops working. The packet carries WHERE the player was looking, not what they want: the server
+  derives the item from its own copy of the block, checks the chunk is loaded and that the player
+  can reach it with Minecraft's own canInteractWithBlock, then applies the ordinary rules
+  (resolvable grid, EXTRACT permission, energy charged at RS's rate). A client that sent an item
+  stack could have asked for anything with any components on it. Nothing is overwritten: vanilla's
+  creative setPickedItem writes over the selected hotbar slot when it cannot move its contents,
+  which costs nothing in creative and would destroy something you mined here, so the destination
+  is chosen BEFORE anything is extracted and a full inventory refuses the pick. Four gametests,
+  three of them about refusing; the full-inventory one was confirmed to fail with vanilla's
+  overwrite put back. 22 pass. The client mixin cannot be gametested -- it needs a client launch.
+
+
 0.4.1
 -----
   The Inventory Interface's keep budget now counts the slots auto-insert refuses to take from.

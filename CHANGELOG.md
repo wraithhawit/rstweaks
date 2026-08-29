@@ -8,6 +8,67 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.5.0
+
+**Block pick, out of the network.**
+[refinedmods/refinedstorage-quartz-arsenal#4](https://github.com/refinedmods/refinedstorage-quartz-arsenal/issues/4)
+— the other half of the pair 0.4.0 came from. Upstream files it separately because it is a
+different interaction with a different failure mode, which is still true; it is also three lines of
+setup once the grid resolution from 0.4.0 exists.
+
+In survival, vanilla's pick-block key can only reach into your own inventory. `Minecraft.pickBlock`
+calls `findSlotMatchingItem`, gets `-1`, and does nothing. **That `-1` is the whole feature.** With
+a Wireless or Portable Grid on you, that case now takes a stack out of the network instead — which
+is what [refinedstorage#1381](https://github.com/refinedmods/refinedstorage/issues/1381) asked for,
+in the words of somebody tired of opening a grid every thirty seconds while building.
+
+Deliberately **not** tied to the Inventory Interface filter. That filter is a standing instruction
+about what to do while nobody is looking; this is a key you pressed about the block in front of
+you, and making it obey a filter would mean the answer to "why did that not work" is a screen you
+have to go and read. RS1 also asked for a mode that *maintains* a stack of the picked block — that
+already exists, as 0.4.0's auto-export with an amount, so it is not duplicated here.
+
+**Why a mixin, and why it does not cancel.** NeoForge 21.1 fires no event around `pickBlock`: the
+client event package has `InputEvent.Key`, `InputEvent.MouseButton` and
+`InputEvent.InteractionKeyMappingTriggered`, and none of them is this. Watching the key ourselves
+in a client tick would race vanilla for the same press and get the modifier and screen-open rules
+wrong on the way. So: a `@Inject` at `HEAD` of `Minecraft.pickBlock` that **does not cancel**. The
+case it acts on is the one where vanilla does nothing at all, so letting the original run to its
+own no-op costs a few comparisons and means this injection cannot be the reason pick block stops
+working — including for whatever else is patched into it.
+
+The conditions are re-derived in the injection rather than captured out of vanilla's locals. That
+is the trade: a local capture is pinned to where vanilla happens to put its branches, and the whole
+method is nine lines of getters a `HEAD` injection can read for itself. Nothing is written and
+nothing is decided there — the derivation only settles whether a packet is worth sending.
+
+**What the server does not take on trust.** The packet carries *where the player was looking*, not
+what they want, and the server derives the item from its own copy of the block. A client that sent
+an item stack could ask for a stack of anything, with any components on it, and the only thing
+between that and the network would be whether the network happened to contain it. On top of that:
+the chunk must be loaded, the block must still be there, and the player must be able to reach it —
+`canInteractWithBlock`, the same question that decides whether the block could be broken, with a
+one-block allowance because the client decided what it was looking at several frames ago. Then the
+ordinary rules: the grid must resolve, the player must hold `EXTRACT`, and the extraction is
+charged at Refined Storage's own rate.
+
+**The one thing worth getting right.** Vanilla's creative equivalent, `Inventory.setPickedItem`,
+overwrites the selected hotbar slot when it cannot find anywhere to move its contents. In creative
+that costs nothing; here it would destroy something you mined. So the destination is chosen
+**before** anything is extracted, and a full inventory refuses the pick rather than performing it.
+No stack leaves the disk that has nowhere to land.
+
+**Testing.** `BlockPickGameTest`, four tests, three of them about refusing: no stock, out of reach,
+and a full inventory. The full-inventory one was confirmed to fail with vanilla's overwrite put
+back. The portable-grid fixture the 0.4.0 tests built is now shared as `PortableGridFixture`. 22
+gametests pass.
+
+**Not covered by any of them:** the client mixin, which a dedicated server never loads. Its target
+and all three of its shadowed fields were checked against the remapped runtime class
+(`private void pickBlock()`, `hitResult`, `player`, `level` — all present with matching types), and
+mixin application failure is loud here because every config is `required` with `defaultRequire 1`.
+But applying is not running. This one needs a client launch to be believed.
+
 ## 0.4.1
 
 **The keep budget now counts the slots auto-insert refuses to take from.**

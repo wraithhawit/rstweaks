@@ -16,8 +16,11 @@ import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 
 import com.wraithhawit.rstweaks.gate.UpstreamGate;
+import com.wraithhawit.rstweaks.iface.BlockPick;
+import com.wraithhawit.rstweaks.iface.BlockPickPacket;
 import com.wraithhawit.rstweaks.iface.InventoryInterfaceContent;
 import com.wraithhawit.rstweaks.iface.InventoryInterfaceOpener;
 import com.wraithhawit.rstweaks.iface.InventoryInterfaceTicker;
@@ -25,6 +28,7 @@ import com.wraithhawit.rstweaks.mekanism.MekanismQio;
 import com.wraithhawit.rstweaks.planner.Durability;
 import com.wraithhawit.rstweaks.storage.DrawerDenylist;
 import com.wraithhawit.rstweaks.storage.ItemDurability;
+import com.wraithhawit.rstweaks.test.BlockPickGameTest;
 import com.wraithhawit.rstweaks.test.CraftingGridRefillGameTest;
 import com.wraithhawit.rstweaks.test.InventoryInterfaceGameTest;
 import com.wraithhawit.rstweaks.test.RSTweaksGameTests;
@@ -89,6 +93,13 @@ public class RSTweaks {
         InventoryInterfaceContent.register(modEventBus);
         NeoForge.EVENT_BUS.register(InventoryInterfaceOpener.class);
         NeoForge.EVENT_BUS.register(InventoryInterfaceTicker.class);
+        // Block pick's one packet. Optional so that a client without this mod is not refused the
+        // connection over a channel it would never use — the mixin that sends it is not there
+        // either, so the channel simply stays quiet.
+        modEventBus.addListener(RegisterPayloadHandlersEvent.class, event -> event
+            .registrar("1")
+            .optional()
+            .playToServer(BlockPickPacket.TYPE, BlockPickPacket.STREAM_CODEC, BlockPick::handle));
         // Only fires when -Dneoforge.enabledGameTestNamespaces includes this mod;
         // the command above is the version that works without a launch flag.
         // Common setup rather than here: Refined Storage installs its API delegate and registers
@@ -106,6 +117,7 @@ public class RSTweaks {
             event.register(RSTweaksGameTests.class);
             event.register(CraftingGridRefillGameTest.class);
             event.register(InventoryInterfaceGameTest.class);
+            event.register(BlockPickGameTest.class);
         });
         LOGGER.info("[rstweaks] v{} loaded", version);
     }
@@ -159,6 +171,9 @@ public class RSTweaks {
             }
             if (Config.inventoryInterface) {
                 features.add("inventory interface");
+            }
+            if (Config.blockPick) {
+                features.add("block pick");
             }
             activeFeatures = String.join(", ", features);
         }

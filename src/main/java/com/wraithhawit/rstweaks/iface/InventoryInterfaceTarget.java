@@ -1,6 +1,7 @@
 package com.wraithhawit.rstweaks.iface;
 
 import java.util.Optional;
+import java.util.Set;
 
 import com.refinedmods.refinedstorage.api.core.Action;
 import com.refinedmods.refinedstorage.api.network.Network;
@@ -19,6 +20,7 @@ import com.refinedmods.refinedstorage.common.security.BuiltinPermission;
 import com.refinedmods.refinedstorage.common.storage.DiskInventory;
 import com.refinedmods.refinedstorage.common.storage.portablegrid.PortableGridBlockItem;
 import com.refinedmods.refinedstorage.common.storage.portablegrid.PortableGridType;
+import com.refinedmods.refinedstorage.common.support.slotreference.InventorySlotReferenceProvider;
 import com.refinedmods.refinedstorage.common.support.energy.CreativeEnergyStorage;
 import com.refinedmods.refinedstorage.common.util.ContainerUtil;
 
@@ -27,8 +29,12 @@ import com.wraithhawit.rstweaks.mixin.PortableGridBlockItemAccessor;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
+
+import org.jetbrains.annotations.Nullable;
 
 /**
  * What an Inventory Interface actually moves items into and out of, and what that costs.
@@ -62,6 +68,15 @@ import net.minecraft.world.item.component.CustomData;
  */
 abstract class InventoryInterfaceTarget {
     /**
+     * Refined Storage's own inventory scanner. It returns a real {@code InventorySlotReference} per
+     * matching slot — the type Refined Storage's network-item machinery expects and the only one
+     * whose factory is in its registry, which matters because the same reference is handed to a
+     * menu and has to survive being written to the client. Constructing one directly is not
+     * possible from here: the class is public but its constructor is not.
+     */
+    private static final InventorySlotReferenceProvider SLOT_REFERENCES = new InventorySlotReferenceProvider();
+
+    /**
      * Resolves the storage behind a grid stack, or empty when it cannot serve right now — no
      * network in range, no disk, no energy. Absent is the ordinary case rather than an error: a
      * wireless grid spends most of its life out of range of its transmitter.
@@ -73,6 +88,54 @@ abstract class InventoryInterfaceTarget {
             return portable(player, stack);
         }
         return wireless(player, stack, slotReference);
+    }
+
+    /**
+     * The first grid the player is carrying that can actually serve, in inventory order.
+     *
+     * <p>For block pick, which — unlike the ticker — is not asking a particular configured grid to
+     * do something, but asking whether the player has <em>any</em> way to reach a network at all.
+     * First-that-resolves rather than a preference order: a player carrying two grids has them
+     * bound to networks that both work or one that does not, and picking between two working ones
+     * is a distinction without a difference.
+     */
+    static Optional<InventoryInterfaceTarget> firstCarried(final ServerPlayer player) {
+        final Inventory inventory = player.getInventory();
+        for (int slot = 0; slot < inventory.getContainerSize(); ++slot) {
+            final ItemStack stack = inventory.getItem(slot);
+            if (!SupportedGrids.isSupported(stack)) {
+                continue;
+            }
+            final SlotReference slotReference = referenceFor(player, slot);
+            if (slotReference == null) {
+                continue;
+            }
+            final Optional<InventoryInterfaceTarget> target = of(player, stack, slotReference);
+            if (target.isPresent()) {
+                return target;
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The {@code SlotReference} for one inventory slot.
+     *
+     * <p>Refined Storage's provider answers "which slots hold one of these items", not "what is the
+     * reference for slot n", and the index it captured is private. {@code isDisabledSlot} is the
+     * public question that means "are you the reference for this slot" — it exists so a menu can
+     * grey out the slot its own item came from, which is exactly the identity being asked about
+     * here.
+     */
+    @Nullable
+    static SlotReference referenceFor(final ServerPlayer player, final int slot) {
+        final Set<Item> item = Set.of(player.getInventory().getItem(slot).getItem());
+        for (final SlotReference candidate : SLOT_REFERENCES.find(player, item)) {
+            if (candidate.isDisabledSlot(slot)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     abstract boolean mayInsert(ServerPlayer player);
