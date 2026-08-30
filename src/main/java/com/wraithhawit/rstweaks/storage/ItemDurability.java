@@ -123,8 +123,22 @@ public final class ItemDurability implements Durability {
         if (!(a instanceof ItemResource left) || !(b instanceof ItemResource right)) {
             return false;
         }
-        // Same item and both damageable is not enough: two differently enchanted tools are not
-        // interchangeable. That distinction is baked into the family, so this stays an int
+        // Reject on the item first, and it is nearly always a rejection: findWornTool asks this
+        // once per resource in the task's whole internal storage, and almost none of them are the
+        // tool it is looking for. Item is a registry singleton, so this is a reference comparison,
+        // where each family lookup hashes and equality-compares a DataComponentPatch.
+        //
+        // Sound because a family is derived from the resource with its damage removed, so two
+        // resources in one family necessarily share an item. Skipping on a different item can
+        // never skip a real match.
+        //
+        // Profile r3z1C0CsZx put findWornTool at 25.85% of the server thread once the cheaper
+        // costs around it were gone, and this is what that 25.85% is made of.
+        if (left.item() != right.item()) {
+            return false;
+        }
+        // Same item and both damageable is still not enough: two differently enchanted tools are
+        // not interchangeable. That distinction is baked into the family, so this stays an int
         // comparison rather than becoming a component-map equality on the hot path.
         final int family = family(left);
         return family != NOT_A_TOOL && family == family(right);
