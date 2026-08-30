@@ -8,6 +8,58 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.13.2
+
+**The reuse is perfect. The ceiling was the ratio, and I misread it.**
+
+0.13.1's counters, from a real insanium craft:
+
+```
+worn-tool reuse: 33,271,287 scans avoided of 33,271,287 eligible (100.0%);
+                 missed 0 nothing-remembered, 0 revalidation-failed;
+                 125,013,928 not eligible
+```
+
+**A 100% hit rate, zero misses of either kind.** My 0.13.0 conclusion — "the reuse fires about 1% of
+the time" — was wrong, and it was wrong because I inferred a hit rate from a profile instead of
+counting it. The fast path was working the whole time.
+
+### What is actually small
+
+"Not eligible" can only be the SIMULATE pass, since both flags were on. So the real shape is
+**3.76 simulates per execute**: `InternalTaskPattern.step` returns `IDLE` when
+`extractAll(SIMULATE)` is false, so roughly **73% of iterations fail their simulate and never
+execute**.
+
+The execute-side cache could therefore only ever reach a fifth of the scans — and it collects all
+of that fifth. 0.13.0 moved 0.75 points because that is everything the idea had to give.
+
+### So the target moves to the other four fifths
+
+Refined Storage re-steps one pattern up to 175,552 times a tick, so a pattern that cannot proceed
+rescans the task's whole internal storage for an answer that has not changed since the last time it
+asked.
+
+`simulateRepeatProbe` (default **off**) counts whether consecutive failing simulates reach the same
+substitution, and the **longest failing streak** — the payoff figure, since a cache that saves one
+rescan is not worth writing and one that saves a thousand is. It does *not* disable the execute-side
+cache; the two are on different passes and do not interact.
+
+It needs no new state to detect a repeat: `rstweaks$simulatedSwaps` is nulled by every EXECUTE, so
+finding it still populated at the top of a SIMULATE means the previous simulate was never consumed
+by one — which is exactly a failing repeat.
+
+### Honest about coverage
+
+**The fixture produces zero repeats, measured.** Every task-engine scenario is built so its patterns
+*can* proceed, so no simulate fails and the probe never fires there. The gametest pins that repeats
+reconcile as agreed plus disagreed, and explicitly does not claim to prove the probe fires — that
+would be the exact trap `theSubstitutionProbeActuallyFires` exists to avoid. Only a real craft can
+prove this one.
+
+No behaviour change.
+
+
 ## 0.13.1
 
 **0.13.0 underdelivered, and I could not say why. That is the bug this fixes.**

@@ -344,12 +344,40 @@ public final class ChatReporter {
             .withStyle(hitRate >= 40.0 ? ChatFormatting.GREEN : ChatFormatting.YELLOW)));
     }
 
+    /**
+     * What the repeated-failing-simulate probe has seen, when it is switched on.
+     *
+     * <p>Zero repeats is reported explicitly rather than by silence, for the same reason the other
+     * two are: "on but never fired" and "off" must not look identical from the outside.
+     */
+    private static List<Component> simulateRepeatLines() {
+        if (!Config.simulateRepeatProbe) {
+            return List.of();
+        }
+        if (Stats.simulateRepeats == 0L) {
+            return List.of(Component.empty().append(PREFIX).append(Component.literal(
+                    "simulate-repeat probe on, no repeated failing simulate seen yet -- craft "
+                        + "something with a wearing tool in it.")
+                .withStyle(ChatFormatting.GRAY)));
+        }
+        final String verdict = Stats.simulateRepeatsDisagreed == 0
+            ? " -- caching a failing simulate looks safe"
+            : " -- DISAGREEMENTS: a failing simulate cannot be cached";
+        return List.of(Component.empty().append(PREFIX).append(Component.literal(String.format(
+                "simulate repeats: %,d, %,d agreed, %,d disagreed; longest failing streak %,d%s",
+                Stats.simulateRepeats, Stats.simulateRepeatsAgreed,
+                Stats.simulateRepeatsDisagreed, Stats.simulateStreakLongest, verdict))
+            .withStyle(Stats.simulateRepeatsDisagreed == 0
+                ? ChatFormatting.GREEN : ChatFormatting.RED)));
+    }
+
     /** Session totals on demand, for {@code /rstweaks stats}. */
     public static List<Component> sessionTotals() {
         final List<Component> lines = new java.util.ArrayList<>(report(Counts.now(),
             "session totals"));
         lines.addAll(substitutionReuseLines());
         lines.addAll(substitutionProbeLines());
+        lines.addAll(simulateRepeatLines());
         if (!lines.isEmpty()) {
             return lines;
         }

@@ -10,6 +10,30 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.13.2
+------
+  THE REUSE IS PERFECT; THE CEILING WAS THE RATIO. 0.13.1's counters, from a real insanium craft:
+  "33,271,287 scans avoided of 33,271,287 eligible (100.0%); missed 0 nothing-remembered,
+  0 revalidation-failed; 125,013,928 not eligible". The execute-side cache never misses.
+  MY 0.13.0 READING WAS WRONG. I inferred a ~1% hit rate from a profile instead of counting it. The
+  fast path was always working; what is small is the share of calls it can reach. "Not eligible" can
+  only be the SIMULATE pass, so the real ratio is 3.76 SIMULATES PER EXECUTE -- InternalTaskPattern
+  .step returns IDLE when extractAll(SIMULATE) is false, so ~73% of iterations fail their simulate
+  and never execute. The cache could only ever reach a fifth of the scans, and it collects all of it.
+  That is why 0.13.0 moved 0.75 points: it did everything available to it.
+  SO THE TARGET MOVES to the other four fifths. RS re-steps one pattern up to 175,552 times a tick,
+  so a pattern that cannot proceed rescans the task's whole internal storage for an answer that has
+  not changed. New simulateRepeatProbe (default OFF, does NOT disable the execute cache -- different
+  passes) counts whether consecutive failing simulates reach the same substitution, and the longest
+  failing streak, which is the payoff figure: a cache saving one rescan is not worth writing.
+  Detected with no new state: rstweaks$simulatedSwaps is nulled by every EXECUTE, so finding it
+  still populated at the top of a SIMULATE means the previous simulate was never consumed.
+  HONEST ABOUT COVERAGE: the fixture produces ZERO repeats, measured -- every task-engine scenario
+  is built so its patterns can proceed. The gametest pins that repeats reconcile as agreed plus
+  disagreed and explicitly does not claim to prove the probe fires. Only a real craft can.
+  No behaviour change.
+
+
 0.13.1
 ------
   0.13.0 UNDERDELIVERED AND I COULD NOT SAY WHY. Profile 2Dwcfddcxn (0.13.0, 1M insanium): the

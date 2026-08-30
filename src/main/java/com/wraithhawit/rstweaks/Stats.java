@@ -292,6 +292,31 @@ public final class Stats {
     /** EXECUTE passes where the remembered substitute was no longer in storage in the amount needed. */
     public static long substitutionRevalidationFailed;
 
+    /**
+     * SIMULATE passes that followed another SIMULATE with no EXECUTE between them.
+     *
+     * <p>Which is to say: a simulate that failed, on a pattern Refined Storage immediately tried
+     * again. The 0.13.1 counters put these at 3.76 per execute — roughly 73% of iterations fail
+     * their simulate and never execute, so this is four fifths of all the worn-tool scanning.
+     */
+    public static long simulateRepeats;
+
+    /** Repeats that reached exactly the same substitution as the simulate before them. */
+    public static long simulateRepeatsAgreed;
+
+    /**
+     * Repeats that did not. <b>This decides whether a failing simulate can be cached at all.</b>
+     */
+    public static long simulateRepeatsDisagreed;
+
+    /**
+     * The longest unbroken run of failing simulates on one pattern.
+     *
+     * <p>The payoff figure. A cache that saves one rescan is not worth writing; one that saves a
+     * thousand is, and the average alone would hide the difference.
+     */
+    public static int simulateStreakLongest;
+
     private Stats() {
     }
 }

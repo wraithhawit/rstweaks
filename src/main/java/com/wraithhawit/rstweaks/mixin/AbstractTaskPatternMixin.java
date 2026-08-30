@@ -351,19 +351,87 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
      */
     @Unique
     private void rstweaks$rememberDecision(final Action action, final List<ResourceKey[]> swaps) {
-        if (!Config.reuseSimulatedSubstitution || Config.substitutionProbe) {
+        if (Config.substitutionProbe
+            || (!Config.reuseSimulatedSubstitution && !Config.simulateRepeatProbe)) {
             return;
         }
         if (action != Action.SIMULATE) {
             this.rstweaks$simulatedSwaps = null;
+            this.rstweaks$simulateStreak = 0;
             return;
         }
+        rstweaks$probeRepeatedSimulate(swaps);
         final List<ResourceKey> flat = new ArrayList<>(swaps.size() * 2);
         for (final ResourceKey[] swap : swaps) {
             flat.add(swap[0]);
             flat.add(swap[1]);
         }
         this.rstweaks$simulatedSwaps = flat;
+    }
+
+    /**
+     * Measures whether a <em>failing</em> SIMULATE pass repeats itself unchanged.
+     *
+     * <p><b>Why this is the target now.</b> The 0.13.1 counters came back
+     * {@code 33,271,287 scans avoided of 33,271,287 eligible (100.0%)} with
+     * {@code 125,013,928 not eligible} — the EXECUTE cache is perfect, and "not eligible" can only
+     * be the SIMULATE pass. That is <b>3.76 simulates per execute</b>: {@code InternalTaskPattern
+     * .step} returns IDLE when {@code extractAll(SIMULATE)} is false, so roughly 73% of iterations
+     * fail their simulate and never execute. The EXECUTE cache could therefore only ever reach a
+     * fifth of the scans, and it already reaches all of it.
+     *
+     * <p>The other four fifths are failing simulates — and Refined Storage re-steps the same pattern
+     * up to 175,552 times a tick, so a pattern that cannot proceed is rescanning the task's whole
+     * internal storage for an answer that has not changed.
+     *
+     * <p><b>This detects the repeat with no extra state.</b> {@link #rstweaks$simulatedSwaps} is
+     * nulled by every EXECUTE, so finding it still populated at the top of a SIMULATE means the
+     * previous simulate was never consumed by an execute — which is precisely a failing repeat.
+     *
+     * <p>Counts agreement rather than assuming it, and records the longest streak, because the
+     * streak length is the payoff: a cache that saves one rescan is not worth writing, and one that
+     * saves a thousand is.
+     */
+    @Unique
+    private void rstweaks$probeRepeatedSimulate(final List<ResourceKey[]> swaps) {
+        if (!Config.simulateRepeatProbe) {
+            return;
+        }
+        final List<ResourceKey> previous = this.rstweaks$simulatedSwaps;
+        if (previous == null) {
+            this.rstweaks$simulateStreak = 1;
+            return;
+        }
+        Stats.simulateRepeats++;
+        if (rstweaks$sameDecision(previous, swaps)) {
+            Stats.simulateRepeatsAgreed++;
+        } else {
+            Stats.simulateRepeatsDisagreed++;
+        }
+        this.rstweaks$simulateStreak++;
+        if (this.rstweaks$simulateStreak > Stats.simulateStreakLongest) {
+            Stats.simulateStreakLongest = this.rstweaks$simulateStreak;
+        }
+    }
+
+    /** Consecutive failing simulates on this pattern, for the streak-length figure. */
+    @Unique
+    private int rstweaks$simulateStreak;
+
+    /** Whether a remembered flat decision names exactly the same swaps, in the same order. */
+    @Unique
+    private static boolean rstweaks$sameDecision(final List<ResourceKey> remembered,
+                                                 final List<ResourceKey[]> swaps) {
+        if (remembered.size() != swaps.size() * 2) {
+            return false;
+        }
+        for (int i = 0; i < swaps.size(); i++) {
+            if (!remembered.get(i * 2).equals(swaps.get(i)[0])
+                || !remembered.get(i * 2 + 1).equals(swaps.get(i)[1])) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -411,18 +479,11 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
             return;
         }
         Stats.substitutionPairs++;
-        if (simulated.size() != swaps.size() * 2) {
+        if (rstweaks$sameDecision(simulated, swaps)) {
+            Stats.substitutionAgreed++;
+        } else {
             Stats.substitutionDisagreed++;
-            return;
         }
-        for (int i = 0; i < swaps.size(); i++) {
-            if (!simulated.get(i * 2).equals(swaps.get(i)[0])
-                || !simulated.get(i * 2 + 1).equals(swaps.get(i)[1])) {
-                Stats.substitutionDisagreed++;
-                return;
-            }
-        }
-        Stats.substitutionAgreed++;
     }
 
     /**

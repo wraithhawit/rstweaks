@@ -230,6 +230,47 @@ public final class RSTweaksGameTests {
     }
 
     /**
+     * The repeated-failing-simulate probe, against the real task engine.
+     *
+     * <p><b>The fixture produces zero repeats, measured.</b> A failing simulate needs a pattern that
+     * cannot proceed, and every task-engine scenario is built so that it can — so this test cannot
+     * prove the probe fires, and saying otherwise would be the exact trap
+     * {@link #theSubstitutionProbeActuallyFires} exists to avoid. Only a real craft can prove that.
+     *
+     * <p>What it does pin is that every repeat is classified as agreed or disagreed. A probe whose
+     * totals do not reconcile cannot support a decision, and this one exists to decide whether a
+     * cache is safe to write.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void theSimulateRepeatProbeCountsConsistently(final GameTestHelper helper) {
+        final boolean original = Config.simulateRepeatProbe;
+        final long beforeRepeats = Stats.simulateRepeats;
+        final long beforeAgreed = Stats.simulateRepeatsAgreed;
+        final long beforeDisagreed = Stats.simulateRepeatsDisagreed;
+        final CraftingPlanSelfTest.Result result;
+        try {
+            Config.simulateRepeatProbe = true;
+            result = TaskEngineSelfTest.run();
+        } finally {
+            Config.simulateRepeatProbe = original;
+        }
+        final long repeats = Stats.simulateRepeats - beforeRepeats;
+        final long classified = (Stats.simulateRepeatsAgreed - beforeAgreed)
+            + (Stats.simulateRepeatsDisagreed - beforeDisagreed);
+        if (classified != repeats) {
+            helper.fail("the simulate-repeat probe counted " + repeats + " repeats but classified "
+                + classified + "; the counters do not reconcile and neither would the verdict");
+            return;
+        }
+        RSTweaks.LOGGER.info("[rstweaks] gametest simulate-repeat probe saw {} repeats ({} agreed, "
+                + "{} disagreed, longest streak {}) across {} scenarios",
+            repeats, Stats.simulateRepeatsAgreed - beforeAgreed,
+            Stats.simulateRepeatsDisagreed - beforeDisagreed, Stats.simulateStreakLongest,
+            result.scenarios());
+        report(helper, "simulate repeat probe", result);
+    }
+
+    /**
      * The substitution probe, against the real task engine.
      *
      * <p>The probe only writes on the EXECUTE half of a pair, so "switched on but never reached"

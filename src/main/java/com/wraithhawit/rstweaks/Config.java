@@ -437,6 +437,31 @@ public final class Config {
     /** Cached: read once per durable ingredient per iteration, on the hottest path in the mod. */
     public static volatile boolean reuseSimulatedSubstitution = true;
 
+    public static final ModConfigSpec.BooleanValue SIMULATE_REPEAT_PROBE = BUILDER
+        .comment(
+            "DIAGNOSTIC. Measures whether a FAILING simulate pass repeats itself unchanged.",
+            "",
+            "0.13.1's counters came back '33,271,287 scans avoided of 33,271,287 eligible (100%)'",
+            "with '125,013,928 not eligible' -- the execute-side cache is perfect, and 'not",
+            "eligible' can only be the SIMULATE pass. That is 3.76 simulates per execute:",
+            "InternalTaskPattern.step returns IDLE when extractAll(SIMULATE) is false, so roughly",
+            "73% of iterations fail their simulate and never execute. The execute cache could only",
+            "ever reach a fifth of the scans, and it already reaches all of it.",
+            "",
+            "The other four fifths are failing simulates, and RS re-steps one pattern up to 175,552",
+            "times a tick -- so a pattern that cannot proceed rescans the task's whole internal",
+            "storage for an answer that has not changed.",
+            "",
+            "This counts whether those repeats agree, and how long a failing streak runs. It changes",
+            "NOTHING about what the mod does and it does NOT disable the execute-side cache -- the",
+            "two are on different passes. Read it with /rstweaks stats. Leave it off for normal",
+            "play; it costs a comparison per repeat on the hottest path in the mod."
+        )
+        .define("simulateRepeatProbe", false);
+
+    /** Cached: read once per iteration, on the hottest path in the mod. */
+    public static volatile boolean simulateRepeatProbe = false;
+
     public static final ModConfigSpec.IntValue MAX_BATCHED_ITERATIONS = BUILDER
         .comment(
             "The most iterations batchedExecution will run in one go.",
@@ -511,6 +536,7 @@ public final class Config {
         batchedExecution = BATCHED_EXECUTION.get();
         substitutionProbe = SUBSTITUTION_PROBE.get();
         reuseSimulatedSubstitution = REUSE_SIMULATED_SUBSTITUTION.get();
+        simulateRepeatProbe = SIMULATE_REPEAT_PROBE.get();
         maxBatchedIterations = MAX_BATCHED_ITERATIONS.get();
         maxBatchedIterationsPerTick = MAX_BATCHED_ITERATIONS_PER_TICK.get();
         quietTaskLogging = QUIET_TASK_LOGGING.get();
