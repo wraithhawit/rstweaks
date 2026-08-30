@@ -1,10 +1,15 @@
 package com.wraithhawit.rstweaks.mixin;
 
 import com.refinedmods.refinedstorage.api.autocrafting.task.TaskPlan;
+import com.refinedmods.refinedstorage.api.autocrafting.task.TaskState;
+import com.refinedmods.refinedstorage.api.resource.ResourceKey;
 import com.refinedmods.refinedstorage.api.storage.Actor;
+import com.wraithhawit.rstweaks.CraftTimings;
 import com.wraithhawit.rstweaks.storage.TaskConsumption;
 
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -50,5 +55,53 @@ public abstract class TaskImplMixin {
                                           final boolean notify,
                                           final CallbackInfo ci) {
         TaskConsumption.endBuilding();
+        this.rstweaks$startedNanos = System.nanoTime();
+    }
+
+    @Shadow
+    public abstract ResourceKey getResource();
+
+    @Shadow
+    public abstract long getAmount();
+
+    /**
+     * When this task was built, so its wall-clock duration can be reported when it finishes.
+     *
+     * <p>{@code TaskImpl} keeps a {@code startTime} of its own, but it is milliseconds from
+     * {@code System.currentTimeMillis()} and is used for the status display. {@code nanoTime} is the
+     * one to measure an elapsed interval with — it is monotonic, so a clock adjustment mid-craft
+     * cannot produce a negative duration.
+     *
+     * <p>Primitive with no initializer, deliberately: Mixin does not run field initialisers
+     * reliably, and a {@code long} defaults to zero without one.
+     */
+    @Unique
+    private long rstweaks$startedNanos;
+
+    /** So a task that reaches COMPLETED more than once is only timed the first time. */
+    @Unique
+    private boolean rstweaks$timed;
+
+    /**
+     * Times the craft, because a share of the server thread cannot.
+     *
+     * <p>Every performance figure this mod has produced is a percentage of {@code tickNode}, and the
+     * crafter has no time budget — it expands to fill the tick, so making a step cheaper raises the
+     * number of steps rather than lowering the share. Wall-clock time for a known craft is the one
+     * measurement that compares two builds without any of that.
+     *
+     * <p>Hooked on {@code updateState} rather than on a listener because every completion path in
+     * {@code TaskImpl} goes through it — including a cancelled task, which is why the log says
+     * "finished" rather than "crafted".
+     */
+    @Inject(method = "updateState", at = @At("HEAD"))
+    private void rstweaks$timeCraft(final TaskState state, final CallbackInfo ci) {
+        if (state != TaskState.COMPLETED || this.rstweaks$timed
+            || this.rstweaks$startedNanos == 0L) {
+            return;
+        }
+        this.rstweaks$timed = true;
+        CraftTimings.record(CraftTimings.shorten(String.valueOf(getResource())), getAmount(),
+            (System.nanoTime() - this.rstweaks$startedNanos) / 1_000_000L);
     }
 }

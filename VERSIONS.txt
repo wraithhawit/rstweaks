@@ -10,6 +10,29 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.19.0
+------
+  CRAFTS ARE TIMED NOW, because a share of the server thread cannot measure any of this. Every
+  performance figure in this file is a percentage of tickNode, and the multiblock crafter has NO
+  TIME BUDGET -- it expands to fill the tick, so making a step cheaper raises the number of steps
+  rather than lowering the share. "The durability path went 40.15% to 26.87%" describes a
+  redistribution, not a saving, and three of my predictions this session were wrong for exactly
+  that reason.
+  Wall-clock time for a known craft has none of that problem. Ask for a million insanium on two
+  builds and the difference is the answer: no profile, no denominators, no interpretation.
+    [rstweaks] craft finished: 1,000,000 x mysticalagriculture:insanium_essence in 4m 12s (3,968/s)
+  Logged on completion and kept as the last 8 in /rstweaks stats. A short history rather than a
+  running mean, because craft durations vary by orders of magnitude with what is being made and an
+  average across different recipes means nothing -- the comparison that works is the same craft
+  against itself.
+  Hooked on TaskImpl.updateState, since every completion path goes through it. nanoTime rather than
+  RS's own startTime: monotonic, so a clock adjustment mid-craft cannot produce a negative duration.
+  Says "finished" rather than "crafted" because a cancelled task completes too.
+  CONFIRMED FIRING in the gametests -- "craft finished: 64 x slimeball in 1ms (64,000/s)" -- which
+  is the check this project keeps needing, having shipped four things whose presence was
+  indistinguishable from their absence.
+
+
 0.18.0
 ------
   /rstweaks selftest crafting -- EVERY CRAFTING SUITE, THEN EVERY OPTIMIZATION OFF AGAINST ON.

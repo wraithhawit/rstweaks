@@ -8,6 +8,48 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.19.0
+
+**Crafts are timed now, because a share of the server thread cannot measure any of this.**
+
+Every performance figure in this changelog is a percentage of `tickNode`, and the multiblock crafter
+has **no time budget** — it expands to fill the tick. Make a step cheaper and Refined Storage runs
+more steps; the share stays put. *"The durability path went 40.15% to 26.87%"* describes a
+redistribution, not a saving, and three of my predictions this session were wrong for exactly that
+reason.
+
+Wall-clock time for a known craft has none of that problem. Ask for a million insanium on two
+builds, and the difference is the answer — no profile, no denominators, no interpretation:
+
+```
+[rstweaks] craft finished: 1,000,000 x mysticalagriculture:insanium_essence in 4m 12s (3,968/s)
+```
+
+Logged on completion, and the last 8 shown by `/rstweaks stats`.
+
+**A short history rather than a running mean.** Craft durations vary by orders of magnitude with what
+is being made, so an average across different recipes is a number with no meaning. The comparison
+that works is the same craft against itself.
+
+### Details worth knowing
+
+- Hooked on `TaskImpl.updateState`, because every completion path in `TaskImpl` goes through it.
+- `nanoTime`, not RS's own `startTime` — monotonic, so a clock adjustment mid-craft cannot produce a
+  negative duration.
+- It says **"finished"**, not "crafted": a cancelled task completes too.
+
+### Confirmed firing
+
+```
+craft finished: 4 x chest in 2ms (2,000/s)
+craft finished: 64 x slimeball in 1ms (64,000/s)
+```
+
+From the gametest fixture's own scenarios. This project has now shipped four things whose presence
+was indistinguishable from their absence, so a new counter does not get to be trusted until
+something has watched it move.
+
+
 ## 0.18.0
 
 **`/rstweaks selftest crafting` — every crafting suite, then every optimization off against on.**

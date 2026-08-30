@@ -401,6 +401,30 @@ public final class ChatReporter {
                 ? ChatFormatting.GREEN : ChatFormatting.RED)));
     }
 
+    /**
+     * How long recent crafts actually took.
+     *
+     * <p>The only figure here that measures these optimizations rather than describing them. Every
+     * percentage in the profile is a share of a server thread the crafter is allowed to fill
+     * completely, so a share stays flat while throughput doubles. Wall-clock time for the same craft
+     * on two builds does not have that problem.
+     */
+    private static List<Component> craftTimingLines() {
+        final List<CraftTimings.Finished> recent = CraftTimings.recent();
+        if (recent.isEmpty()) {
+            return List.of();
+        }
+        final List<Component> lines = new ArrayList<>();
+        lines.add(Component.empty().append(PREFIX).append(Component.literal(
+                "recent crafts (newest first):").withStyle(ChatFormatting.GRAY)));
+        recent.forEach(finished -> lines.add(Component.literal(
+                String.format("  %,d x %s in %s  (%,.0f/s)", finished.amount(),
+                    finished.resource(), CraftTimings.describe(finished.millis()),
+                    finished.perSecond()))
+            .withStyle(ChatFormatting.AQUA)));
+        return lines;
+    }
+
     /** Session totals on demand, for {@code /rstweaks stats}. */
     public static List<Component> sessionTotals() {
         final List<Component> lines = new java.util.ArrayList<>(report(Counts.now(),
@@ -408,6 +432,7 @@ public final class ChatReporter {
         lines.addAll(substitutionReuseLines());
         lines.addAll(substitutionProbeLines());
         lines.addAll(simulateRepeatLines());
+        lines.addAll(craftTimingLines());
         if (!lines.isEmpty()) {
             return lines;
         }
