@@ -251,7 +251,14 @@ public final class RSTweaksGameTests {
      */
     @GameTest(template = "empty", timeoutTicks = 1200)
     public static void craftingIsStableWithEveryOptimizationToggled(final GameTestHelper helper) {
-        report(helper, "crafting stability", CraftingStabilitySelfTest.run());
+        // The whole catalogue, exactly as bare /rstweaks selftest runs it -- so a category added to
+        // SelfTests is covered here the moment it is registered, rather than whenever somebody
+        // remembers to add it in two places.
+        final SelfTests.Report result = SelfTests.runAll();
+        RSTweaks.LOGGER.info("[rstweaks] gametest full self-test: {} checks {}",
+            result.scenarios(), result.perCategory());
+        report(helper, "full self-test",
+            new CraftingPlanSelfTest.Result(result.scenarios(), result.failures()));
     }
 
     /**

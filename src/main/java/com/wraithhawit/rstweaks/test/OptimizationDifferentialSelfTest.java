@@ -40,39 +40,19 @@ import java.util.function.Consumer;
  * flags, and those remain the stronger evidence. This is the fast sanity check, not a replacement
  * for them.
  */
-public final class CraftingStabilitySelfTest {
+public final class OptimizationDifferentialSelfTest {
     private static final List<String> FAILURES = new ArrayList<>();
     private static int checks;
 
-    private CraftingStabilitySelfTest() {
+    private OptimizationDifferentialSelfTest() {
     }
 
     public static CraftingPlanSelfTest.Result run() {
         FAILURES.clear();
         checks = 0;
 
-        // The planner: does it produce a plan, and one that can actually be executed.
-        include("crafting plan", CraftingPlanSelfTest.run());
-        include("planner executability", PlannerExecutabilitySelfTest.run());
-        include("max craftable", MaxCraftableSelfTest.run());
-        include("ledger parity", LedgerParitySelfTest.run());
-        include("pattern order", PatternOrderSelfTest.run());
-
-        // The executor: real tasks through the real engine, audited for items created or destroyed.
-        include("task engine", TaskEngineSelfTest.run());
-        include("remainders", RemainderSelfTest.run());
-        include("autocrafting requests", AutocraftingRequestSelfTest.run());
-        include("resource list overflow", ResourceListOverflowSelfTest.run());
-
-        // Durability against the real item registry rather than the fake, because the substitution
-        // is the feature most of the recent work touched.
-        include("durability", DurabilitySelfTest.run());
-
-        final ExtractionSelfTest.Result extraction = ExtractionSelfTest.run();
-        include("external extraction",
-            new CraftingPlanSelfTest.Result(extraction.scenarios(), extraction.failures()));
-
-        // Then every optimization, off against on.
+        // Only the differentials. The suites they wrap are categories of their own now, so running
+        // them here as well would double-count every scenario in a full run.
         differential("durabilityAwarePlanning",
             () -> Config.durabilityAwarePlanning, on -> Config.durabilityAwarePlanning = on, null);
         differential("reuseSimulatedSubstitution",
@@ -142,11 +122,6 @@ public final class CraftingStabilitySelfTest {
         return result.failures().isEmpty()
             ? result.scenarios() + " scenarios"
             : String.join(" | ", result.failures());
-    }
-
-    private static void include(final String what, final CraftingPlanSelfTest.Result result) {
-        checks += result.scenarios();
-        result.failures().forEach(failure -> FAILURES.add(what + ": " + failure));
     }
 
     private static void expect(final String what, final boolean ok) {

@@ -1,12 +1,11 @@
 package com.wraithhawit.rstweaks.test;
 
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.wraithhawit.rstweaks.ChatReporter;
 import com.wraithhawit.rstweaks.Stats;
 import com.wraithhawit.rstweaks.RSTweaks;
 
-import java.util.ArrayList;
-import java.util.List;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
@@ -17,7 +16,8 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
 /**
- * {@code /rstweaks selftest} — runs {@link CraftingPlanSelfTest} and reports in chat.
+  * {@code /rstweaks selftest} — runs every self-test and reports in chat; a name after it narrows
+ * the run to one category or group. See {@link SelfTests} for the catalogue.
  *
  * <p>This exists alongside the gametest because gametests only register when
  * {@code neoforge.enabledGameTestNamespaces} includes this mod, which is not set on
@@ -26,6 +26,36 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
  */
 public final class SelfTestCommand {
     private SelfTestCommand() {
+    }
+
+    /**
+     * Prints a report and returns the command result.
+     *
+     * <p>Every failure is printed, never a summary of them: this is the output somebody acts on,
+     * and a truncated list of what is wrong with autocrafting is worse than none. The per-category
+     * breakdown goes out on a pass as well, because "392 checks" says nothing about whether the
+     * category you cared about actually ran.
+     */
+    private static int report(final CommandSourceStack source, final String what,
+                              final SelfTests.Report result) {
+        if (result.passed()) {
+            source.sendSuccess(() -> Component.literal("[rstweaks] " + what + " PASSED - "
+                + result.scenarios() + " checks").withStyle(ChatFormatting.GREEN), false);
+            result.perCategory().forEach((category, count) -> source.sendSuccess(
+                () -> Component.literal("  " + category + ": " + count)
+                    .withStyle(ChatFormatting.DARK_GRAY), false));
+            RSTweaks.LOGGER.info("[rstweaks] {} passed ({} checks) {}", what, result.scenarios(),
+                result.perCategory());
+            return result.scenarios();
+        }
+        source.sendFailure(Component.literal("[rstweaks] " + what + " FAILED - "
+            + result.failures().size() + " of " + result.scenarios() + " checks")
+            .withStyle(ChatFormatting.RED));
+        for (final String failure : result.failures()) {
+            source.sendFailure(Component.literal("  " + failure).withStyle(ChatFormatting.RED));
+            RSTweaks.LOGGER.error("[rstweaks] {} failure: {}", what, failure);
+        }
+        return 0;
     }
 
     @SubscribeEvent
@@ -58,78 +88,39 @@ public final class SelfTestCommand {
                 }
                 return 1;
             }))
-            // Everything crafting-related in one place, including each optimization run off
-            // against on. Separate from the plain selftest because this is the one to reach for
-            // before trusting a build with real items in it, and because it is slower: it runs the
-            // task engine six times over.
+            // Bare selftest runs EVERYTHING. A name after it narrows to one category or group --
+            // /rstweaks selftest crafting -- for when you already know which half of the mod you
+            // are suspicious of and would rather not wait for the rest.
+            //
+            // The categories are disjoint, so a full run never executes the same scenario twice and
+            // the total is a real total. See SelfTests for the catalogue.
             .then(Commands.literal("selftest")
-                .then(Commands.literal("crafting").executes(context -> {
+                .then(Commands.argument("category", StringArgumentType.word())
+                    .suggests((context, builder) -> {
+                        SelfTests.names().forEach(builder::suggest);
+                        return builder.buildFuture();
+                    })
+                    .executes(context -> {
+                        final CommandSourceStack source = context.getSource();
+                        final String category = StringArgumentType.getString(context, "category");
+                        final SelfTests.Report report = SelfTests.run(category);
+                        if (report == null) {
+                            source.sendFailure(Component.literal("[rstweaks] no such self-test: "
+                                + category + ". Try one of: "
+                                + String.join(", ", SelfTests.names()))
+                                .withStyle(ChatFormatting.RED));
+                            return 0;
+                        }
+                        return report(source, "self-test [" + category + "]", report);
+                    }))
+                .executes(context -> {
                     final CommandSourceStack source = context.getSource();
                     source.sendSuccess(() -> Component.literal(
-                            "[rstweaks] running crafting stability suite -- every crafting self-test,"
-                                + " then each optimization off against on...")
+                            "[rstweaks] running the full self-test suite; add a name to narrow it ("
+                                + String.join(", ", SelfTests.names()) + ")")
                         .withStyle(ChatFormatting.GRAY), false);
-                    final CraftingPlanSelfTest.Result result = CraftingStabilitySelfTest.run();
-                    if (result.failures().isEmpty()) {
-                        source.sendSuccess(() -> Component.literal("[rstweaks] crafting stable: "
-                                + result.scenarios() + " checks, no failures")
-                            .withStyle(ChatFormatting.GREEN), false);
-                        return 1;
-                    }
-                    source.sendFailure(Component.literal("[rstweaks] CRAFTING UNSTABLE: "
-                        + result.failures().size() + " of " + result.scenarios()
-                        + " checks failed").withStyle(ChatFormatting.RED));
-                    // One per line, and every one of them: this is the output somebody acts on,
-                    // and a truncated list of what is wrong with autocrafting is worse than none.
-                    result.failures().forEach(failure -> source.sendFailure(
-                        Component.literal("  " + failure).withStyle(ChatFormatting.RED)));
-                    RSTweaks.LOGGER.error("[rstweaks] crafting stability suite failed: {}",
-                        result.failures());
-                    return 0;
-                }))
-                .executes(context -> {
-                final CommandSourceStack source = context.getSource();
-                source.sendSuccess(() -> Component.literal("[rstweaks] running crafting plan self-test...")
-                    .withStyle(ChatFormatting.GRAY), false);
-
-                final CraftingPlanSelfTest.Result plans = CraftingPlanSelfTest.run();
-                final ExtractionSelfTest.Result extraction = ExtractionSelfTest.run();
-                // Runs regardless of whether lpPlanner is enabled on this server: it
-                // flips the flag itself and restores it. A planner bug should be
-                // findable before you turn the planner on, not after.
-                final CraftingPlanSelfTest.Result lp = PlannerExecutabilitySelfTest.run();
-                // Real tasks through the real executor. Only meaningful with the mixins
-                // applied, which is true here and false under ./gradlew plannerCheck.
-                final CraftingPlanSelfTest.Result tasks = TaskEngineSelfTest.run();
-
-                final int scenarios = plans.scenarios() + extraction.scenarios()
-                    + lp.scenarios() + tasks.scenarios();
-                final List<String> failures = new ArrayList<>(plans.failures());
-                extraction.failures().forEach(f -> failures.add("extraction: " + f));
-                lp.failures().forEach(f -> failures.add("lp planner: " + f));
-                tasks.failures().forEach(f -> failures.add("task engine: " + f));
-
-                if (failures.isEmpty()) {
-                    source.sendSuccess(() -> Component.literal(
-                        "[rstweaks] PASS - " + scenarios + " scenarios ("
-                            + plans.scenarios() + " crafting plans, "
-                            + extraction.scenarios() + " extractions, "
-                            + lp.scenarios() + " LP plans, "
-                            + tasks.scenarios() + " crafting tasks)")
-                        .withStyle(ChatFormatting.GREEN), false);
-                    RSTweaks.LOGGER.info("[rstweaks] self-test PASSED ({} scenarios)", scenarios);
-                    return scenarios;
-                }
-
-                source.sendFailure(Component.literal(
-                    "[rstweaks] FAIL - " + failures.size() + " of " + scenarios + " diverged")
-                    .withStyle(ChatFormatting.RED));
-                for (final String failure : failures) {
-                    source.sendFailure(Component.literal("  " + failure).withStyle(ChatFormatting.RED));
-                    RSTweaks.LOGGER.error("[rstweaks] self-test failure: {}", failure);
-                }
-                return 0;
-            }));
+                    return report(source, "full self-test", SelfTests.runAll());
+                }));
         event.getDispatcher().register(root);
     }
 }

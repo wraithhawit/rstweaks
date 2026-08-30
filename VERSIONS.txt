@@ -10,6 +10,30 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.21.0
+------
+  /rstweaks selftest RUNS EVERYTHING NOW; a name after it narrows the run. I had it backwards in
+  0.18.0 -- bare selftest ran a partial set of four suites while the full one hid behind a
+  subcommand, which is the wrong way round for the command somebody types when they are worried.
+    /rstweaks selftest             -> all 12 categories, 392 checks
+    /rstweaks selftest crafting    -> the crafting group
+    /rstweaks selftest durability  -> one category
+  Tab completion lists them, and an unknown name says what the valid ones are instead of failing
+  silently.
+  CATEGORIES ARE DISJOINT so a full run never executes a scenario twice and the total is a real
+  total: planner, lp, maxcraftable, ledger, patterns, executor, remainders, requests, overflow,
+  durability, storage, optimizations. "crafting" is a GROUP over eleven of them rather than a
+  category, which is why it can overlap without double-counting anything.
+  The per-category breakdown prints on a PASS as well as a failure -- "392 checks" says nothing
+  about whether the category you cared about actually ran, which is the same class of mistake as a
+  counter that is written and never printed.
+  The gametest now runs SelfTests.runAll() rather than naming suites itself, so a category added to
+  the catalogue is covered the moment it is registered instead of whenever somebody remembers to
+  add it in two places.
+  Full local battery on 0.20.0/0.21.0: every headless suite green, 34/34 gametests, mutation
+  testing 476/696 killed (68%) with 89% line coverage on mutated classes.
+
+
 0.20.0
 ------
   THE DURABILITY CACHES MOVE ONTO THE RESOURCE. Five of them -- tool family, damage-stripped

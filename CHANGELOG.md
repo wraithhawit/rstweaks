@@ -8,6 +8,53 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.21.0
+
+**`/rstweaks selftest` runs everything now; a name after it narrows the run.**
+
+I had this backwards in 0.18.0 — bare `selftest` ran a partial set of four suites while the full
+one hid behind a subcommand. That is the wrong way round for the command somebody types when they
+are worried about their base.
+
+```
+/rstweaks selftest              all 12 categories, 392 checks
+/rstweaks selftest crafting     the crafting group
+/rstweaks selftest durability   one category
+```
+
+Tab completion lists them, and an unknown name replies with the valid ones rather than failing
+quietly.
+
+### Categories are disjoint
+
+`planner`, `lp`, `maxcraftable`, `ledger`, `patterns`, `executor`, `remainders`, `requests`,
+`overflow`, `durability`, `storage`, `optimizations`.
+
+A full run never executes the same scenario twice, so the total is a real total. **`crafting` is a
+group over eleven of them, not a category** — which is how it can overlap without double-counting.
+
+### The breakdown prints on a pass, too
+
+```
+full self-test: 392 checks {optimizations=14, patterns=4, overflow=7, durability=209,
+  remainders=17, maxcraftable=17, storage=24, lp=37, executor=7, planner=10, requests=12, ledger=34}
+```
+
+"392 checks" says nothing about whether the category you cared about actually ran — the same class
+of mistake as a counter that is written and never printed, which this project has made four times.
+
+### The gametest follows the catalogue
+
+It calls `SelfTests.runAll()` rather than naming suites itself, so a category added to the catalogue
+is covered the moment it is registered, instead of whenever somebody remembers to add it in two
+places.
+
+### Full local battery
+
+Every headless suite green, **34/34 gametests**, mutation testing **476/696 killed (68%)** with 89%
+line coverage on mutated classes.
+
+
 ## 0.20.0
 
 **The durability caches move onto the resource.**
