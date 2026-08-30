@@ -10,6 +10,33 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.20.0
+------
+  THE DURABILITY CACHES MOVE ONTO THE RESOURCE. Five of them -- tool family, damage-stripped
+  identity, the resource one use further worn, maximum damage, default damage -- were each a
+  ConcurrentHashMap keyed on ItemResource. Profile mWcYLBc220: ConcurrentHashMap.get is 12.64% of
+  the server thread, up from ~1% before 0.17.0 added the third. Individually cheap, and asked an
+  enormous number of times.
+  An ItemResource is immutable, so an answer derived from one can live on it. RS already does this
+  with its own private int hash, which is the precedent for both the idea and the race.
+  I ALSO CORRECTED WHAT I TOLD WRAITH. I said this would remove HashMap.hash (21.27%) plus
+  ItemResource.equals; the --parents breakdown says HashMap.hash comes from getNode/put/remove on
+  RS's OWN resource lists, which no cache of ours can touch. The addressable figure is the 12.64%,
+  not 28%. Checked before building rather than after.
+  SENTINELS RATHER THAN FLAGS. Mixin does not run field initialisers reliably, so every field has to
+  mean something when it defaults to zero: ints are stored offset by one, and 0 always reads as "not
+  worked out yet". Racy on purpose and safe for it -- every field is a pure function of an immutable
+  object, so two threads racing compute the same value and the worst case is doing it twice. A
+  volatile would put a barrier on the hottest path in the mod to prevent something that cannot
+  happen.
+  FALLS BACK, NOT BREAKS. Every call site is an instanceof against ResourceMemo; if the mixin does
+  not apply, ItemResource stops implementing it and every answer goes back through the map it used
+  before. Behaviour is identical either way, which is exactly why it needed its own test: a silent
+  failure to apply costs 12.64% and changes nothing observable. New gametest asserts the interface
+  is there AND that a real question populates the field -- maxDamage=1561, usesLeft=1549.
+  ItemResource is final, so the instanceof needs a cast through Object; javac rejects it otherwise.
+
+
 0.19.0
 ------
   CRAFTS ARE TIMED NOW, because a share of the server thread cannot measure any of this. Every

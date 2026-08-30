@@ -4,6 +4,8 @@ import com.wraithhawit.rstweaks.ChatReporter;
 import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.RSTweaks;
 import com.wraithhawit.rstweaks.Stats;
+import com.wraithhawit.rstweaks.storage.ItemDurability;
+import com.wraithhawit.rstweaks.storage.ResourceMemo;
 import com.wraithhawit.rstweaks.storage.VersionedResourceList;
 
 import com.refinedmods.refinedstorage.api.resource.ResourceKey;
@@ -11,6 +13,7 @@ import com.refinedmods.refinedstorage.api.resource.list.MutableResourceList;
 import com.refinedmods.refinedstorage.api.resource.list.MutableResourceListImpl;
 import com.refinedmods.refinedstorage.common.support.resource.ItemResource;
 
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
@@ -249,6 +252,52 @@ public final class RSTweaksGameTests {
     @GameTest(template = "empty", timeoutTicks = 1200)
     public static void craftingIsStableWithEveryOptimizationToggled(final GameTestHelper helper) {
         report(helper, "crafting stability", CraftingStabilitySelfTest.run());
+    }
+
+    /**
+     * The per-resource memo, against a real {@code ItemResource}.
+     *
+     * <p>Every durability answer now comes off a field on the resource when this mixin applied and
+     * out of a map when it did not, and <b>both paths return the same thing</b> — so a silent
+     * failure to apply costs 12.64% of the server thread and changes no behaviour at all. Nothing
+     * else in the suite would notice.
+     *
+     * <p>Also asserts the memo is actually populated by a real question, not merely present:
+     * a field that exists and is never written is the same as no memo.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void itemResourceCarriesItsOwnDurabilityAnswers(final GameTestHelper helper) {
+        final ItemStack stack = new ItemStack(Items.DIAMOND_PICKAXE);
+        stack.set(DataComponents.DAMAGE, 12);
+        final ItemResource resource = ItemResource.ofItemStack(stack);
+        if (!((Object) resource instanceof ResourceMemo memo)) {
+            helper.fail("ItemResource does not implement ResourceMemo, so the mixin did not apply "
+                + "and every durability answer is going back through a map -- 12.64% of the server "
+                + "thread, with nothing else in this suite able to tell");
+            return;
+        }
+        if (memo.rstweaks$maxDamagePlusOne() != 0) {
+            helper.fail("the memo was already populated before anything asked, so this test cannot "
+                + "prove the write happens");
+            return;
+        }
+        final int max = ItemDurability.INSTANCE.maxUses(resource);
+        if (max <= 0) {
+            helper.fail("a diamond pickaxe reported no maximum damage");
+            return;
+        }
+        if (memo.rstweaks$maxDamagePlusOne() != max + 1) {
+            helper.fail("asking for maxUses did not populate the memo (field says "
+                + memo.rstweaks$maxDamagePlusOne() + ", expected " + (max + 1) + ")");
+            return;
+        }
+        if (ItemDurability.INSTANCE.usesLeft(resource) != max - 12) {
+            helper.fail("the memoised answer disagrees with the damage it was built with");
+            return;
+        }
+        RSTweaks.LOGGER.info("[rstweaks] gametest ItemResource memo populated: maxDamage={}, "
+            + "usesLeft={}", max, ItemDurability.INSTANCE.usesLeft(resource));
+        helper.succeed();
     }
 
     /**

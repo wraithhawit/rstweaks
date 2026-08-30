@@ -43,21 +43,42 @@ public final class ItemDurability implements Durability {
      * {@code maxDamage}'s per-call map lookup another 11.80% on top. An integer has none of that.
      */
     private static int family(final ItemResource resource) {
+        // On the resource itself when the memo mixin applied, in a map when it did not. Profile
+        // mWcYLBc220 put ConcurrentHashMap.get at 12.64% of the server thread across these five
+        // caches: each lookup is cheap and there are an enormous number of them. A field read is
+        // not cheap-per-call, it is free. See ResourceMemo for why the race is safe.
+        if ((Object) resource instanceof ResourceMemo memo) {
+            final int offset = memo.rstweaks$familyPlusOne();
+            if (offset != 0) {
+                return offset - 1;
+            }
+            final int computed = computeFamily(resource);
+            memo.rstweaks$familyPlusOne(computed + 1);
+            return computed;
+        }
         final Integer cached = FAMILY.get(resource);
         if (cached != null) {
             return cached;
         }
-        final int family;
-        if (maxDamage(resource) <= 0) {
-            family = NOT_A_TOOL;
-        } else {
-            // Everything but the damage decides the family, so a differently enchanted tool gets
-            // its own — two of those are not interchangeable wear levels of one another.
-            family = FAMILY_OF_CANONICAL.computeIfAbsent(
-                withoutDamage(resource), key -> NEXT_FAMILY.getAndIncrement());
-        }
+        final int family = computeFamily(resource);
         FAMILY.put(resource, family);
         return family;
+    }
+
+    /** The family itself, with no caching of any kind — both paths above call this. */
+    private static int computeFamily(final ItemResource resource) {
+        if (maxDamage(resource) <= 0) {
+            return NOT_A_TOOL;
+        }
+        // Everything but the damage decides the family, so a differently enchanted tool gets
+        // its own — two of those are not interchangeable wear levels of one another.
+        //
+        // FAMILY_OF_CANONICAL stays a map whichever path got here: it is keyed on the
+        // damage-stripped resource, which is a different object from the one being asked about, so
+        // there is no instance to hang it on. It is also asked once per distinct wear level rather
+        // than per lookup, which is why it never showed up in a profile.
+        return FAMILY_OF_CANONICAL.computeIfAbsent(
+            withoutDamage(resource), key -> NEXT_FAMILY.getAndIncrement());
     }
 
     // NOT_A_TOOL is inherited from Durability: it is part of the toolFamily contract now, and two
@@ -108,7 +129,9 @@ public final class ItemDurability implements Durability {
             return resource;
         }
         if (uses == 1) {
-            final ItemResource cached = AFTER_ONE_USE.get(item);
+            final ItemResource cached = (Object) item instanceof ResourceMemo memo
+                ? memo.rstweaks$afterOneUse()
+                : AFTER_ONE_USE.get(item);
             if (cached != null) {
                 return cached;
             }
@@ -128,7 +151,11 @@ public final class ItemDurability implements Durability {
         stack.set(DataComponents.DAMAGE, worn);
         final ItemResource worse = ItemResource.ofItemStack(stack);
         if (uses == 1) {
-            AFTER_ONE_USE.put(item, worse);
+            if ((Object) item instanceof ResourceMemo memo) {
+                memo.rstweaks$afterOneUse(worse);
+            } else {
+                AFTER_ONE_USE.put(item, worse);
+            }
         }
         return worse;
     }
@@ -230,11 +257,22 @@ public final class ItemDurability implements Durability {
      * few hundred at worst, and nothing is added for items that are not durable.
      */
     private static ItemResource withoutDamage(final ItemResource resource) {
-        return WITHOUT_DAMAGE.computeIfAbsent(resource, key -> {
-            final ItemStack stack = key.toItemStack(1L);
-            stack.remove(DataComponents.DAMAGE);
-            return ItemResource.ofItemStack(stack);
-        });
+        if ((Object) resource instanceof ResourceMemo memo) {
+            final ItemResource cached = memo.rstweaks$withoutDamage();
+            if (cached != null) {
+                return cached;
+            }
+            final ItemResource computed = stripDamage(resource);
+            memo.rstweaks$withoutDamage(computed);
+            return computed;
+        }
+        return WITHOUT_DAMAGE.computeIfAbsent(resource, ItemDurability::stripDamage);
+    }
+
+    private static ItemResource stripDamage(final ItemResource resource) {
+        final ItemStack stack = resource.toItemStack(1L);
+        stack.remove(DataComponents.DAMAGE);
+        return ItemResource.ofItemStack(stack);
     }
 
     private static final Map<ItemResource, ItemResource> WITHOUT_DAMAGE = new ConcurrentHashMap<>();
@@ -255,15 +293,33 @@ public final class ItemDurability implements Durability {
         // A plain get on the hit path, because this is 8.86% of the server thread in profile
         // qRRh2NJvYs purely on call volume -- isDurable asks it once per ingredient, twice per
         // iteration. computeIfAbsent has to be prepared to insert on every call; get does not.
+        if ((Object) resource instanceof ResourceMemo memo) {
+            final int offset = memo.rstweaks$maxDamagePlusOne();
+            if (offset != 0) {
+                return offset - 1;
+            }
+            final int computed = maxDamageOf(resource.item());
+            memo.rstweaks$maxDamagePlusOne(computed + 1);
+            return computed;
+        }
         final Item item = resource.item();
         final Integer cached = MAX_DAMAGE.get(item);
         if (cached != null) {
             return cached;
         }
-        return MAX_DAMAGE.computeIfAbsent(item, key -> {
-            final ItemStack stack = new ItemStack(key);
-            return stack.isDamageableItem() ? stack.getMaxDamage() : 0;
-        });
+        return MAX_DAMAGE.computeIfAbsent(item, ItemDurability::maxDamageOf);
+    }
+
+    /**
+     * Keyed by {@link Item} in the map fallback, but stored per resource in the memo.
+     *
+     * <p>That looks like a duplicated answer and is the right trade: the map has one entry per item
+     * where the memo has one per resource, but the memo costs a field read against a hash and a
+     * bucket walk. Both are bounded and both are immutable, and only one of them is on the hot path.
+     */
+    private static int maxDamageOf(final Item item) {
+        final ItemStack stack = new ItemStack(item);
+        return stack.isDamageableItem() ? stack.getMaxDamage() : 0;
     }
 
     /**
@@ -275,6 +331,19 @@ public final class ItemDurability implements Durability {
      * undamaged one falls through to the item's own default, and that is cached per item.
      */
     private static int damage(final ItemResource resource) {
+        if ((Object) resource instanceof ResourceMemo memo) {
+            final int offset = memo.rstweaks$damagePlusOne();
+            if (offset != 0) {
+                return offset - 1;
+            }
+            final int computed = damageOf(resource);
+            memo.rstweaks$damagePlusOne(computed + 1);
+            return computed;
+        }
+        return damageOf(resource);
+    }
+
+    private static int damageOf(final ItemResource resource) {
         final Optional<? extends Integer> patched = resource.components().get(DataComponents.DAMAGE);
         if (patched != null) {
             // Present but empty means the component was explicitly removed, which is undamaged.

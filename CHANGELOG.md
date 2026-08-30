@@ -8,6 +8,56 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.20.0
+
+**The durability caches move onto the resource.**
+
+Five of them — tool family, damage-stripped identity, the resource one use further worn, maximum
+damage, default damage — were each a `ConcurrentHashMap` keyed on `ItemResource`. Profile
+`mWcYLBc220` puts `ConcurrentHashMap.get` at **12.64% of the server thread**, up from about 1%
+before 0.17.0 added the third. Individually cheap; asked an enormous number of times.
+
+An `ItemResource` is immutable, so an answer derived from one can live on it. Refined Storage
+already does exactly this with its own `private int hash` — the precedent for both the idea and the
+race.
+
+### A correction to what I told Wraith
+
+I said this would remove `HashMap.hash` (21.27%) plus `ItemResource.equals`, calling it ~28%. The
+`--parents` breakdown says `HashMap.hash` comes from `getNode`/`put`/`remove` on **RS's own** resource
+lists, which no cache of ours can touch. **The addressable figure is the 12.64%.** Checked before
+building rather than after.
+
+### Sentinels rather than flags
+
+Mixin does not run field initialisers reliably, so every field has to mean something when it
+defaults to zero. Ints are stored **offset by one**, and `0` always reads as "not worked out yet" —
+cheaper than a parallel `boolean` per field, and impossible to get half-right.
+
+### Racy on purpose
+
+None of the fields are volatile, and the planner runs on RS's autocrafting threads as well as the
+server thread. That is safe because every field is a pure function of an immutable object: two
+threads racing compute the same value, and the worst case is that one does the work twice. A
+`volatile` would put a memory barrier on the hottest path in the mod to prevent something that
+cannot happen.
+
+### Falls back, does not break
+
+Every call site is an `instanceof` against `ResourceMemo`. If the mixin fails to apply,
+`ItemResource` stops implementing it and every answer goes back through the map it used before —
+**identical behaviour, 12.64% slower, and nothing else in the suite able to tell.** Which is exactly
+why it needed its own test: one that asserts the interface is present *and* that a real question
+populates the field.
+
+```
+gametest ItemResource memo populated: maxDamage=1561, usesLeft=1549
+```
+
+`ItemResource` is `final`, so the `instanceof` needs a cast through `Object` — javac rejects it
+otherwise, since it cannot know a mixin will add the interface at runtime.
+
+
 ## 0.19.0
 
 **Crafts are timed now, because a share of the server thread cannot measure any of this.**

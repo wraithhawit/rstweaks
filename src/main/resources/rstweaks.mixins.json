@@ -28,6 +28,7 @@
     "PatternRepositoryImplMixin",
     "MutablePatternPlanMixin",
     "MutableResourceListEntryMixin",
+    "ItemResourceMixin",
     "MutableResourceListImplMixin",
     "StepSkipMixin",
     "PatternResolverFuzzyMixin",
