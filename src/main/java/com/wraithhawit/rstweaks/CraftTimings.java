@@ -47,9 +47,45 @@ public final class CraftTimings {
     private CraftTimings() {
     }
 
+    /**
+     * How many nested self-test runs are in progress, so their fixtures are not recorded as crafts.
+     *
+     * <p>The suites build real {@code TaskImpl}s and run them to completion through the real engine
+     * — that is the point of them — so the timer sees every fixture scenario finish. A single
+     * {@code /rstweaks selftest} completes a dozen of them in under a second and, with only
+     * {@link #KEPT} entries held, <b>evicts the real benchmark numbers it was run to protect</b>.
+     * Observed doing exactly that on 0.21.0.
+     *
+     * <p>A depth counter rather than a flag because suites nest: {@code SelfTests} guards a whole
+     * run and {@code TaskEngineSelfTest} guards itself, so a gametest calling the suite directly is
+     * covered too.
+     */
+    private static int selfTestDepth;
+
+    /**
+     * Runs {@code body} with craft timing suppressed.
+     *
+     * <p><b>Deliberately not {@code synchronized}.</b> The body is a whole self-test suite and takes
+     * seconds; holding this class's monitor across it would block {@link #record} from Refined
+     * Storage's autocrafting threads for the duration. The counter is only ever touched from the
+     * thread running the suite, and a stale read costs one unrecorded craft rather than anything
+     * that matters.
+     */
+    public static void duringSelfTest(final Runnable body) {
+        selfTestDepth++;
+        try {
+            body.run();
+        } finally {
+            selfTestDepth--;
+        }
+    }
+
     /** Records a completed craft and logs it. Called from the task engine, on the server thread. */
     public static synchronized void record(final String resource, final long amount,
                                            final long millis) {
+        if (selfTestDepth > 0) {
+            return;
+        }
         final Finished finished = new Finished(resource, amount, millis);
         HISTORY.addFirst(finished);
         while (HISTORY.size() > KEPT) {

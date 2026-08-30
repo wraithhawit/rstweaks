@@ -10,6 +10,30 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.21.1
+------
+  THE SELF-TEST WAS DELETING THE BENCHMARK IT EXISTS TO PROTECT. The suites build real TaskImpls and
+  run them to completion through the real engine -- that is the whole point of them -- so 0.19.0's
+  craft timer recorded every fixture scenario as a finished craft. One /rstweaks selftest completes
+  a dozen in under a second, and only 8 are kept, so running it evicted the real 10k and 100k
+  numbers from /rstweaks stats. Caught the first time Wraith ran the two side by side:
+    craft finished: 64 x product in 0ms
+    craft finished: 40 x widget in 0ms
+    craft finished: 4 x chest in 1ms
+  Fixed with a depth counter rather than a flag, because suites nest: SelfTests guards a whole run
+  and TaskEngineSelfTest guards itself, so a gametest calling a suite directly is covered too.
+  Deliberately NOT synchronized -- the body is a whole suite and takes seconds, and holding the
+  monitor across it would block record() from RS's autocrafting threads for the duration. The
+  counter is only touched from the thread running the suite.
+  Verified by counting: the gametest run now records ZERO fixture crafts, where it previously logged
+  a dozen. 34/34 still pass.
+  ALSO FROM THAT SESSION: /rstweaks selftest passed 392 checks in the real world, all 12 categories.
+  The 100k benchmark read 34.3s (2,916/s) against 0.20.0's 33.6s (2,978/s) -- 2% apart, which is
+  inside the run-to-run variance and consistent with 0.21.0 having been test-only. The 10k read
+  4.8s (2,067/s) against 3.3s, explained by other crafts running in the world at the time: the
+  benchmark is only comparable when nothing else is crafting.
+
+
 0.21.0
 ------
   /rstweaks selftest RUNS EVERYTHING NOW; a name after it narrows the run. I had it backwards in

@@ -21,6 +21,7 @@ import com.refinedmods.refinedstorage.api.storage.Actor;
 import com.refinedmods.refinedstorage.api.storage.StorageImpl;
 import com.refinedmods.refinedstorage.api.storage.root.RootStorageImpl;
 import com.wraithhawit.rstweaks.Config;
+import com.wraithhawit.rstweaks.CraftTimings;
 import com.wraithhawit.rstweaks.planner.Durability;
 import com.wraithhawit.rstweaks.planner.LpCraftingPlanner;
 
@@ -95,6 +96,14 @@ public final class TaskEngineSelfTest {
     }
 
     public static CraftingPlanSelfTest.Result run() {
+        // Guarded here as well as in SelfTests, because the gametests call this directly and its
+        // scenarios are the ones that were polluting the craft history.
+        final CraftingPlanSelfTest.Result[] held = new CraftingPlanSelfTest.Result[1];
+        CraftTimings.duringSelfTest(() -> held[0] = runScenarios());
+        return held[0];
+    }
+
+    private static CraftingPlanSelfTest.Result runScenarios() {
         final List<String> failures = new ArrayList<>();
         final List<Scenario> scenarios = scenarios();
         final boolean originalPlanner = Config.lpPlanner;

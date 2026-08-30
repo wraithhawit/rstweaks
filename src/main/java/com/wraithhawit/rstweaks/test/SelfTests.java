@@ -1,5 +1,7 @@
 package com.wraithhawit.rstweaks.test;
 
+import com.wraithhawit.rstweaks.CraftTimings;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -78,7 +80,12 @@ public final class SelfTests {
         final Map<String, Integer> counts = new LinkedHashMap<>();
         int total = 0;
         for (final String category : categories) {
-            final CraftingPlanSelfTest.Result result = CATEGORIES.get(category).get();
+            // Fixtures are not crafts. Without this a full run completes a dozen tasks in under a
+            // second and evicts the real benchmark numbers from the timing history -- which is
+            // exactly what 0.21.0 did the first time somebody ran it beside a real craft.
+            final CraftingPlanSelfTest.Result[] held = new CraftingPlanSelfTest.Result[1];
+            CraftTimings.duringSelfTest(() -> held[0] = CATEGORIES.get(category).get());
+            final CraftingPlanSelfTest.Result result = held[0];
             counts.put(category, result.scenarios());
             total += result.scenarios();
             result.failures().forEach(failure -> failures.add(category + ": " + failure));
