@@ -35,6 +35,9 @@ The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a
   Counters are now a matched per-CALL pair (decisions replayed / decisions computed) rather than
   mixing a per-call numerator with a per-resource denominator, which would have produced a confident
   nonsense percentage.
+  VERIFIED IN GAME 2026-08-30: 118,470,766 replayed decisions recomputed and compared, 0 DIVERGED --
+  swaps and consumed list both, on a real insanium craft. Stronger evidence than any fixture could
+  have given, which is the point of shipping the verifier rather than the reasoning.
 
 
 0.14.1

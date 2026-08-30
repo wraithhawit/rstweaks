@@ -60,6 +60,19 @@ Anything other than `0 DIVERGED` means `reuseFailedSimulate` comes back out.
 mixed a per-call numerator with a per-resource denominator, which would have produced a confident
 nonsense percentage — a worse failure than no counter at all.
 
+### Verified in game
+
+```
+replay verifier: 118,470,766 checked, 0 DIVERGED
+```
+
+118 million replayed decisions recomputed and compared — swaps **and** consumed list — on a real
+insanium craft, with not one divergence. That is stronger evidence than any fixture could have
+produced, which is the whole argument for shipping a verifier instead of the reasoning behind it.
+
+(The `0 decisions replayed` on the same reading is expected: the verifier deliberately takes the slow
+path so it has something to compare against.)
+
 
 ## 0.14.1
 
