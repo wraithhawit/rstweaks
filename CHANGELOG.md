@@ -8,6 +8,57 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.17.0
+
+**Byproduct aging was the largest thing left, and most of it was ours.**
+
+0.16.0 landed — **408,664,800 steps skipped whole**, durability path **31.03% → 26.87%** (profile
+`ajw2GTmG3M`), verified at 442,767,424 checks with zero divergences.
+
+With whole steps gone, what remains concentrates in the steps that actually execute, and byproduct
+aging rose to the top:
+
+```
+rstweaks$tryKeepByproductsInTask   31.58% of thread
+  InternalTaskPattern.aged         27.68%
+    ItemDurability.afterUses       51.87% of that = 14.4% of thread   <- ours
+    wearStep                       21.10%         =  5.8%             <- RS
+    rstweaks$consumedTool          18.83%         =  5.2% of thread   <- ours
+```
+
+`afterUses` built an `ItemStack`, copied its component map and rebuilt an `ItemResource` on **every
+call**, to compute something completely determined by its input. Now cached for `uses == 1`, which
+is what a wear step asks for; anything else allocates as before.
+
+### Keyed on the resource, not on `(item, damage)`
+
+The aged resource is built from the old one's stack, so it **carries the whole component patch
+forward**. An `(item, damage)` key would hand a named or enchanted tool the plain tool's answer and
+silently strip its components mid-craft — the issue-9 family of bug, and invisible.
+
+A new scenario pins exactly that collision, and it is **break-tested**: keying the cache on `Item`
+fails
+
+```
+durability diverged in 2 of 209 scenarios:
+  a named tool does not age into the unnamed one | the name survives aging
+```
+
+and keying it on the resource passes all 209.
+
+The tool-breaks case is deliberately **not** cached: it happens once per tool, that path allocates
+nothing anyway, and caching it would mean a null sentinel to speed up the rare branch.
+
+### `consumedTool` finally gets 0.12.0's hoist
+
+It resolved the encoded side's tool family once per entry in the consumed list instead of once for
+the loop — the same mistake 0.12.0 fixed in `findWornTool` and left here, because nothing was
+measuring this loop at the time.
+
+Both changes are ours, both are pure functions of immutable inputs, and neither touches Refined
+Storage's core — so this one is back inside the safe zone after two versions in the risky one.
+
+
 ## 0.16.0
 
 **Skip the whole step, not just our part of it.**

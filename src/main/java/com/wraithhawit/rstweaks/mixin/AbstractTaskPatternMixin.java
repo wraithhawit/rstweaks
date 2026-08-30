@@ -128,8 +128,13 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
             return null;
         }
         final Durability durability = Durability.Holder.get();
+        // The encoded side's family resolved once, exactly as findWornTool does. Profile
+        // ajw2GTmG3M put this method at 5.2% of the server thread purely on that lookup being
+        // repeated per entry -- the same mistake 0.12.0 fixed in the scan and left here, because
+        // nothing was measuring this loop at the time.
+        final int encodedFamily = durability.toolFamily(encoded);
         for (final ResourceKey taken : consumed) {
-            if (durability.sameTool(taken, encoded)) {
+            if (durability.sameTool(encoded, encodedFamily, taken)) {
                 return taken;
             }
         }

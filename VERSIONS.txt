@@ -10,6 +10,32 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.17.0
+------
+  BYPRODUCT AGING WAS THE LARGEST THING LEFT, AND MOST OF IT WAS OURS. 0.16.0 landed: 408,664,800
+  steps skipped whole, durability path 31.03% -> 26.87% (profile ajw2GTmG3M), verified at 442,767,424
+  checks and 0 divergences. With whole steps gone, what remains concentrates in the steps that do
+  execute -- and tryKeepByproductsInTask came out at 31.58% of the server thread, with
+  InternalTaskPattern.aged 27.68% inside it:
+    ItemDurability.afterUses    51.87% of aged  = 14.4% of the server thread   OURS
+    wearStep                    21.10%          =  5.8%                        RS
+    rstweaks$consumedTool       18.83%          =  5.2%                        OURS
+  afterUses built an ItemStack, copied its component map and rebuilt an ItemResource on every call,
+  to compute something completely determined by its input. Now cached for uses == 1, which is what a
+  wear step asks for; anything else allocates as before.
+  KEYED ON THE RESOURCE, NOT ON (item, damage). The aged resource is built from the old one's stack,
+  so it carries the whole component patch forward -- an (item, damage) key would hand a named or
+  enchanted tool the plain tool's answer and silently strip its components mid-craft. That is the
+  issue-9 family of bug. New scenario pins exactly that collision, and BREAK-TESTED: keying on Item
+  fails "a named tool does not age into the unnamed one" and "the name survives aging"; keying on
+  the resource passes all 209.
+  The tool-breaks case is deliberately not cached -- once per tool, and that path allocates nothing
+  anyway; caching it would mean a null sentinel to speed up the rare branch.
+  consumedTool got 0.12.0's hoist, which it never received: it resolved the encoded side's family
+  once per entry in the consumed list instead of once for the loop.
+  Both changes are ours, both are pure functions of immutable inputs, and neither touches RS's core.
+
+
 0.16.0
 ------
   SKIP THE WHOLE STEP, NOT JUST OUR PART OF IT. Profile L7lGOu8YyD: 0.15.0's replay works exactly as

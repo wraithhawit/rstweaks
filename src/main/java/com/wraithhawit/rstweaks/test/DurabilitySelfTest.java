@@ -1,6 +1,7 @@
 package com.wraithhawit.rstweaks.test;
 
 
+import com.refinedmods.refinedstorage.api.resource.ResourceKey;
 import com.refinedmods.refinedstorage.common.support.resource.ItemResource;
 import com.wraithhawit.rstweaks.storage.ItemDurability;
 
@@ -44,8 +45,44 @@ public final class DurabilitySelfTest {
         aToolBreaksOnItsLastUse();
         ordinaryItemsAreNotDurable();
         theHoistedFamilyAgreesWithTheSlowSameTool();
+        agingIsCachedWithoutCollapsingComponents();
 
         return new CraftingPlanSelfTest.Result(checks, List.copyOf(FAILURES));
+    }
+
+    /**
+     * The one way 0.17.0's {@code afterUses} cache can be wrong.
+     *
+     * <p>The aged resource is built from the old one's stack, so it carries the whole component
+     * patch forward. Keying the cache on {@code (item, damage)} rather than on the resource would
+     * hand a named or enchanted tool the plain tool's answer — silently stripping its components
+     * mid-craft, which is the fuzzy-slot family of bug that cost issue 9.
+     *
+     * <p>Two tools that differ only outside their damage, at the same wear level, are the exact
+     * collision that key would produce. Asked twice each, because a cache that answers differently
+     * the second time is worse than no cache.
+     */
+    private static void agingIsCachedWithoutCollapsingComponents() {
+        final ItemResource plain = worn(Items.DIAMOND_PICKAXE, 5);
+        final ItemStack namedStack = new ItemStack(Items.DIAMOND_PICKAXE);
+        namedStack.set(DataComponents.DAMAGE, 5);
+        namedStack.set(DataComponents.CUSTOM_NAME,
+            net.minecraft.network.chat.Component.literal("Bob"));
+        final ItemResource named = ItemResource.ofItemStack(namedStack);
+
+        final ResourceKey plainAged = ItemDurability.INSTANCE.afterUses(plain, 1);
+        final ResourceKey namedAged = ItemDurability.INSTANCE.afterUses(named, 1);
+        expect("a named tool does not age into the unnamed one",
+            plainAged != null && !plainAged.equals(namedAged));
+        expect("the name survives aging", namedAged instanceof ItemResource aged
+            && aged.components().get(DataComponents.CUSTOM_NAME) != null);
+        expect("the cached answer matches the first for the plain tool",
+            plainAged.equals(ItemDurability.INSTANCE.afterUses(plain, 1)));
+        expect("and for the named one",
+            namedAged.equals(ItemDurability.INSTANCE.afterUses(named, 1)));
+        expect("aging advances the wear level by exactly one use",
+            ItemDurability.INSTANCE.usesLeft(plainAged)
+                == ItemDurability.INSTANCE.usesLeft(plain) - 1);
     }
 
     /**

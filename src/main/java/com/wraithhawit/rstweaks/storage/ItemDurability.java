@@ -107,17 +107,55 @@ public final class ItemDurability implements Durability {
         if (!(resource instanceof ItemResource item) || uses <= 0) {
             return resource;
         }
+        if (uses == 1) {
+            final ItemResource cached = AFTER_ONE_USE.get(item);
+            if (cached != null) {
+                return cached;
+            }
+        }
         final int max = maxDamage(item);
         final int worn = damage(item) + uses;
         if (max <= 0 || worn >= max) {
             // Vanilla destroys a tool when damage reaches its maximum, so nothing comes
             // back. The planner reads null as "this use was the last one".
+            //
+            // Deliberately not cached. It happens once per tool, at the end of its life, and the
+            // early return costs nothing anyway -- no stack is built on this path. Caching it would
+            // mean a sentinel for null, which is machinery to make the rare case slightly faster.
             return null;
         }
         final ItemStack stack = item.toItemStack(1L);
         stack.set(DataComponents.DAMAGE, worn);
-        return ItemResource.ofItemStack(stack);
+        final ItemResource worse = ItemResource.ofItemStack(stack);
+        if (uses == 1) {
+            AFTER_ONE_USE.put(item, worse);
+        }
+        return worse;
     }
+
+    /**
+     * The same tool one use further worn, cached.
+     *
+     * <p>Profile {@code ajw2GTmG3M}: once whole steps started being skipped, byproduct aging became
+     * the largest thing left, and <b>{@code afterUses} was 14.4% of the entire server thread</b> —
+     * building an {@code ItemStack}, copying its component map and rebuilding an
+     * {@code ItemResource}, per byproduct, per iteration, to compute something completely determined
+     * by its input.
+     *
+     * <p><b>Keyed on the resource, not on {@code (item, damage)}.</b> The new resource is built from
+     * the old one's stack, so it carries the whole component patch forward — two differently
+     * enchanted tools at the same wear level produce different results, and an {@code (item, damage)}
+     * key would hand one of them the other's answer. That is exactly the fuzzy-slot bug issue 9 was
+     * about, and it would be silent.
+     *
+     * <p>Only {@code uses == 1} is cached, which is what wear steps actually ask for; anything else
+     * falls through and allocates as before. Bounded the same way {@link #WITHOUT_DAMAGE} is: one
+     * entry per distinct wear level of each tool actually handled, and every value is immutable.
+     *
+     * <p>{@code ItemResource} caches its own {@code hashCode} in a field, so the lookup here is a
+     * field read and an equality check rather than a walk of the component patch.
+     */
+    private static final Map<ItemResource, ItemResource> AFTER_ONE_USE = new ConcurrentHashMap<>();
 
     @Override
     public int toolFamily(final ResourceKey resource) {
