@@ -462,6 +462,37 @@ public final class Config {
     /** Cached: read once per iteration, on the hottest path in the mod. */
     public static volatile boolean simulateRepeatProbe = false;
 
+    public static final ModConfigSpec.BooleanValue REUSE_FAILED_SIMULATE = BUILDER
+        .comment(
+            "Reuse a failing simulate pass's worn-tool answer until the task's internal storage",
+            "actually changes, instead of rescanning it every time.",
+            "",
+            "This is the big one. Refined Storage re-steps a pattern up to 175,552 times a tick and",
+            "~73% of iterations fail their simulate, so a pattern that cannot proceed rescans the",
+            "task's whole internal storage for an unchanged answer. Measured on a real insanium",
+            "craft: 169,947,478 repeated failing simulates, with a single pattern rescanning",
+            "701,697 times in a row.",
+            "",
+            "1,052 of those repeats reached a DIFFERENT answer, and the diagnostic log says exactly",
+            "why: the wanted key was identical every time, and storage moved. The crystal wears, a",
+            "more-worn level appears, and findWornTool's 'most worn first' rule flips the pick --",
+            "fresh, then @275, then @494. One case went from no substitute to a substitute, which a",
+            "blind cache would have turned into a craft that refuses to run.",
+            "",
+            "So this does NOT gamble on the 99.99938%. Every one of those changes is a mutation of",
+            "the internal storage, and a mixin counts them: the cached answer is reused only while",
+            "the storage version and the input count are both unchanged. Exact, not statistical,",
+            "and two O(1) reads to check.",
+            "",
+            "If the version mixin does not apply, nothing is reused and the rescan happens exactly",
+            "as before -- correctness does not depend on the mixin having landed. Ignored while",
+            "either probe is on, so a probe never measures a cached answer against itself."
+        )
+        .define("reuseFailedSimulate", true);
+
+    /** Cached: read once per iteration, on the hottest path in the mod. */
+    public static volatile boolean reuseFailedSimulate = true;
+
     public static final ModConfigSpec.IntValue MAX_BATCHED_ITERATIONS = BUILDER
         .comment(
             "The most iterations batchedExecution will run in one go.",
@@ -537,6 +568,7 @@ public final class Config {
         substitutionProbe = SUBSTITUTION_PROBE.get();
         reuseSimulatedSubstitution = REUSE_SIMULATED_SUBSTITUTION.get();
         simulateRepeatProbe = SIMULATE_REPEAT_PROBE.get();
+        reuseFailedSimulate = REUSE_FAILED_SIMULATE.get();
         maxBatchedIterations = MAX_BATCHED_ITERATIONS.get();
         maxBatchedIterationsPerTick = MAX_BATCHED_ITERATIONS_PER_TICK.get();
         quietTaskLogging = QUIET_TASK_LOGGING.get();

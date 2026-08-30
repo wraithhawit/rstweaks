@@ -28,6 +28,7 @@
     "PatternRepositoryImplMixin",
     "MutablePatternPlanMixin",
     "MutableResourceListEntryMixin",
+    "MutableResourceListImplMixin",
     "PatternResolverFuzzyMixin",
     "PreviewCraftingCalculatorListenerMixin",
     "TaskImplMixin",

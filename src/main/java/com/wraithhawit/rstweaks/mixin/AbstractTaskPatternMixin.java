@@ -11,6 +11,7 @@ import com.wraithhawit.rstweaks.RSTweaks;
 import com.wraithhawit.rstweaks.Stats;
 import com.wraithhawit.rstweaks.planner.Durability;
 import com.wraithhawit.rstweaks.storage.TaskConsumption;
+import com.wraithhawit.rstweaks.storage.VersionedResourceList;
 import com.wraithhawit.rstweaks.storage.TaskPatternInternals;
 import com.wraithhawit.rstweaks.storage.WornToolAware;
 
@@ -236,6 +237,11 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
             return;
         }
 
+        // Decided once for the whole call rather than per ingredient: the version and the input
+        // count cannot change while this method runs, and asking per resource would put two extra
+        // reads on the hottest loop in the mod to answer the same question repeatedly.
+        this.rstweaks$repeatValid = rstweaks$canReuseFailedSimulate(action, inputs, internalStorage);
+
         // Collected before applying: rewriting the list while iterating its key set
         // would throw, and the substitution has to be decided against a stable view.
         final List<ResourceKey[]> swaps = new ArrayList<>(1);
@@ -299,8 +305,19 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
         // The probe and the cache are mutually exclusive on purpose. With the cache serving the
         // EXECUTE pass, the probe would be comparing the remembered answer against itself and would
         // report agreement no matter what -- a measurement that cannot fail is not a measurement.
-        if (action != Action.EXECUTE || !Config.reuseSimulatedSubstitution
-            || Config.substitutionProbe) {
+        if (action == Action.SIMULATE) {
+            if (this.rstweaks$repeatValid) {
+                // The cached answer includes "no substitute": a wanted that is absent from the
+                // remembered decision is one the previous scan found nothing for, and that is
+                // exactly the answer to reuse. Case #1 in the disagreement log was precisely this
+                // transition, which is why the version guard has to be exact rather than close.
+                Stats.failedSimulateScansAvoided++;
+                return rstweaks$rememberedSubstitute(wanted);
+            }
+            Stats.substitutionScansNotEligible++;
+            return findWornTool(internalStorage, durability, wanted, needed);
+        }
+        if (!Config.reuseSimulatedSubstitution || Config.substitutionProbe) {
             Stats.substitutionScansNotEligible++;
             return findWornTool(internalStorage, durability, wanted, needed);
         }
@@ -363,12 +380,22 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
             return;
         }
         rstweaks$probeRepeatedSimulate(swaps, inputs, internalStorage);
+        if (this.rstweaks$repeatValid) {
+            // Reused wholesale, so the remembered decision is still the decision and re-flattening
+            // it would allocate a list a tick's worth of times to arrive at what is already there.
+            return;
+        }
         final List<ResourceKey> flat = new ArrayList<>(swaps.size() * 2);
         for (final ResourceKey[] swap : swaps) {
             flat.add(swap[0]);
             flat.add(swap[1]);
         }
         this.rstweaks$simulatedSwaps = flat;
+        this.rstweaks$rememberedVersion =
+            internalStorage instanceof VersionedResourceList versioned
+                ? versioned.rstweaks$version()
+                : 0L;
+        this.rstweaks$rememberedInputSize = inputs.getAll().size();
     }
 
     /**
@@ -488,6 +515,59 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
     /** Consecutive failing simulates on this pattern, for the streak-length figure. */
     @Unique
     private int rstweaks$simulateStreak;
+
+    /**
+     * Whether this SIMULATE may reuse the previous one's answer wholesale.
+     *
+     * <p><b>What earns this.</b> A real insanium craft produced 169,947,478 repeated failing
+     * simulates and 1,052 disagreements — one in 161,547 — and the disagreement log named the cause
+     * exactly: the {@code wanted} key was <em>identical</em> every time, and what moved was storage.
+     * The crystal wears, a more-worn level appears, and {@code findWornTool}'s "most worn first"
+     * rule flips the pick (fresh → {@code @275} → {@code @494}). One case went from <em>no
+     * substitute</em> to a substitute, which a blind cache would have turned into a stalled craft.
+     *
+     * <p>Every one of those is a mutation of the internal storage, so a mutation counter turns the
+     * 99.99938% into an exact test. Two guards, both {@code O(1)}:
+     *
+     * <ul>
+     *   <li>the storage's version is unchanged since the remembered decision was made;</li>
+     *   <li>the input list still holds the same number of resources — cheap insurance against
+     *       {@code calculateIterationInputs} handing back a different ingredient set, which the
+     *       observed disagreements never did but 20 logged samples cannot rule out.</li>
+     * </ul>
+     *
+     * <p>A storage that does not implement {@link VersionedResourceList} — a different list class,
+     * or the mixin not applying — reuses nothing and rescans exactly as before. Correctness is a
+     * property of this check, not of the mixin having landed.
+     */
+    @Unique
+    private boolean rstweaks$repeatValid;
+
+    /** Storage version when {@link #rstweaks$simulatedSwaps} was recorded. */
+    @Unique
+    private long rstweaks$rememberedVersion;
+
+    /** Input-list size when {@link #rstweaks$simulatedSwaps} was recorded. */
+    @Unique
+    private int rstweaks$rememberedInputSize;
+
+    @Unique
+    private boolean rstweaks$canReuseFailedSimulate(final Action action,
+                                                    final ResourceList inputs,
+                                                    final MutableResourceList internalStorage) {
+        // Disabled while either probe runs, for the reason the execute-side cache is: a probe that
+        // measures a cached answer against itself agrees no matter what.
+        if (action != Action.SIMULATE || !Config.reuseFailedSimulate
+            || Config.substitutionProbe || Config.simulateRepeatProbe) {
+            return false;
+        }
+        if (this.rstweaks$simulatedSwaps == null
+            || !(internalStorage instanceof VersionedResourceList versioned)) {
+            return false;
+        }
+        return versioned.rstweaks$version() == this.rstweaks$rememberedVersion
+            && inputs.getAll().size() == this.rstweaks$rememberedInputSize;
+    }
 
     /** Whether a remembered flat decision names exactly the same swaps, in the same order. */
     @Unique

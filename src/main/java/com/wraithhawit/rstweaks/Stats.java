@@ -277,6 +277,14 @@ public final class Stats {
     public static long substitutionScansAvoided;
 
     /**
+     * Internal-storage scans a repeated FAILING simulate skipped because nothing had changed.
+     *
+     * <p>The counter that says whether the biggest of these optimizations is doing anything. 0.13.0
+     * shipped its predecessor with the equivalent number unsurfaced and cost a release to find out.
+     */
+    public static long failedSimulateScansAvoided;
+
+    /**
      * Why the reuse did not fire, split three ways.
      *
      * <p>0.13.0 shipped the reuse with only {@link #substitutionScansAvoided} and never surfaced

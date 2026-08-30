@@ -10,6 +10,35 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.14.0
+------
+  THE FAILING SIMULATE IS CACHED, AND THE 1,052 ARE HANDLED EXACTLY RATHER THAN GAMBLED ON.
+  0.13.3's diagnostic answered the open question outright: in every logged disagreement the WANTED
+  key was identical and what moved was storage. The crystal wears, a more-worn level appears, and
+  findWornTool's "most worn first" rule flips the pick -- fresh, then @275, then @494. One case went
+  from NO SUBSTITUTE to a substitute, which a blind cache would have turned into a craft that
+  refuses to run. calculateIterationInputs was ruled out; it never handed back a different wanted.
+  Every one of those is a mutation of the task's internal storage. So MutableResourceListImplMixin
+  counts them -- add, remove, clear -- and a failing simulate reuses the previous answer only while
+  the storage version AND the input count are unchanged. Two O(1) reads, exact rather than
+  statistical, and it invalidates on precisely the 1,052.
+  THE PRIZE: 169,947,478 repeated failing simulates measured on a real insanium craft, one pattern
+  rescanning the task's whole internal storage 701,697 times in a row. ~73% of iterations fail their
+  simulate, which is why the execute-side cache could only ever reach a fifth of the scans.
+  SAFE BY CONSTRUCTION, NOT BY THE MIXIN LANDING. A storage that does not implement
+  VersionedResourceList reuses nothing and rescans exactly as before. reuseFailedSimulate (default
+  on) switches it off. Ignored while either probe runs, so a probe never measures a cache against
+  itself.
+  MIXIN PROVEN TO APPLY, AND BREAK-TESTED. New gametest builds a real MutableResourceListImpl,
+  asserts it implements VersionedResourceList, and exercises add, remove and clear SEPARATELY --
+  0 -> 3. Deleting the increment from the remove injector fails that test by name; restoring it
+  passes all 32. A counter that applies but misses a mutation is the one way this design is wrong
+  rather than merely useless, so each mutation is pinned on its own.
+  UNMEASURED IN GAME: the fixture has zero failing simulates, so no automated test can show the
+  cache firing. /rstweaks stats reports failedSimulateScansAvoided; that number and a profile are
+  what will say whether this was worth it.
+
+
 0.13.3
 ------
   WHAT ARE THE 464? 0.13.2's probe, on a real insanium craft: 75,360,365 repeated failing simulates,

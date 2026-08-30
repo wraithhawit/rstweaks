@@ -4,6 +4,15 @@ import com.wraithhawit.rstweaks.ChatReporter;
 import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.RSTweaks;
 import com.wraithhawit.rstweaks.Stats;
+import com.wraithhawit.rstweaks.storage.VersionedResourceList;
+
+import com.refinedmods.refinedstorage.api.resource.ResourceKey;
+import com.refinedmods.refinedstorage.api.resource.list.MutableResourceList;
+import com.refinedmods.refinedstorage.api.resource.list.MutableResourceListImpl;
+import com.refinedmods.refinedstorage.common.support.resource.ItemResource;
+
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 import java.util.List;
 
@@ -227,6 +236,56 @@ public final class RSTweaksGameTests {
         RSTweaks.LOGGER.info("[rstweaks] gametest reuse avoided {} scans across {} scenarios",
             avoided, reused.scenarios());
         report(helper, "reused substitution", reused);
+    }
+
+    /**
+     * The storage version counter, against a real {@code MutableResourceListImpl}.
+     *
+     * <p><b>This is the load-bearing test for 0.14.0.</b> The failing-simulate cache is exact only
+     * because every mutation of the task's internal storage bumps a counter; if
+     * {@code MutableResourceListImplMixin} silently fails to apply, the list stops implementing
+     * {@link VersionedResourceList}, the cache never engages, and everything still passes while the
+     * optimization quietly does nothing — this project has five mixins in exactly that state.
+     *
+     * <p>Worse would be a counter that applies but misses a mutation, which is the one way this
+     * design can be <em>wrong</em> rather than merely useless. So each of the three mutating methods
+     * is exercised separately rather than asserting the number merely moved.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void internalStorageCountsItsOwnMutations(final GameTestHelper helper) {
+        final MutableResourceList list = MutableResourceListImpl.create();
+        if (!(list instanceof VersionedResourceList versioned)) {
+            helper.fail("MutableResourceListImpl does not implement VersionedResourceList, so the "
+                + "mixin did not apply and the failing-simulate cache can never engage");
+            return;
+        }
+        final ResourceKey resource = ItemResource.ofItemStack(new ItemStack(Items.DIAMOND_PICKAXE));
+        final long fresh = versioned.rstweaks$version();
+
+        list.add(resource, 4L);
+        final long afterAdd = versioned.rstweaks$version();
+        if (afterAdd == fresh) {
+            helper.fail("add did not bump the storage version; a cached decision would survive an "
+                + "insertion that should invalidate it");
+            return;
+        }
+
+        list.remove(resource, 1L);
+        final long afterRemove = versioned.rstweaks$version();
+        if (afterRemove == afterAdd) {
+            helper.fail("remove did not bump the storage version -- this is the mutation that the "
+                + "1,052 observed disagreements were made of");
+            return;
+        }
+
+        list.clear();
+        if (versioned.rstweaks$version() == afterRemove) {
+            helper.fail("clear did not bump the storage version");
+            return;
+        }
+        RSTweaks.LOGGER.info("[rstweaks] gametest storage version moved {} -> {} across add, "
+            + "remove and clear", fresh, versioned.rstweaks$version());
+        helper.succeed();
     }
 
     /**

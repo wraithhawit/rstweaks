@@ -8,6 +8,68 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.14.0
+
+**The failing simulate is cached — and the 1,052 disagreements are handled exactly, not gambled on.**
+
+0.13.3's diagnostic answered the open question outright. In every logged disagreement the `wanted`
+key was **identical**, and what moved was storage:
+
+| # | before | now |
+|---|---|---|
+| 1–2 | *no substitute found* | `→ @275` (storage has 1) |
+| 3–4 | `→ @{}` fresh, storage has 350,496 | `→ @275`, storage has 1 |
+| 5 | `→ @275`, storage now has 0 | `→ @494`, storage has 1 |
+
+The crystal wears, a more-worn level appears in shared storage, and `findWornTool`'s deliberate
+"most worn first" rule flips the pick — fresh, then `@275`, then `@494` — even with 350,496 fresh
+crystals sitting there. Case 1–2 is the dangerous one: the previous answer was *no substitute at
+all*, and a blind cache would have turned that into a craft that refuses to run.
+
+`calculateIterationInputs` is ruled out. It never once handed back a different `wanted`.
+
+### Every one of those is a storage mutation
+
+So `MutableResourceListImplMixin` counts them — `add`, `remove`, `clear` — and a failing simulate
+reuses the previous answer **only** while the storage version *and* the input count are unchanged.
+Two `O(1)` reads. Exact rather than statistical, invalidating on precisely the 1,052.
+
+### The prize
+
+169,947,478 repeated failing simulates on a real insanium craft, with a single pattern rescanning
+the task's entire internal storage **701,697 times in a row**. About 73% of iterations fail their
+simulate and never execute, which is exactly why the execute-side cache could only ever reach a
+fifth of the scans.
+
+### Safe by construction, not by the mixin having landed
+
+A storage that does not implement `VersionedResourceList` reuses nothing and rescans as before.
+`reuseFailedSimulate` (default on) switches it off, and it is ignored while either probe runs so a
+probe never measures a cache against itself.
+
+### The mixin is proven to apply, and break-tested
+
+A new gametest builds a real `MutableResourceListImpl`, asserts it implements
+`VersionedResourceList`, and exercises `add`, `remove` and `clear` **separately** — `0 → 3`.
+
+Deleting the increment from the `remove` injector fails that test by name:
+
+```
+internalstoragecountsitsownmutations failed: remove did not bump the storage version
+  -- this is the mutation that the 1,052 observed disagreements were made of
+```
+
+Restoring it passes all 32. A counter that applies but misses one mutation is the single way this
+design can be *wrong* rather than merely useless, so each mutation is pinned on its own rather than
+asserting the number merely moved.
+
+### Not measured in game
+
+The fixture has zero failing simulates, so **no automated test can show the cache firing**.
+`/rstweaks stats` reports `failedSimulateScansAvoided`; that number and a fresh profile are what
+will say whether this was worth building.
+
+
 ## 0.13.3
 
 **What are the 464?**
