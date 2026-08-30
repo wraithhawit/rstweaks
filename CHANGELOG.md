@@ -8,6 +8,51 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.18.0
+
+**`/rstweaks selftest crafting` — every crafting suite, then every optimization off against on.**
+
+392 checks. The suites answer *does crafting work*. The differentials answer the question that
+actually matters after a run of changes to Refined Storage's core loop: **does it still work the
+same with each optimization on**.
+
+Every scenario in the fixture passes with the optimizations off — that is what it is for — so each
+differential also asserts its **counter moved**. If the optimization never fired, the ON run was the
+OFF run again, and it says so instead of going green.
+
+### It found two real gaps on its first run
+
+**1. `reuseFailedSimulate` and `skipUnchangedSteps` never engaged in the fixture at all.**
+
+Both need a repeated ask with an *unchanged* world. At `StepBehavior.DEFAULT`'s one step per call, a
+blocked pattern failed once, a sibling executed, storage changed, and the caches correctly declined.
+A real crafter asks for up to 175,552 steps a tick, so one pattern is stepped thousands of times with
+nothing else touching internal storage in between. The fixture now steps **4 per pattern per call** —
+the real shape, not a special case for the test.
+
+**2. `skipUnchangedSteps` subsumes `reuseFailedSimulate`.**
+
+Once the step returns `IDLE` up front, `extractAll` never runs and the substitution inside it is
+unreachable, so the replay cannot fire. Not a conflict — the outer skip is strictly better where it
+applies — but the replay is only reachable, and only testable, with the skip out of the way. It
+remains the fallback whenever `skipUnchangedSteps` is switched off, and the differential isolates
+them for exactly that reason.
+
+### A scenario that produces failing simulates
+
+Only a pattern with a durable ingredient records a decision, and until now every tool scenario could
+run on its first ask — so the fixture contained **zero repeated failing simulates**, measured. That
+is why three optimizations shipped with no coverage and needed in-game verifiers instead.
+
+`tool pattern blocked behind another pattern` makes the tool pattern wait on a gear it cannot have
+yet. The simulate-repeat probe went from **0 repeats to 121, all agreed**.
+
+### Wired into the gametests
+
+So the command cannot rot. A command somebody reaches for before trusting a build with real items in
+it is worth more than a command that used to work.
+
+
 ## 0.17.0
 
 **Byproduct aging was the largest thing left, and most of it was ours.**

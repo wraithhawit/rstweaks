@@ -181,6 +181,32 @@ public final class TaskEngineSelfTest {
      * report a harness failure; reporting it here names the actual consequence.
      */
     @Nullable
+    /**
+     * Several steps per pattern per call, rather than {@link StepBehavior#DEFAULT}'s one.
+     *
+     * <p><b>This is what makes the fixture resemble the thing it is testing.</b> A multiblock
+     * crafter asks Refined Storage for up to 175,552 steps a tick, so in a real base one pattern is
+     * stepped thousands of times in a row with nothing else touching the task's internal storage in
+     * between. That is the entire premise of {@code reuseFailedSimulate} and
+     * {@code skipUnchangedSteps}: a repeated ask with an unchanged world.
+     *
+     * <p>At one step per call the fixture could never produce that. A blocked pattern failed once,
+     * a sibling executed, storage changed, and the caches correctly declined — so both
+     * optimizations read as "never engaged" and the differential in
+     * {@link CraftingStabilitySelfTest} said so, which is exactly what it is for. Stepping several
+     * times per call gives a blocked pattern consecutive asks with nothing changing between them,
+     * which is the real shape.
+     *
+     * <p>Small rather than realistic: enough to produce the repeat, few enough that the scenarios
+     * stay quick and {@code MAX_STEPS} still bounds a stuck task.
+     */
+    private static final StepBehavior MULTI_STEP = new StepBehavior() {
+        @Override
+        public int getSteps(final Pattern pattern) {
+            return 4;
+        }
+    };
+
     private static String execute(final TaskPlan plan, final RootStorageImpl storage) {
         final Task task = new TaskImpl(plan, ACTOR, false);
         // How the network wires a running task in: TaskContainer.attach registers it as a
@@ -193,7 +219,7 @@ public final class TaskEngineSelfTest {
                 }
                 final boolean changed;
                 try {
-                    changed = task.step(storage, NO_SINKS, StepBehavior.DEFAULT, TaskListener.EMPTY);
+                    changed = task.step(storage, NO_SINKS, MULTI_STEP, TaskListener.EMPTY);
                 } catch (final Exception e) {
                     return "step " + steps + " threw " + e + ". Refined Storage catches this,"
                         + " marks the task COMPLETED, fires the finished toast and drops the"
@@ -448,6 +474,30 @@ public final class TaskEngineSelfTest {
             },
             Map.of(FakeDurability.worn("crystal", 7), 1L, "material", 4096L, "gem", 4096L),
             "product", 25L));
+
+        // A TOOL PATTERN THAT HAS TO WAIT, which no scenario here produced until 0.18.0 and which
+        // is why three optimizations shipped with no test coverage at all.
+        //
+        // The caches added in 0.13-0.16 all key off a *repeated failing simulate*: the same pattern
+        // asked twice with nothing changed in between. Only a pattern with a durable ingredient
+        // records a decision at all, and until now every tool scenario could run on its first ask —
+        // so the fixture contained zero repeats, measured, and the replay and step-skip paths could
+        // only be verified in game against a real craft.
+        //
+        // Here the tool pattern needs a gear it cannot have yet. Its simulate fails, the gear
+        // pattern executes, it fails again, and again -- which is exactly the shape that
+        // reuseFailedSimulate replays and skipUnchangedSteps skips outright. The craft still
+        // finishes, so the ledger audit applies to it like any other.
+        out.add(new Scenario("tool pattern blocked behind another pattern", Planner.LP,
+            new FakeDurability("crystal", 200), repo -> {
+                repo.add(pattern("widget",
+                    List.of(ing(1, FakeDurability.worn("crystal", 0)), ing(4, "gear")),
+                    List.of(out("widget", 1)),
+                    List.of(out(FakeDurability.worn("crystal", 1), 1))), 0);
+                repo.add(pattern("gear", List.of(ing(2, "ore")), List.of(out("gear", 1)),
+                    List.of()), 0);
+            },
+            Map.of(FakeDurability.worn("crystal", 0), 1L, "ore", 4096L), "widget", 40L));
 
         return out;
     }

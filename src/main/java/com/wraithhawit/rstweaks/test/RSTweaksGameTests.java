@@ -239,6 +239,19 @@ public final class RSTweaksGameTests {
     }
 
     /**
+     * The whole crafting stability suite, so {@code /rstweaks selftest crafting} cannot rot.
+     *
+     * <p>It is the command somebody reaches for before trusting a build with real items in it, and
+     * a command that throws or silently stops covering something is worse than no command. Running
+     * it here means the differentials — each optimization off against on, each asserting its
+     * counter moved — are checked on every build rather than only when a human types it.
+     */
+    @GameTest(template = "empty", timeoutTicks = 1200)
+    public static void craftingIsStableWithEveryOptimizationToggled(final GameTestHelper helper) {
+        report(helper, "crafting stability", CraftingStabilitySelfTest.run());
+    }
+
+    /**
      * The storage version counter, against a real {@code MutableResourceListImpl}.
      *
      * <p><b>This is the load-bearing test for 0.14.0.</b> The failing-simulate cache is exact only

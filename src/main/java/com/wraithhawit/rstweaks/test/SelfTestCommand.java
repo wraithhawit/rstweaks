@@ -58,7 +58,36 @@ public final class SelfTestCommand {
                 }
                 return 1;
             }))
-            .then(Commands.literal("selftest").executes(context -> {
+            // Everything crafting-related in one place, including each optimization run off
+            // against on. Separate from the plain selftest because this is the one to reach for
+            // before trusting a build with real items in it, and because it is slower: it runs the
+            // task engine six times over.
+            .then(Commands.literal("selftest")
+                .then(Commands.literal("crafting").executes(context -> {
+                    final CommandSourceStack source = context.getSource();
+                    source.sendSuccess(() -> Component.literal(
+                            "[rstweaks] running crafting stability suite -- every crafting self-test,"
+                                + " then each optimization off against on...")
+                        .withStyle(ChatFormatting.GRAY), false);
+                    final CraftingPlanSelfTest.Result result = CraftingStabilitySelfTest.run();
+                    if (result.failures().isEmpty()) {
+                        source.sendSuccess(() -> Component.literal("[rstweaks] crafting stable: "
+                                + result.scenarios() + " checks, no failures")
+                            .withStyle(ChatFormatting.GREEN), false);
+                        return 1;
+                    }
+                    source.sendFailure(Component.literal("[rstweaks] CRAFTING UNSTABLE: "
+                        + result.failures().size() + " of " + result.scenarios()
+                        + " checks failed").withStyle(ChatFormatting.RED));
+                    // One per line, and every one of them: this is the output somebody acts on,
+                    // and a truncated list of what is wrong with autocrafting is worse than none.
+                    result.failures().forEach(failure -> source.sendFailure(
+                        Component.literal("  " + failure).withStyle(ChatFormatting.RED)));
+                    RSTweaks.LOGGER.error("[rstweaks] crafting stability suite failed: {}",
+                        result.failures());
+                    return 0;
+                }))
+                .executes(context -> {
                 final CommandSourceStack source = context.getSource();
                 source.sendSuccess(() -> Component.literal("[rstweaks] running crafting plan self-test...")
                     .withStyle(ChatFormatting.GRAY), false);
