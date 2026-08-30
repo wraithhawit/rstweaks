@@ -267,6 +267,15 @@ public final class Stats {
      */
     public static long substitutionExecuteWithoutSimulate;
 
+    /**
+     * Internal-storage scans the EXECUTE pass skipped by reusing the SIMULATE pass's answer.
+     *
+     * <p>The only way to tell the reuse apart from a no-op. Every task-engine scenario passes with
+     * it switched off — that is the point of the differential — so a run with it on proves nothing
+     * unless this number moved.
+     */
+    public static long substitutionScansAvoided;
+
     private Stats() {
     }
 }

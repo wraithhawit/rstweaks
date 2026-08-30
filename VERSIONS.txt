@@ -10,6 +10,31 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.13.0
+------
+  THE PROBE CAME BACK CLEAN, SO THE CACHE IS BUILT. On a real 1M insanium craft, 0.12.1's probe
+  measured 63,247,889 SIMULATE/EXECUTE pairs, 63,247,889 agreed, 0 disagreed, 0 execute-without-
+  simulate. RS runs every iteration twice and SIMULATE does not mutate internal storage, so the
+  second findWornTool walks the same storage for the same tool.
+  findWornTool was 57.24% of this mixin's 37.03% of the server thread (profile IiXxJ4Mk4j). The
+  EXECUTE pass now reuses the substitute SIMULATE chose, so half those walks are gone.
+  SIXTY-THREE MILLION AGREEMENTS IS EVIDENCE, NOT A PROOF, and it is not trusted blindly. The
+  remembered substitute is re-validated against internal storage with one O(1) lookup before use;
+  a resource that was not in the remembered decision, a substitute no longer present in the amount
+  needed, or an EXECUTE with no SIMULATE in front of it all fall through to the full scan. The fast
+  path can only return an answer the slow path would also have returned. reuseSimulatedSubstitution
+  (default on) switches it off and restores the double scan exactly.
+  The probe DISABLES the cache while it is on -- with the cache serving EXECUTE the probe would
+  compare the remembered answer against itself and report agreement no matter what. A measurement
+  that cannot fail is not a measurement.
+  BREAK-TESTED. New differential gametest runs the task engine with the reuse on and asserts
+  substitutionScansAvoided moved (83 scans across 6 scenarios) -- without that counter the run
+  would just be the rescanning run again. Returning the wrong half of the remembered pair makes a
+  required test fail; restoring it makes all 30 pass.
+  UNMEASURED IN GAME: the arithmetic says this removes ~28% of the durability path, but the last
+  four versions all had sound arithmetic and moved the total by ~1.5 points each. Profile it.
+
+
 0.12.1
 ------
   THE PROBE FOR THE BIGGEST REMAINING WIN. Profile IiXxJ4Mk4j confirms 0.12.0 worked -- maxDamage

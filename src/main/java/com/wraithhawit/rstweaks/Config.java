@@ -409,6 +409,34 @@ public final class Config {
     /** Cached: read once per iteration, on the hottest path in the mod. */
     public static volatile boolean substitutionProbe = false;
 
+    public static final ModConfigSpec.BooleanValue REUSE_SIMULATED_SUBSTITUTION = BUILDER
+        .comment(
+            "Reuse the worn-tool substitution chosen on Refined Storage's SIMULATE pass for the",
+            "EXECUTE pass that immediately follows it, instead of scanning for it twice.",
+            "",
+            "RS runs every crafting iteration TWICE -- calculateIterationInputs + extractAll with",
+            "SIMULATE to test it, then the identical pair with EXECUTE to do it -- and SIMULATE",
+            "does not mutate internal storage. So the second scan walks the same storage looking",
+            "for the same tool. findWornTool walks the task's ENTIRE internal storage per durable",
+            "ingredient, and it was 57% of this mixin's 37% of the server thread in profile",
+            "IiXxJ4Mk4j.",
+            "",
+            "Measured before it was built, with substitutionProbe on a 1M insanium craft:",
+            "63,247,889 pairs, 63,247,889 agreed, 0 disagreed, 0 execute-without-simulate.",
+            "",
+            "That is evidence, not a proof, so the remembered answer is not trusted blindly: it is",
+            "re-validated against internal storage with a single O(1) lookup before use, and",
+            "anything that does not validate falls through to the full scan. The fast path can only",
+            "return an answer the slow path would also have returned.",
+            "",
+            "Switching this off restores the double scan exactly. It is ignored while",
+            "substitutionProbe is on, so the probe keeps measuring the real thing."
+        )
+        .define("reuseSimulatedSubstitution", true);
+
+    /** Cached: read once per durable ingredient per iteration, on the hottest path in the mod. */
+    public static volatile boolean reuseSimulatedSubstitution = true;
+
     public static final ModConfigSpec.IntValue MAX_BATCHED_ITERATIONS = BUILDER
         .comment(
             "The most iterations batchedExecution will run in one go.",
@@ -482,6 +510,7 @@ public final class Config {
         lpPlanner = LP_PLANNER.get();
         batchedExecution = BATCHED_EXECUTION.get();
         substitutionProbe = SUBSTITUTION_PROBE.get();
+        reuseSimulatedSubstitution = REUSE_SIMULATED_SUBSTITUTION.get();
         maxBatchedIterations = MAX_BATCHED_ITERATIONS.get();
         maxBatchedIterationsPerTick = MAX_BATCHED_ITERATIONS_PER_TICK.get();
         quietTaskLogging = QUIET_TASK_LOGGING.get();

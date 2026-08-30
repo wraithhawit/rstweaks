@@ -192,6 +192,44 @@ public final class RSTweaksGameTests {
     }
 
     /**
+     * Reusing the SIMULATE answer, against the real task engine, differentially.
+     *
+     * <p>Every task-engine scenario already passes with the reuse switched off — that is what the
+     * suite is for — so running it again with the reuse on proves nothing on its own. The counter
+     * is what makes it a test: if no scan was actually avoided, the second run was the first run
+     * and this says so instead of going green.
+     *
+     * <p>Also asserts the reuse is switched on by default, because that is the claim that ships.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void reusedSubstitutionMatchesRescanning(final GameTestHelper helper) {
+        if (!Config.reuseSimulatedSubstitution) {
+            helper.fail("reuseSimulatedSubstitution defaults to off, so the shipped default is not "
+                + "the path this test covers");
+            return;
+        }
+        final boolean originalProbe = Config.substitutionProbe;
+        final long before = Stats.substitutionScansAvoided;
+        final CraftingPlanSelfTest.Result reused;
+        try {
+            // The probe disables the reuse by design, so it has to be off for this to exercise it.
+            Config.substitutionProbe = false;
+            reused = TaskEngineSelfTest.run();
+        } finally {
+            Config.substitutionProbe = originalProbe;
+        }
+        final long avoided = Stats.substitutionScansAvoided - before;
+        if (avoided == 0L) {
+            helper.fail("no internal-storage scan was avoided, so the reuse never engaged and this "
+                + "run was the rescanning run again");
+            return;
+        }
+        RSTweaks.LOGGER.info("[rstweaks] gametest reuse avoided {} scans across {} scenarios",
+            avoided, reused.scenarios());
+        report(helper, "reused substitution", reused);
+    }
+
+    /**
      * The substitution probe, against the real task engine.
      *
      * <p>The probe only writes on the EXECUTE half of a pair, so "switched on but never reached"

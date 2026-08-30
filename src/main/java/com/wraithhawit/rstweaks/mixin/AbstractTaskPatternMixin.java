@@ -249,7 +249,8 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
                 this.rstweaks$consumedList().add(wanted);
                 continue;
             }
-            final ResourceKey substitute = findWornTool(internalStorage, durability, wanted, needed);
+            final ResourceKey substitute =
+                rstweaks$findWornToolReusing(internalStorage, durability, wanted, needed, action);
             if (substitute != null) {
                 swaps.add(new ResourceKey[] {wanted, substitute});
                 this.rstweaks$consumedList().add(substitute);
@@ -257,12 +258,101 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
         }
 
         rstweaks$probeSimulateExecutePair(action, swaps);
+        rstweaks$rememberDecision(action, swaps);
 
         for (final ResourceKey[] swap : swaps) {
             final long amount = inputs.get(swap[0]);
             mutableInputs.remove(swap[0], amount);
             mutableInputs.add(swap[1], amount);
         }
+    }
+
+    /**
+     * {@code findWornTool}, but reusing the SIMULATE pass's answer when the EXECUTE pass can.
+     *
+     * <p><b>The measurement that justifies this.</b> Refined Storage's
+     * {@code InternalTaskPattern.step} runs every iteration twice — once with {@code SIMULATE} to
+     * test it, once with {@code EXECUTE} to do it — and {@code SIMULATE} does not mutate internal
+     * storage. So the second scan walks the same storage looking for the same tool. The 0.12.1
+     * probe measured that over a real 1M insanium craft: <b>63,247,889 pairs, 63,247,889 agreed,
+     * 0 disagreed, 0 execute-without-simulate.</b>
+     *
+     * <p>Sixty-three million agreements is evidence, not a proof, so this does not trust it blindly.
+     * The remembered substitute is re-validated against internal storage with a single {@code O(1)}
+     * lookup before it is used, and anything that does not validate — a resource that was not in the
+     * remembered decision, a substitute no longer present in the amount needed, an EXECUTE with no
+     * SIMULATE before it — falls straight through to the full scan. The fast path can only ever
+     * return an answer the slow path would also have returned.
+     *
+     * <p>What it removes is the scan itself: {@code findWornTool} walks the task's entire internal
+     * storage per durable ingredient, and it was 57.24% of this mixin's 37.03% of the server thread
+     * in profile {@code IiXxJ4Mk4j}. Half of those walks were re-deriving what the other half had
+     * just worked out.
+     */
+    @Unique
+    @Nullable
+    private ResourceKey rstweaks$findWornToolReusing(final MutableResourceList internalStorage,
+                                                     final Durability durability,
+                                                     final ResourceKey wanted,
+                                                     final long needed,
+                                                     final Action action) {
+        // The probe and the cache are mutually exclusive on purpose. With the cache serving the
+        // EXECUTE pass, the probe would be comparing the remembered answer against itself and would
+        // report agreement no matter what -- a measurement that cannot fail is not a measurement.
+        if (action != Action.EXECUTE || !Config.reuseSimulatedSubstitution
+            || Config.substitutionProbe) {
+            return findWornTool(internalStorage, durability, wanted, needed);
+        }
+        final ResourceKey remembered = rstweaks$rememberedSubstitute(wanted);
+        if (remembered != null && internalStorage.get(remembered) >= needed) {
+            Stats.substitutionScansAvoided++;
+            return remembered;
+        }
+        return findWornTool(internalStorage, durability, wanted, needed);
+    }
+
+    /** The substitute the SIMULATE pass chose for this resource, or null if it chose none. */
+    @Unique
+    @Nullable
+    private ResourceKey rstweaks$rememberedSubstitute(final ResourceKey wanted) {
+        final List<ResourceKey> remembered = this.rstweaks$simulatedSwaps;
+        if (remembered == null) {
+            return null;
+        }
+        for (int i = 0; i < remembered.size(); i += 2) {
+            // Identity first: both passes draw their resources from the same pattern budget, so the
+            // same key object usually turns up in each, and ItemResource.equals hashes a
+            // DataComponentPatch. The list holds one or two entries, so the fallback is cheap.
+            final ResourceKey candidate = remembered.get(i);
+            if (candidate == wanted || candidate.equals(wanted)) {
+                return remembered.get(i + 1);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Holds the SIMULATE pass's decision for the EXECUTE pass that follows it.
+     *
+     * <p>Cleared on EXECUTE whatever happened, so a decision can never outlive the single iteration
+     * it was made for: the next EXECUTE without a SIMULATE in front of it finds nothing remembered
+     * and scans, which is exactly the old behaviour.
+     */
+    @Unique
+    private void rstweaks$rememberDecision(final Action action, final List<ResourceKey[]> swaps) {
+        if (!Config.reuseSimulatedSubstitution || Config.substitutionProbe) {
+            return;
+        }
+        if (action != Action.SIMULATE) {
+            this.rstweaks$simulatedSwaps = null;
+            return;
+        }
+        final List<ResourceKey> flat = new ArrayList<>(swaps.size() * 2);
+        for (final ResourceKey[] swap : swaps) {
+            flat.add(swap[0]);
+            flat.add(swap[1]);
+        }
+        this.rstweaks$simulatedSwaps = flat;
     }
 
     /**

@@ -8,6 +8,57 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.13.0
+
+**The probe came back clean, so the cache is built.**
+
+0.12.1 asked the question instead of assuming the answer. On a real 1M insanium craft:
+
+```
+substitution probe: 63,247,889 pairs, 63,247,889 agreed, 0 disagreed,
+                    0 execute-without-simulate
+```
+
+Refined Storage runs every crafting iteration twice — `calculateIterationInputs` + `extractAll`
+with `SIMULATE` to test it, then the identical pair with `EXECUTE` to do it — and `SIMULATE` does
+not mutate internal storage. So the second `findWornTool` walks the same storage looking for the
+same tool. It was **57.24% of this mixin's 37.03%** of the server thread in profile `IiXxJ4Mk4j`.
+
+The EXECUTE pass now reuses the substitute SIMULATE chose. Half those walks are gone.
+
+### Sixty-three million agreements is evidence, not a proof
+
+So it is not trusted blindly. Before the remembered substitute is used it is re-validated against
+internal storage with a single `O(1)` lookup, and every one of these falls through to the full
+scan:
+
+- a resource that was not in the remembered decision
+- a substitute no longer present in the amount needed
+- an EXECUTE with no SIMULATE in front of it
+
+**The fast path can only ever return an answer the slow path would also have returned.**
+`reuseSimulatedSubstitution` (default on) switches it off and restores the double scan exactly.
+
+The probe **disables** the cache while it is on. With the cache serving the EXECUTE pass, the probe
+would be comparing the remembered answer against itself and would report agreement no matter what,
+and a measurement that cannot fail is not a measurement.
+
+### Break-tested
+
+A new differential runs the task engine with the reuse on and asserts `substitutionScansAvoided`
+actually moved — **83 scans across 6 scenarios**. Without that counter the second run would just be
+the rescanning run again, which is the trap `batchedSteppingMatchesSerial` already exists to avoid.
+
+Returning the wrong half of the remembered pair makes a required test fail; restoring it makes all
+30 pass.
+
+### Not yet measured in game
+
+The arithmetic says this removes roughly 28% of the durability path. The last four versions all had
+sound arithmetic and moved the total by about a point and a half each, so treat that as a
+hypothesis until a profile says otherwise.
+
+
 ## 0.12.1
 
 **A probe for the biggest remaining win, instead of a guess at it.**
