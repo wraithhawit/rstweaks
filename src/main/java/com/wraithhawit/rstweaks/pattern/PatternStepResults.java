@@ -18,13 +18,14 @@ public final class PatternStepResults {
 
     public static final Object COMPLETED = lookup("COMPLETED");
     public static final Object RUNNING = lookup("RUNNING");
+    public static final Object IDLE = lookup("IDLE");
 
     private PatternStepResults() {
     }
 
     /** Whether the constants resolved. False means Refined Storage moved them; batching stands down. */
     public static boolean available() {
-        return COMPLETED != null && RUNNING != null;
+        return COMPLETED != null && RUNNING != null && IDLE != null;
     }
 
     private static Object lookup(final String name) {

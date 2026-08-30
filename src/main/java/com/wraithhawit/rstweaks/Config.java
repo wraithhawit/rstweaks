@@ -417,14 +417,40 @@ public final class Config {
             "thousand iterations while still consuming a single step, so the work per tick was",
             "multiplied by the batch width instead of being made cheaper.",
             "",
-            "Batching is supposed to buy fewer extractions for the same work. This is what",
-            "keeps it to that. When the budget runs out, batching stands down for the rest of",
-            "the tick and Refined Storage's own stepping carries on exactly as before."
+            "SINCE 0.11.0 THIS IS A BACKSTOP, NOT THE PRIMARY BOUND. A batch of N now credits the",
+            "next N-1 calls to step() and returns them immediately without work, so a batch costs",
+            "N of Refined Storage own steps rather than one and the iterations per tick are",
+            "exactly what they were before. This remains as a limit on how much of a tick gets",
+            "the cheap treatment, and as an emergency brake if that crediting is ever wrong.",
+            "",
+            "When it runs out, batching stands down for the rest of the tick and Refined Storage",
+            "own stepping carries on exactly as before."
         )
-        .defineInRange("maxBatchedIterationsPerTick", 8192, 0, 10_000_000);
+        .defineInRange("maxBatchedIterationsPerTick", 65536, 0, 10_000_000);
 
     /** Cached alongside {@link #batchedExecution}; read once per batch. */
-    public static volatile int maxBatchedIterationsPerTick = 8192;
+    public static volatile int maxBatchedIterationsPerTick = 65536;
+
+    public static final ModConfigSpec.BooleanValue QUIET_TASK_LOGGING = BUILDER
+        .comment(
+            "Raise Refined Storage's per-iteration crafting debug logging to INFO.",
+            "",
+            "InternalTaskPattern.step and AbstractTaskPattern.extractAll carry six LOGGER.debug",
+            "calls between them, and they run ONCE PER CRAFTING ITERATION -- roughly 100,000 a",
+            "tick when a multiblock crafter is driving them. In a pack with debug logging on,",
+            "which this one is, those lines are formatted and written, not discarded.",
+            "",
+            "Measured at 4.85% of the server thread in the log4j filter alone, before any of the",
+            "formatting or the disk I/O behind it.",
+            "",
+            "Only DEBUG on those two classes is affected. Warnings and errors from Refined",
+            "Storage still reach the log untouched. Turn this off if you are debugging",
+            "autocrafting and want the per-iteration trace back."
+        )
+        .define("quietTaskLogging", true);
+
+    /** Read once, at startup. */
+    public static volatile boolean quietTaskLogging = true;
 
     /** Called on config load and reload to refresh the hot-path caches. */
     public static void refresh() {
@@ -433,6 +459,7 @@ public final class Config {
         batchedExecution = BATCHED_EXECUTION.get();
         maxBatchedIterations = MAX_BATCHED_ITERATIONS.get();
         maxBatchedIterationsPerTick = MAX_BATCHED_ITERATIONS_PER_TICK.get();
+        quietTaskLogging = QUIET_TASK_LOGGING.get();
         externalStorageSlotIndex = EXTERNAL_STORAGE_SLOT_INDEX.get();
         keepRecycledResourcesInTask = KEEP_RECYCLED_RESOURCES_IN_TASK.get();
         skipMismatchedStorageTypes = SKIP_MISMATCHED_STORAGE_TYPES.get();

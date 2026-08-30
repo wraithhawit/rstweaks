@@ -10,6 +10,29 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.11.0
+-----
+  Three things the last clean profile (evmko3bHZl, netherrack, batching off) pointed at.
+  BATCHING IS THROUGHPUT-NEUTRAL NOW. 0.10.3 capped it per tick, but that bolted a bound on rather
+  than fixing the mistake: a batch of N consumed ONE of RS's steps, multiplying per-tick work. A
+  batch of N now CREDITS THE NEXT N-1 calls to step() and returns them immediately without work, so
+  it costs N steps exactly as N serial iterations would. Same work per tick, one extraction instead
+  of N. Cannot repeat the freeze because the arithmetic no longer allows it.
+  maxBatchedIterationsPerTick is therefore a BACKSTOP now, not the primary bound; raised 8192 ->
+  65536 since blunting it no longer buys safety. This is the fix I should have written first --
+  replacing stepPattern's loop was the obvious way and I rejected it as invasive; crediting gets
+  the same result without touching a package-private return type.
+  DURABILITY STANDS DOWN WHEN NOTHING IS DURABLE. trySubstituteWornTool runs twice per iteration and
+  was 3.57% of the server thread on a craft with NO tools in it -- an allocation and a walk of every
+  ingredient to conclude there was nothing to do. Decided once per task pattern, read off the
+  INGREDIENT BUDGET not the layout (the planner can allocate crystal@50 for a pattern encoded with
+  crystal@0, so the layout would miss the very substitution the mixin exists for).
+  RS'S PER-ITERATION DEBUG LOGGING. Six LOGGER.debug calls per crafting iteration, ~10^5 a tick;
+  with debug logging on (ATM10 default) they are formatted and WRITTEN. CompositeFilter.filter alone
+  was 4.85% of the server thread. quietTaskLogging (default on) raises those two loggers to INFO;
+  warnings and errors are untouched, and it says what it did once at startup.
+
+
 0.10.3
 -----
   BATCHING FROZE A WORLD FOR 114 SECONDS. A netherrack craft -- the first craft batching ever

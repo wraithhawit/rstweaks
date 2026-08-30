@@ -75,6 +75,10 @@ public abstract class BatchedStepMixin {
     @Shadow
     private long iterationsRemaining;
 
+    /** Steps already paid for by a batch. See the credit note in the injection below. */
+    @Unique
+    private long rstweaks$creditedSteps;
+
     @Shadow
     private void returnOutput(final MutableResourceList internalStorage,
                               final RootStorage rootStorage,
@@ -88,8 +92,21 @@ public abstract class BatchedStepMixin {
                                     final ExternalPatternSinkProvider sinkProvider,
                                     final TaskListener listener,
                                     final CallbackInfoReturnable<Object> cir) {
-        if (!Config.batchedExecution || this.iterationsRemaining <= 1L
-            || !PatternStepResults.available()) {
+        if (!Config.batchedExecution || !PatternStepResults.available()) {
+            return;
+        }
+        if (this.rstweaks$creditedSteps > 0L) {
+            // A batch already did this iteration's work. Refined Storage's loop runs `steps`
+            // times whatever happens, so the only way for a batch of N to cost N steps rather
+            // than one is to spend the next N-1 calls doing nothing. That is what makes this
+            // throughput-neutral: the same iterations per tick as before, in far fewer
+            // extractions -- and it is what was missing when a batch of 1024 consumed a single
+            // step and froze a world for 114 seconds.
+            --this.rstweaks$creditedSteps;
+            cir.setReturnValue(PatternStepResults.IDLE);
+            return;
+        }
+        if (this.iterationsRemaining <= 1L) {
             return;
         }
         try {
@@ -171,6 +188,9 @@ public abstract class BatchedStepMixin {
                 new ResourceAmount(output.resource(), Math.multiplyExact(output.amount(), iterations)));
         }
         this.iterationsRemaining -= iterations;
+        // The batch did `iterations` of work but consumed one call, so the next iterations-1
+        // calls are already paid for.
+        this.rstweaks$creditedSteps = iterations - 1L;
         Stats.batchedIterations += iterations;
         Stats.batchedSteps++;
         ServerTicks.spendBatchBudget(iterations);

@@ -170,6 +170,42 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
         }
     }
 
+    /**
+     * Whether anything this pattern can draw is a tool that wears out, decided once.
+     *
+     * <p>Read from the <b>ingredient budget</b> rather than the pattern's layout, and the
+     * distinction matters: the planner allocates concrete resources per slot, so a pattern encoded
+     * with {@code crystal@0} may have {@code crystal@50} in its budget. Checking the layout would
+     * miss exactly the substitution this whole mixin exists to perform.
+     *
+     * <p>The budget's keys are fixed for the task's lifetime — only the amounts change as it runs —
+     * so the answer cannot change either.
+     */
+    @Unique
+    private boolean rstweaks$touchesADurableResource(final Durability durability) {
+        Boolean cached = this.rstweaks$durable;
+        if (cached == null) {
+            cached = false;
+            for (final Map<ResourceKey, Long> possibilities
+                : ((TaskPatternInternals) this).rstweaks$ingredients().values()) {
+                for (final ResourceKey candidate : possibilities.keySet()) {
+                    if (durability.isDurable(candidate)) {
+                        cached = true;
+                        break;
+                    }
+                }
+                if (cached) {
+                    break;
+                }
+            }
+            this.rstweaks$durable = cached;
+        }
+        return cached;
+    }
+
+    @Unique
+    private Boolean rstweaks$durable;
+
     @Unique
     private void rstweaks$trySubstituteWornTool(final ResourceList inputs,
                                                final MutableResourceList internalStorage) {
@@ -180,6 +216,13 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
             return;
         }
         final Durability durability = Durability.Holder.get();
+        if (!rstweaks$touchesADurableResource(durability)) {
+            // Most patterns have no tool in them at all, and this runs twice per iteration on the
+            // hottest loop in the mod. Measured at 3.57% of the server thread on a compression
+            // craft with nothing durable anywhere in it -- an allocation and a walk of every
+            // ingredient, every time, to conclude there was nothing to do.
+            return;
+        }
         if (!(inputs instanceof MutableResourceList mutableInputs)) {
             return;
         }

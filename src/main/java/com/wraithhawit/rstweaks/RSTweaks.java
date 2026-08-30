@@ -87,6 +87,9 @@ public class RSTweaks {
             ConfigFormatter.addBlankLinesBetweenEntries(event.getConfig().getFullPath());
         });
         modEventBus.addListener(ModConfigEvent.Reloading.class, event -> Config.refresh());
+        // After the first config load, because it reads a setting. Once per launch is enough:
+        // a logger level is global state, not something to reapply on every reload.
+        modEventBus.addListener(ModConfigEvent.Loading.class, event -> QuietTaskLogging.applyIfEnabled());
         NeoForge.EVENT_BUS.register(ServerTicks.class);
         // Only meaningful when Functional Storage is present, but registering a listener for
         // an event that never matters is free, and gating it on ModList here would run before

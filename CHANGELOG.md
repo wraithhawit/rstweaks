@@ -8,6 +8,53 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.11.0
+
+Three things the last clean profile (`evmko3bHZl` — netherrack, batching off) pointed at, in the
+order they appear in it.
+
+### Batching is throughput-neutral now, which is what it always should have been
+
+0.10.3 stopped batching from freezing a world by capping it per tick, but that was a bound bolted
+on rather than the mistake fixed. The mistake was that a batch of N consumed **one** of Refined
+Storage's `steps`, so it multiplied the work per tick instead of making it cheaper.
+
+A batch of N now **credits the next N−1 calls** to `step()` and returns each of them immediately
+without doing anything. So a batch costs N steps, exactly as N serial iterations would have, and
+the iterations per tick are precisely what they were before — the same work, in one extraction
+instead of N. It cannot repeat what happened, because the arithmetic no longer allows it.
+
+That also puts `maxBatchedIterationsPerTick` in its proper place: a backstop and an emergency brake
+if the crediting is ever wrong, rather than the thing standing between you and a stalled server.
+Raised 8192 → 65536 accordingly, since blunting it no longer buys safety.
+
+This is the fix I should have written first. Replacing `stepPattern`'s loop was the obvious way and
+I rejected it as invasive; crediting gets the same result without touching a package-private return
+type or reimplementing anything.
+
+### Durability substitution stands down when there is nothing durable
+
+`trySubstituteWornTool` runs twice per iteration and was **3.57% of the server thread on a craft
+with no tools in it at all** — an allocation and a walk of every ingredient, every time, to conclude
+there was nothing to do. Now decided once per task pattern.
+
+Read off the **ingredient budget**, not the pattern layout, and the distinction is the point: the
+planner allocates concrete resources per slot, so a pattern encoded with `crystal@0` can have
+`crystal@50` in its budget. Checking the layout would miss exactly the substitution the mixin exists
+to perform.
+
+### Refined Storage's per-iteration debug logging
+
+`InternalTaskPattern.step` and `AbstractTaskPattern.extractAll` carry six `LOGGER.debug` calls
+between them, once per crafting iteration, ~10⁵ a tick under a multiblock crafter. In a pack with
+debug logging enabled — All the Mods 10 is — those lines are formatted and written, not discarded.
+`CompositeFilter.filter` alone was **4.85% of the server thread**, before the formatting or the I/O
+behind it.
+
+`quietTaskLogging` (default on) raises those two loggers to INFO. Only DEBUG on those two classes is
+affected; warnings and errors from Refined Storage arrive untouched. It reaches into logging that is
+arguably the pack's business, so it says what it did once at startup and can be switched off.
+
 ## 0.10.3
 
 **Batching froze a world for 114 seconds. This is the bound that was missing.**
