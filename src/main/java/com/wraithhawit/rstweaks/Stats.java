@@ -276,6 +276,22 @@ public final class Stats {
      */
     public static long substitutionScansAvoided;
 
+    /**
+     * Why the reuse did not fire, split three ways.
+     *
+     * <p>0.13.0 shipped the reuse with only {@link #substitutionScansAvoided} and never surfaced
+     * even that, and the profile then said it was firing about 1% of the time in a real craft while
+     * the gametest showed it working. There was no way to tell which branch was responsible. These
+     * make the answer one {@code /rstweaks stats} away instead of one release away.
+     */
+    public static long substitutionScansNotEligible;
+
+    /** EXECUTE passes where the SIMULATE pass had remembered nothing for that resource. */
+    public static long substitutionNothingRemembered;
+
+    /** EXECUTE passes where the remembered substitute was no longer in storage in the amount needed. */
+    public static long substitutionRevalidationFailed;
+
     private Stats() {
     }
 }

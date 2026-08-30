@@ -10,6 +10,26 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.13.1
+------
+  0.13.0 UNDERDELIVERED AND I COULD NOT SAY WHY. Profile 2Dwcfddcxn (0.13.0, 1M insanium): the
+  durability path went 37.03% -> 36.28%, against an arithmetic prediction of ~28% off it. The tree
+  says why it fell short but not why THAT happened: findWornToolReusing spends 94.67% of itself
+  inside the full findWornTool scan, and only 0.92% in the revalidation lookup. The reuse fires
+  about 1% of the time in a real craft -- while the gametest shows it firing (83 scans avoided).
+  Config was checked and is correct: substitutionProbe=false, reuseSimulatedSubstitution=true.
+  THE ACTUAL MISTAKE WAS SHIPPING IT UNREADABLE. substitutionScansAvoided existed in 0.13.0 and was
+  never surfaced anywhere, so the only way to learn the hit rate was a spark profile and a round
+  trip -- and even then the profile cannot say WHICH branch missed. A counter nobody can read is
+  not a counter.
+  So: the miss is now split three ways -- nothing-remembered (the SIMULATE pass recorded no
+  substitute for that resource), revalidation-failed (it did, but the substitute is no longer in
+  storage in the amount needed), and not-eligible (SIMULATE pass, reuse off, or probe on) -- and
+  /rstweaks stats reports the hit rate and all three unconditionally.
+  No behaviour change. This version exists to make the next answer one command away instead of one
+  release away.
+
+
 0.13.0
 ------
   THE PROBE CAME BACK CLEAN, SO THE CACHE IS BUILT. On a real 1M insanium craft, 0.12.1's probe

@@ -8,6 +8,55 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.13.1
+
+**0.13.0 underdelivered, and I could not say why. That is the bug this fixes.**
+
+Profile `2Dwcfddcxn` (0.13.0, 1M insanium): the durability path went **37.03% → 36.28%**, against an
+arithmetic prediction of removing roughly 28% of it.
+
+The tree says where it went wrong:
+
+```
+trySubstituteWornTool                    36.28%  of the server thread
+  rstweaks$findWornToolReusing           46.08%  of that
+    findWornTool  (the full scan)        94.67%  of THAT
+    MutableResourceListImpl.get           0.92%  <- the revalidation, i.e. the fast path
+```
+
+**The reuse fires about 1% of the time in a real craft** — while the gametest shows it firing, 83
+scans avoided. Config was checked and is correct: `substitutionProbe = false`,
+`reuseSimulatedSubstitution = true`. So the fast path is being entered and the lookup is missing.
+
+### The actual mistake was shipping it unreadable
+
+`substitutionScansAvoided` existed in 0.13.0 and **was never surfaced anywhere**. The only way to
+discover the hit rate was a spark profile and a round trip — and even then a profile cannot say
+*which* branch missed. A counter nobody can read is not a counter, and this project has now made
+that mistake four times.
+
+So the miss is split three ways and reported unconditionally by `/rstweaks stats`:
+
+| branch | meaning |
+|---|---|
+| `nothing-remembered` | the SIMULATE pass recorded no substitute for that resource |
+| `revalidation-failed` | it did, but the substitute is no longer in storage in the amount needed |
+| `not eligible` | SIMULATE pass, reuse switched off, or the probe is on |
+
+```
+worn-tool reuse: 12,441 scans avoided of 1,204,880 eligible (1.0%);
+                 missed 1,192,439 nothing-remembered, 0 revalidation-failed; 1,204,880 not eligible
+```
+
+Those two miss counters distinguish the two live hypotheses in one reading. `nothing-remembered`
+dominating means the SIMULATE pass is not recording what I think it records. `revalidation-failed`
+dominating means storage is changing between the passes after all — which would also mean the
+63-million-pair probe result needs re-reading.
+
+No behaviour change. This version exists to make the next answer one command away instead of one
+release away.
+
+
 ## 0.13.0
 
 **The probe came back clean, so the cache is built.**

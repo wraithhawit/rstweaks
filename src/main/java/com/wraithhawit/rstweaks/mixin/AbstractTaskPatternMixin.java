@@ -301,13 +301,24 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
         // report agreement no matter what -- a measurement that cannot fail is not a measurement.
         if (action != Action.EXECUTE || !Config.reuseSimulatedSubstitution
             || Config.substitutionProbe) {
+            Stats.substitutionScansNotEligible++;
             return findWornTool(internalStorage, durability, wanted, needed);
         }
         final ResourceKey remembered = rstweaks$rememberedSubstitute(wanted);
-        if (remembered != null && internalStorage.get(remembered) >= needed) {
+        if (remembered == null) {
+            // Counted apart from a failed revalidation, because the two have completely different
+            // causes: nothing was remembered for this resource at all, versus the remembered answer
+            // no longer being usable. 0.13.0 shipped with neither counter surfaced and the profile
+            // said the reuse was firing about 1% of the time -- with no way to tell which of these
+            // was the reason.
+            Stats.substitutionNothingRemembered++;
+            return findWornTool(internalStorage, durability, wanted, needed);
+        }
+        if (internalStorage.get(remembered) >= needed) {
             Stats.substitutionScansAvoided++;
             return remembered;
         }
+        Stats.substitutionRevalidationFailed++;
         return findWornTool(internalStorage, durability, wanted, needed);
     }
 

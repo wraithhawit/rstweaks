@@ -320,10 +320,35 @@ public final class ChatReporter {
                 ? ChatFormatting.GREEN : ChatFormatting.RED)));
     }
 
+    /**
+     * Whether the SIMULATE-answer reuse is actually firing, and when it is not, which branch.
+     *
+     * <p>Always reported, not gated on a config flag. 0.13.0 shipped the reuse with its counter
+     * unsurfaced, and the only way to find out it was firing 1% of the time was a spark profile and
+     * a round trip. A counter nobody can read is not a counter.
+     */
+    private static List<Component> substitutionReuseLines() {
+        final long eligible = Stats.substitutionScansAvoided + Stats.substitutionNothingRemembered
+            + Stats.substitutionRevalidationFailed;
+        if (eligible + Stats.substitutionScansNotEligible == 0L) {
+            return List.of();
+        }
+        final double hitRate = eligible == 0L
+            ? 0.0 : 100.0 * Stats.substitutionScansAvoided / eligible;
+        return List.of(Component.empty().append(PREFIX).append(Component.literal(String.format(
+                "worn-tool reuse: %,d scans avoided of %,d eligible (%.1f%%); missed %,d nothing-"
+                    + "remembered, %,d revalidation-failed; %,d not eligible",
+                Stats.substitutionScansAvoided, eligible, hitRate,
+                Stats.substitutionNothingRemembered, Stats.substitutionRevalidationFailed,
+                Stats.substitutionScansNotEligible))
+            .withStyle(hitRate >= 40.0 ? ChatFormatting.GREEN : ChatFormatting.YELLOW)));
+    }
+
     /** Session totals on demand, for {@code /rstweaks stats}. */
     public static List<Component> sessionTotals() {
         final List<Component> lines = new java.util.ArrayList<>(report(Counts.now(),
             "session totals"));
+        lines.addAll(substitutionReuseLines());
         lines.addAll(substitutionProbeLines());
         if (!lines.isEmpty()) {
             return lines;
