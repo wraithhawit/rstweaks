@@ -268,10 +268,20 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
                                             final Durability durability,
                                             final ResourceKey wanted,
                                             final long needed) {
+        // Resolved once for the whole scan. sameTool needs the wanted side's tool family on every
+        // single comparison and it cannot change across the loop, so deriving it per candidate was
+        // half of every family lookup this method made -- and a family lookup hashes and
+        // equality-compares a DataComponentPatch.
+        //
+        // Profile qRRh2NJvYs is why this was still worth doing after 0.11.2's item-first rejection:
+        // that rejection assumed almost every candidate is a different item, which is false for the
+        // very case this exists for. Wearing a tool down fills internal storage with many wear
+        // levels of the SAME item, so the cheap reference comparison matches and both lookups ran.
+        final int wantedFamily = durability.toolFamily(wanted);
         ResourceKey best = null;
         int bestLeft = Integer.MAX_VALUE;
         for (final ResourceKey candidate : internalStorage.getAll()) {
-            if (!durability.sameTool(wanted, candidate)
+            if (!durability.sameTool(wanted, wantedFamily, candidate)
                 || internalStorage.get(candidate) < needed) {
                 continue;
             }

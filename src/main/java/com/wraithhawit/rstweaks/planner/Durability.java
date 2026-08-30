@@ -82,6 +82,40 @@ public interface Durability {
     /** Whether two resources are the same tool differing only in how worn they are. */
     boolean sameTool(ResourceKey a, ResourceKey b);
 
+    /** The answer {@link #toolFamily} gives for anything that does not wear out. */
+    int NOT_A_TOOL = -1;
+
+    /**
+     * An opaque token for this resource's tool family, or {@link #NOT_A_TOOL}.
+     *
+     * <p>Two resources are the same tool exactly when they share a token, so a scan looking for one
+     * particular tool can resolve <em>its</em> token once and compare against it, instead of
+     * re-deriving it for every candidate it looks at.
+     *
+     * <p>Implementations that do not model families return {@link #NOT_A_TOOL} and keep the
+     * behaviour of the two-argument {@link #sameTool}, which the default below preserves.
+     */
+    default int toolFamily(final ResourceKey resource) {
+        return NOT_A_TOOL;
+    }
+
+    /**
+     * {@link #sameTool} with the wanted side's {@link #toolFamily} already resolved.
+     *
+     * <p><b>This exists because of profile {@code qRRh2NJvYs}.</b> {@code findWornTool} scans the
+     * task's whole internal storage per durable ingredient, per iteration, and the two-argument
+     * {@code sameTool} resolved the family of <em>both</em> sides on every comparison — including
+     * the wanted side, which is fixed for the entire scan. Half of the family lookups in the
+     * hottest loop in the mod were re-deriving a constant.
+     *
+     * <p>The default ignores the token, so an implementation that does not override it is exactly
+     * as correct as before and merely no faster.
+     */
+    default boolean sameTool(final ResourceKey wanted, final int wantedFamily,
+                             final ResourceKey candidate) {
+        return sameTool(wanted, candidate);
+    }
+
     /**
      * Installed once at mod construction, and swapped by the headless tests for a fake
      * with no Minecraft behind it. Volatile because the planner runs on Refined Storage's

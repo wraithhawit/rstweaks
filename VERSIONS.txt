@@ -10,6 +10,38 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.12.0
+------
+  THE HOIST, AND THE CORRECTION TO 0.11.2's PREMISE. Profile qRRh2NJvYs (1M insanium, 0.11.2)
+  settles the argument I set up: the durability path went 40.15% -> 41.11% -> 38.82% across three
+  versions of constant-factor work. It is the SHAPE, not the constants.
+  WHERE THE TIME IS NOW: substituteWornTool 38.82% of the server thread, and inside it findWornTool
+  57.24% (22.2% of the thread), of which sameTool is 57.10% and usesLeft 21.10%. HashMap.hash is
+  still 22.74% self and ItemResource.equals 11.90% -- JIT-inlined ItemResource/DataComponentPatch
+  hashing from the family cache lookups.
+  0.11.2's REASONING WAS WRONG FOR THE CASE THAT MATTERS. It added an item-first rejection because
+  "almost every candidate is a completely different item". That is false for exactly the craft this
+  code exists to serve: wearing a tool down fills the task's internal storage with many wear levels
+  of the SAME item, so the reference comparison matches and both family lookups run anyway.
+  THE FIX: sameTool needs the WANTED side's family on every comparison, and it cannot change across
+  the scan. findWornTool now resolves it once via the new Durability.toolFamily and passes the token
+  into a three-argument sameTool -- half of every family lookup in the hottest loop in the mod was
+  re-deriving a constant. The two-argument form stays and the interface defaults delegate to it, so
+  any implementation that does not override is exactly as correct as before.
+  Also: maxDamage takes a plain get on the hit path instead of computeIfAbsent (8.86% self, pure
+  call volume from isDurable).
+  TESTED, AND BREAK-TESTED. New 169-scenario differential in DurabilitySelfTest asserts the hoisted
+  and slow forms agree over a matrix of wear levels, different tools, a non-durable item and a
+  same-item-different-components pair -- against the real ItemDurability, since the expensive half
+  is DataComponentPatch hashing and only Minecraft has one. Durability gametest 35 -> 204 scenarios.
+  Dropping the NOT_A_TOOL guard makes exactly the 9 stone pairs diverge, which is how I know it
+  tests anything. FakeDurability overrides the new methods deliberately: left on the interface
+  default it would have run the OLD path and passed without exercising the new one.
+  FOUND WHILE BREAKING IT: a failing suite with a wide matrix built a >1024 character message and
+  Minecraft threw IllegalStateException inside the reporter, so a legitimate FAILURE came out as a
+  crash at the one moment the diagnostic matters most. Now bounded, with the full list in the log.
+
+
 0.11.2
 -----
   THE TOOL SCAN REJECTS ON THE ITEM FIRST. With the cheaper costs around it gone, profile r3z1C0CsZx

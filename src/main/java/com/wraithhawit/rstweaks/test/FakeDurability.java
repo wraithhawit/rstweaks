@@ -88,4 +88,27 @@ class FakeDurability implements Durability {
         // very bug these fixtures exist to catch.
         return left != null && right != null && left[0].equals(right[0]);
     }
+
+    /**
+     * Families, in the same shape as {@link com.wraithhawit.rstweaks.storage.ItemDurability}.
+     *
+     * <p><b>Overridden deliberately rather than left to the interface default.</b> The default
+     * makes the three-argument {@code sameTool} delegate straight back to the two-argument one, so
+     * a fake that did not override this would run the <em>old</em> path and every test using it
+     * would pass without once exercising the new one. {@code DurabilitySelfTest} pins that the two
+     * forms agree; that assertion is only worth anything if the fake actually has a fast path to
+     * disagree with.
+     */
+    @Override
+    public int toolFamily(final ResourceKey resource) {
+        final String[] parts = split(resource);
+        return parts == null ? NOT_A_TOOL : parts[0].hashCode();
+    }
+
+    @Override
+    public boolean sameTool(final ResourceKey wanted, final int wantedFamily,
+                            final ResourceKey candidate) {
+        final String[] right = split(candidate);
+        return wantedFamily != NOT_A_TOOL && right != null && right[0].hashCode() == wantedFamily;
+    }
 }

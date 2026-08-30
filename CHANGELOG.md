@@ -8,6 +8,75 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.12.0
+
+**The hoist — and the correction to 0.11.2's premise.**
+
+Profile `qRRh2NJvYs` (1M insanium, 0.11.2) settles the question 0.11.2 posed. Three versions of
+constant-factor work on the durability path:
+
+| | 0.11.0 | 0.11.1 | 0.11.2 |
+|---|---|---|---|
+| durability path total | 40.15% | 41.11% | **38.82%** |
+
+It is the shape, not the constants.
+
+### Where the time actually is
+
+```
+substituteWornTool                 38.82%  of the server thread
+  findWornTool                     57.24%  of that  (22.2% of the thread)
+    sameTool                       57.10%  of that
+    usesLeft                       21.10%
+  isDurable                        12.53%
+```
+
+with `HashMap.hash` still **22.74% self** and `ItemResource.equals` **11.90%** — JIT-inlined
+`ItemResource`/`DataComponentPatch` hashing from the family-cache lookups.
+
+### 0.11.2's reasoning was wrong for the case that matters
+
+It added the item-first rejection on the grounds that *"almost every candidate is a completely
+different item"*. That is true in general and **false for exactly the craft this code exists to
+serve**: wearing a tool down fills the task's internal storage with many wear levels of the *same*
+item. So the cheap reference comparison matches, and both family lookups run anyway. `sameTool`
+stayed at 12.7% of the server thread.
+
+### The fix
+
+`sameTool` needs the **wanted** side's family on every comparison, and it cannot change across the
+scan. `findWornTool` now resolves it once through the new `Durability.toolFamily` and passes the
+token into a three-argument `sameTool`. Half of every family lookup in the hottest loop in the mod
+was re-deriving a constant.
+
+The two-argument form stays, and the interface defaults delegate to it, so any implementation that
+does not override is exactly as correct as before and merely no faster.
+
+Also: `maxDamage` takes a plain `get` on the hit path rather than `computeIfAbsent` — 8.86% self,
+pure call volume from `isDurable`.
+
+### Tested, and break-tested
+
+A 169-scenario differential in `DurabilitySelfTest` asserts the hoisted and slow forms agree over a
+matrix of wear levels, different tools, a non-durable item, and a same-item-different-components
+pair — against the **real** `ItemDurability`, since the expensive half is `DataComponentPatch`
+hashing and only Minecraft has one. The durability gametest goes 35 → 204 scenarios.
+
+Dropping the `NOT_A_TOOL` guard makes exactly the 9 stone pairs diverge, which is how I know it
+tests anything.
+
+`FakeDurability` overrides the new methods **deliberately**. Left on the interface default it would
+have delegated to the old path, and every test using it would have passed without once exercising
+the new one.
+
+### Found while breaking it
+
+A failing suite with a wide matrix built a message over Minecraft's 1024-character component limit,
+and `helper.fail` threw `IllegalStateException` inside the reporter — so a legitimate FAILURE came
+out as a crash, at the one moment the diagnostic matters most. Now bounded, with the full list still
+going to the log.
+
+
 ## 0.11.2
 
 **The tool scan rejects on the item first.** With the cheaper costs around it gone, profile

@@ -202,6 +202,12 @@ public final class RSTweaksGameTests {
         report(helper, "durability", DurabilitySelfTest.run());
     }
 
+    /**
+     * Headroom under Minecraft's 1024-character component limit, leaving room for the prefix this
+     * message builds around the detail.
+     */
+    private static final int MAX_FAILURE_DETAIL = 700;
+
     private static void report(final GameTestHelper helper,
                                final String what,
                                final CraftingPlanSelfTest.Result result) {
@@ -215,7 +221,16 @@ public final class RSTweaksGameTests {
         // ledger of what the network was left holding is the whole diagnostic.
         result.failures().forEach(failure ->
             RSTweaks.LOGGER.error("[rstweaks] {} FAILURE: {}", what, failure));
+        // Bounded, because Minecraft refuses a component string over 1024 characters and throws
+        // IllegalStateException building the failure message. A suite with a wide matrix in it can
+        // fail on dozens of scenarios at once, and the result was that a legitimate FAILURE came
+        // out as a crash inside the reporter -- the one moment the diagnostic matters most. The
+        // full list is in the log lines above; this is the summary.
+        final String detail = String.join(" | ", result.failures());
         helper.fail(what + " diverged in " + result.failures().size() + " of "
-            + result.scenarios() + " scenarios: " + String.join(" | ", result.failures()));
+            + result.scenarios() + " scenarios (full list in the log): "
+            + (detail.length() > MAX_FAILURE_DETAIL
+                ? detail.substring(0, MAX_FAILURE_DETAIL) + " ..."
+                : detail));
     }
 }

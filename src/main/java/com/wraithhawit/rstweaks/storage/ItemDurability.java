@@ -60,7 +60,8 @@ public final class ItemDurability implements Durability {
         return family;
     }
 
-    private static final int NOT_A_TOOL = -1;
+    // NOT_A_TOOL is inherited from Durability: it is part of the toolFamily contract now, and two
+    // copies of a sentinel are two things that can drift apart.
     private static final Map<ItemResource, Integer> FAMILY = new ConcurrentHashMap<>();
     private static final Map<ItemResource, Integer> FAMILY_OF_CANONICAL = new ConcurrentHashMap<>();
     private static final java.util.concurrent.atomic.AtomicInteger NEXT_FAMILY =
@@ -116,6 +117,35 @@ public final class ItemDurability implements Durability {
         final ItemStack stack = item.toItemStack(1L);
         stack.set(DataComponents.DAMAGE, worn);
         return ItemResource.ofItemStack(stack);
+    }
+
+    @Override
+    public int toolFamily(final ResourceKey resource) {
+        return resource instanceof ItemResource item ? family(item) : NOT_A_TOOL;
+    }
+
+    /**
+     * The wanted side's family resolved once, for the whole of {@code findWornTool}'s scan.
+     *
+     * <p>Profile {@code qRRh2NJvYs} is why. 0.11.2 added the item-first rejection below on the
+     * reasoning that "almost every candidate is a completely different item" — <b>and that is false
+     * for exactly the craft this code exists to serve</b>. A tool being worn down fills the task's
+     * internal storage with many wear levels of the <em>same</em> item, so the reference comparison
+     * matches and both family lookups run. {@code sameTool} was still 12.7% of the server thread.
+     *
+     * <p>One of those two lookups is for {@code wanted}, which does not change across the scan.
+     * Hoisting it removes half of them outright.
+     */
+    @Override
+    public boolean sameTool(final ResourceKey wanted, final int wantedFamily,
+                            final ResourceKey candidate) {
+        if (!(wanted instanceof ItemResource left) || !(candidate instanceof ItemResource right)) {
+            return false;
+        }
+        if (left.item() != right.item()) {
+            return false;
+        }
+        return wantedFamily != NOT_A_TOOL && family(right) == wantedFamily;
     }
 
     @Override
@@ -184,8 +214,16 @@ public final class ItemDurability implements Durability {
     private static final Map<Item, Integer> MAX_DAMAGE = new ConcurrentHashMap<>();
 
     private static int maxDamage(final ItemResource resource) {
-        return MAX_DAMAGE.computeIfAbsent(resource.item(), item -> {
-            final ItemStack stack = new ItemStack(item);
+        // A plain get on the hit path, because this is 8.86% of the server thread in profile
+        // qRRh2NJvYs purely on call volume -- isDurable asks it once per ingredient, twice per
+        // iteration. computeIfAbsent has to be prepared to insert on every call; get does not.
+        final Item item = resource.item();
+        final Integer cached = MAX_DAMAGE.get(item);
+        if (cached != null) {
+            return cached;
+        }
+        return MAX_DAMAGE.computeIfAbsent(item, key -> {
+            final ItemStack stack = new ItemStack(key);
             return stack.isDamageableItem() ? stack.getMaxDamage() : 0;
         });
     }

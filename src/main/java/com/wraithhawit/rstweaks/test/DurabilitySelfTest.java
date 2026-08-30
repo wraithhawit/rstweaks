@@ -43,8 +43,47 @@ public final class DurabilitySelfTest {
         differentToolsAreNotTheSameTool();
         aToolBreaksOnItsLastUse();
         ordinaryItemsAreNotDurable();
+        theHoistedFamilyAgreesWithTheSlowSameTool();
 
         return new CraftingPlanSelfTest.Result(checks, List.copyOf(FAILURES));
+    }
+
+    /**
+     * The differential for 0.12.0's hoist.
+     *
+     * <p>{@code findWornTool} now resolves the wanted side's family once and passes the token into
+     * a three-argument {@code sameTool}, instead of re-deriving it for every candidate. That is a
+     * pure optimisation, so the only thing worth asserting is that it did not become a different
+     * answer — over a matrix that deliberately includes the cases the two-argument version leans
+     * on: wear levels of one tool, two different tools, a non-durable item, and the pairing where
+     * the item matches but the components do not.
+     *
+     * <p>Run against the real {@code ItemDurability}, not a fake, because the expensive half being
+     * skipped is {@code DataComponentPatch} hashing and only Minecraft has one of those.
+     */
+    private static void theHoistedFamilyAgreesWithTheSlowSameTool() {
+        final List<ItemResource> matrix = new ArrayList<>();
+        for (final Item item : List.of(Items.DIAMOND_PICKAXE, Items.DIAMOND_AXE, Items.SHEARS,
+            Items.STONE)) {
+            for (final int damage : new int[] {0, 1, 100}) {
+                matrix.add(worn(item, damage));
+            }
+        }
+        // The item matches but the components do not -- the pairing the item-first rejection in
+        // sameTool cannot decide on its own, so it is the one that reaches the family comparison.
+        final ItemStack named = new ItemStack(Items.DIAMOND_PICKAXE);
+        named.set(DataComponents.CUSTOM_NAME, net.minecraft.network.chat.Component.literal("Bob"));
+        matrix.add(ItemResource.ofItemStack(named));
+        for (final ItemResource wanted : matrix) {
+            final int family = ItemDurability.INSTANCE.toolFamily(wanted);
+            for (final ItemResource candidate : matrix) {
+                final boolean slow = ItemDurability.INSTANCE.sameTool(wanted, candidate);
+                final boolean hoisted =
+                    ItemDurability.INSTANCE.sameTool(wanted, family, candidate);
+                expect("hoisted sameTool agrees for " + wanted + " vs " + candidate,
+                    slow == hoisted);
+            }
+        }
     }
 
     /**
