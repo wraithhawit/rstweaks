@@ -8,6 +8,47 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.14.1
+
+**0.14.0's counter was never printed, and its changelog said it was.**
+
+`failedSimulateScansAvoided` is incremented on the hot path and appears in no report. So the single
+number that says whether the largest optimization in this series is firing **could not be read from
+inside the game** — and the 0.14.0 entry's claim that `/rstweaks stats` reports it is simply false.
+
+This is the **fourth** time this project has shipped something whose presence is indistinguishable
+from its absence, and it happened two versions after 0.13.1 was written to fix exactly that. Worth
+recording rather than quietly patching.
+
+`/rstweaks stats` now prints the two caches on **separate lines**:
+
+```
+worn-tool reuse (execute): 86,907,741 scans avoided of 86,907,741 eligible (100.0%); missed 0, 0
+worn-tool reuse (failing simulate): N scans avoided of M (X%); K rescanned because storage or inputs had changed
+```
+
+Not folded together, deliberately. They have different denominators and different failure modes, and
+a single line hiding a zero is how this happened in the first place.
+
+### What 0.14.0 actually did
+
+Profile `m4dQmEhBRW`:
+
+| | 0.13.x | 0.14.0 |
+|---|---|---|
+| `findWornTool` self | 4.01% | **1.60%** |
+| durability path | 36.28% | **32.04%** |
+
+The series now reads **40.15 → 41.11 → 38.82 → 37.03 → 36.28 → 32.04**. That 4.24-point step is
+larger than the previous four versions put together, and it is the first one that came from deleting
+work rather than making work cheaper.
+
+What is left is mostly not ours: `calculateIterationInputs` is the largest remaining item at 27.36%
+inclusive, and `HashMap.hash` the largest leaf at 24.85% self — both Refined Storage's own.
+
+No behaviour change.
+
+
 ## 0.14.0
 
 **The failing simulate is cached — and the 1,052 disagreements are handled exactly, not gambled on.**

@@ -10,6 +10,26 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.14.1
+------
+  0.14.0's COUNTER WAS NEVER PRINTED, and its changelog claimed it was. failedSimulateScansAvoided
+  is written on the hot path and appears in no report, so the one number that says whether the
+  biggest optimization in this series is firing could not be read from inside the game. That is the
+  FOURTH time this project has shipped something whose presence is indistinguishable from its
+  absence, and it happened two versions after 0.13.1 was written to fix exactly that. The claim in
+  the 0.14.0 entry is false; this is the correction.
+  /rstweaks stats now prints the two caches on separate lines -- execute-side and failing-simulate
+  -- with a hit rate and a fall-through count each. Deliberately not folded together: they have
+  different denominators and different failure modes, and one line hiding a zero is how this
+  happened.
+  WHAT 0.14.0 ACTUALLY DID, from profile m4dQmEhBRW: findWornTool self 4.01% -> 1.60%, and the
+  durability path 36.28% -> 32.04%. The series now reads 40.15 -> 41.11 -> 38.82 -> 37.03 -> 36.28
+  -> 32.04, and that 4.24-point step is more than the previous four versions put together.
+  calculateIterationInputs is now the largest thing left at 27.36% inclusive, and HashMap.hash the
+  largest leaf at 24.85% self -- both Refined Storage's own.
+  No behaviour change.
+
+
 0.14.0
 ------
   THE FAILING SIMULATE IS CACHED, AND THE 1,052 ARE HANDLED EXACTLY RATHER THAN GAMBLED ON.

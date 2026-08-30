@@ -335,13 +335,30 @@ public final class ChatReporter {
         }
         final double hitRate = eligible == 0L
             ? 0.0 : 100.0 * Stats.substitutionScansAvoided / eligible;
-        return List.of(Component.empty().append(PREFIX).append(Component.literal(String.format(
-                "worn-tool reuse: %,d scans avoided of %,d eligible (%.1f%%); missed %,d nothing-"
-                    + "remembered, %,d revalidation-failed; %,d not eligible",
-                Stats.substitutionScansAvoided, eligible, hitRate,
-                Stats.substitutionNothingRemembered, Stats.substitutionRevalidationFailed,
-                Stats.substitutionScansNotEligible))
-            .withStyle(hitRate >= 40.0 ? ChatFormatting.GREEN : ChatFormatting.YELLOW)));
+        // The failing-simulate cache is reported on its own line and NOT folded into the execute
+        // figures above. 0.14.0 shipped its counter written but never printed -- the fourth time
+        // this project has shipped something whose behaviour could not be read from inside the
+        // game, and it happened two versions after the changelog entry complaining about it. The
+        // denominator is the simulate passes that fell through, which is what
+        // substitutionScansNotEligible counts once the simulate branch is in play.
+        final long simulateEligible =
+            Stats.failedSimulateScansAvoided + Stats.substitutionScansNotEligible;
+        final double simulateHitRate = simulateEligible == 0L
+            ? 0.0 : 100.0 * Stats.failedSimulateScansAvoided / simulateEligible;
+        return List.of(
+            Component.empty().append(PREFIX).append(Component.literal(String.format(
+                    "worn-tool reuse (execute): %,d scans avoided of %,d eligible (%.1f%%); "
+                        + "missed %,d nothing-remembered, %,d revalidation-failed",
+                    Stats.substitutionScansAvoided, eligible, hitRate,
+                    Stats.substitutionNothingRemembered, Stats.substitutionRevalidationFailed))
+                .withStyle(hitRate >= 40.0 ? ChatFormatting.GREEN : ChatFormatting.YELLOW)),
+            Component.empty().append(PREFIX).append(Component.literal(String.format(
+                    "worn-tool reuse (failing simulate): %,d scans avoided of %,d (%.1f%%); "
+                        + "%,d rescanned because storage or inputs had changed",
+                    Stats.failedSimulateScansAvoided, simulateEligible, simulateHitRate,
+                    Stats.substitutionScansNotEligible))
+                .withStyle(simulateHitRate >= 40.0
+                    ? ChatFormatting.GREEN : ChatFormatting.YELLOW)));
     }
 
     /**
