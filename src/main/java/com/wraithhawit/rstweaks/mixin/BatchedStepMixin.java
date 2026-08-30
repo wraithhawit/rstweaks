@@ -11,6 +11,7 @@ import com.refinedmods.refinedstorage.api.resource.list.MutableResourceList;
 import com.refinedmods.refinedstorage.api.storage.root.RootStorage;
 import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.RSTweaks;
+import com.wraithhawit.rstweaks.ServerTicks;
 import com.wraithhawit.rstweaks.Stats;
 import com.wraithhawit.rstweaks.pattern.PatternStepResults;
 import com.wraithhawit.rstweaks.planner.Durability;
@@ -120,8 +121,19 @@ public abstract class BatchedStepMixin {
         self.rstweaks$ingredients().forEach((slot, possibilities) ->
             budget.put(slot, new LinkedHashMap<>(possibilities)));
 
+        // The bound that was missing, and its absence froze a world for 114 seconds.
+        // TaskImpl.stepPattern loops `steps` times calling step(), and `steps` is Refined
+        // Storage's throughput budget for this tick -- around 10^5 from a multiblock crafter.
+        // A batch consumes one of those however wide it is, so without a bound of its own the
+        // per-tick work is multiplied by the batch width rather than made cheaper. Fewer
+        // extractions for the same work is the point; more work per tick never was.
+        final int tickBudget = ServerTicks.batchBudget();
+        if (tickBudget <= 0) {
+            return;
+        }
         final Map<ResourceKey, Long> totals = new LinkedHashMap<>();
-        final long ceiling = Math.min(this.iterationsRemaining, Config.maxBatchedIterations);
+        final long ceiling =
+            Math.min(Math.min(this.iterationsRemaining, Config.maxBatchedIterations), tickBudget);
         long iterations = 0L;
         while (iterations < ceiling) {
             final Map<Integer, Map<ResourceKey, Long>> draw = rstweaks$drawOne(budget, layout);
@@ -161,6 +173,7 @@ public abstract class BatchedStepMixin {
         this.iterationsRemaining -= iterations;
         Stats.batchedIterations += iterations;
         Stats.batchedSteps++;
+        ServerTicks.spendBatchBudget(iterations);
         cir.setReturnValue(rstweaks$result());
     }
 

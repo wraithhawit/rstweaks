@@ -402,12 +402,37 @@ public final class Config {
     /** Cached alongside {@link #batchedExecution}. */
     public static volatile int maxBatchedIterations = 1024;
 
+    public static final ModConfigSpec.IntValue MAX_BATCHED_ITERATIONS_PER_TICK = BUILDER
+        .comment(
+            "The most iterations batchedExecution may run per server tick, across every",
+            "crafting task.",
+            "",
+            "THIS IS A SAFETY BOUND, not a tuning knob, and leaving it out froze a world for",
+            "114 seconds. Refined Storage steps a task with",
+            "",
+            "    for (int i = 0; i < steps; i++) pattern.step(...)",
+            "",
+            "where 'steps' is its own throughput budget for the tick -- a multiblock crafter",
+            "hands it about a hundred thousand. A batch made one of those calls do up to a",
+            "thousand iterations while still consuming a single step, so the work per tick was",
+            "multiplied by the batch width instead of being made cheaper.",
+            "",
+            "Batching is supposed to buy fewer extractions for the same work. This is what",
+            "keeps it to that. When the budget runs out, batching stands down for the rest of",
+            "the tick and Refined Storage's own stepping carries on exactly as before."
+        )
+        .defineInRange("maxBatchedIterationsPerTick", 8192, 0, 10_000_000);
+
+    /** Cached alongside {@link #batchedExecution}; read once per batch. */
+    public static volatile int maxBatchedIterationsPerTick = 8192;
+
     /** Called on config load and reload to refresh the hot-path caches. */
     public static void refresh() {
         lazyPatternPlanCopy = LAZY_PATTERN_PLAN_COPY.get();
         lpPlanner = LP_PLANNER.get();
         batchedExecution = BATCHED_EXECUTION.get();
         maxBatchedIterations = MAX_BATCHED_ITERATIONS.get();
+        maxBatchedIterationsPerTick = MAX_BATCHED_ITERATIONS_PER_TICK.get();
         externalStorageSlotIndex = EXTERNAL_STORAGE_SLOT_INDEX.get();
         keepRecycledResourcesInTask = KEEP_RECYCLED_RESOURCES_IN_TASK.get();
         skipMismatchedStorageTypes = SKIP_MISMATCHED_STORAGE_TYPES.get();

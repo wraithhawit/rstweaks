@@ -10,6 +10,27 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.10.3
+-----
+  BATCHING FROZE A WORLD FOR 114 SECONDS. A netherrack craft -- the first craft batching ever
+  accepted -- produced a single tick of 114,516ms. ModernFix's watchdog thread dump named it:
+  HashMap.merge <- rstweaks$tryBatch line 641 <- batchStep <- step <- TaskImpl.stepPattern.
+  THE MISTAKE: TaskImpl.stepPattern is `for (i=0; i<steps; i++) pattern.step(...)` and STEPS IS RS'S
+  THROUGHPUT BUDGET FOR THE TICK (~10^5 from a multiblock crafter). A batch made ONE of those calls
+  do up to 1024 iterations while still consuming ONE step, so per-tick work was multiplied by the
+  batch width: up to 10^8 where there had been 10^5. Batching is meant to buy fewer extractions for
+  the same work; I removed the throttle instead.
+  Invisible until now because the crystal chain has byproducts and batching refused every pattern.
+  Netherrack was the first chain it could accept and it took the lot on the first tick.
+  FIX: maxBatchedIterationsPerTick, default 8192, refilled per server tick and drawn down by every
+  batch across every task. When it runs out batching stands down and RS's stepping continues,
+  bounded by steps as always. Deliberately LOWER than what serial does in a tick, so this cannot
+  increase per-tick work under any setting.
+  The right long-term hook is stepPattern itself, where a batch of N would consume N of steps and be
+  throughput-neutral. Bigger change, riskier place, not what a frozen world needs first.
+  IF RUNNING 0.10.2 OR EARLIER WITH batchedExecution=true, TURN IT OFF.
+
+
 0.10.2
 -----
   BATCHING RAN FOR THE FIRST TIME, and cost 1.33% to do nothing. Profile 4JnFBQWZwg is the first

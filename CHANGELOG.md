@@ -8,6 +8,60 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.10.3
+
+**Batching froze a world for 114 seconds. This is the bound that was missing.**
+
+A netherrack craft — the first craft batching ever accepted — produced a single server tick of
+114,516 ms. ModernFix's watchdog caught it, and the thread dump named the code without ambiguity:
+
+```
+java.util.HashMap.merge
+  rstweaks$lambda$rstweaks$tryBatch$3
+  java.util.LinkedHashMap.forEach
+  rstweaks$tryBatch(InternalTaskPattern.java:641)
+  rstweaks$batchStep
+  InternalTaskPattern.step
+  TaskImpl.stepPattern
+```
+
+### The mistake
+
+`TaskImpl.stepPattern` is:
+
+```java
+int steps = stepBehavior.getSteps(pattern.getKey());
+for (int i = 0; i < steps; i++) { pattern.getValue().step(...); }
+```
+
+**`steps` is Refined Storage's throughput budget for the tick** — a multiblock crafter hands it
+around 10⁵. Batching made a single one of those calls do up to `maxBatchedIterations` (1024)
+iterations, while still consuming **one** step. So the work per tick was multiplied by the batch
+width instead of being made cheaper: up to 10⁸ iterations in a tick where there had been 10⁵.
+
+Batching is supposed to buy *fewer extractions for the same work*. I removed the throttle instead.
+
+It was invisible until now for the reason everything else has been: the crystal chain has
+byproducts, so batching refused every pattern and did nothing at all. Netherrack was the first
+chain it could accept, and it took the whole thing on the first tick.
+
+### The fix
+
+`maxBatchedIterationsPerTick`, default **8192**, refilled once per server tick and drawn down by
+every batch across every task. When it runs out, batching stands down for the rest of the tick and
+Refined Storage's own stepping continues, bounded by `steps` as it always was.
+
+Deliberately lower than what serial does in a tick, so this cannot increase per-tick work under any
+setting — it can only make some of that work cheaper. Raise it once there is a profile showing the
+benefit and the tick cost side by side.
+
+The right long-term hook is `stepPattern` itself, where a batch of N could consume N of `steps` and
+be exactly throughput-neutral. That is a bigger change to a riskier place, and it is not what a
+world that just froze needs first.
+
+**If you are running 0.10.2 or earlier with `batchedExecution = true`, turn it off.** It is the
+first condition in the mixin, so the path disables completely.
+
 ## 0.10.2
 
 **Batching ran for the first time, and cost 1.33% to do nothing.** Profile `4JnFBQWZwg` is the

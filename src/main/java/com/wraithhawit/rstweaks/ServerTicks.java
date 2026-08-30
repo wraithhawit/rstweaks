@@ -28,8 +28,36 @@ public final class ServerTicks {
         return current;
     }
 
+    /**
+     * How many more crafting iterations batched stepping may run this tick.
+     *
+     * <p><b>This exists because leaving it out froze a world for 114 seconds.</b>
+     * {@code TaskImpl.stepPattern} runs {@code for (i = 0; i < steps; i++) pattern.step(...)}, and
+     * {@code steps} is Refined Storage's throughput budget — a multiblock crafter hands it around
+     * 10<sup>5</sup>. A batch made one of those calls do up to a thousand iterations while still
+     * consuming a single step, so the per-tick work was multiplied rather than made cheaper, and a
+     * single tick took 114,516 ms.
+     *
+     * <p>The batching mixin cannot see {@code steps} from where it hooks, so the bound lives here
+     * instead: a budget refilled once per tick and drawn down by every batch, across every task.
+     * When it runs out, batching stands down and Refined Storage's own stepping continues, which is
+     * bounded by {@code steps} as it always was. Fewer extractions for the same work is the point;
+     * more work per tick never was.
+     */
+    public static int batchBudget() {
+        return batchBudget;
+    }
+
+    /** Draws from this tick's batch budget. */
+    public static void spendBatchBudget(final long iterations) {
+        batchBudget = (int) Math.max(0L, batchBudget - iterations);
+    }
+
+    private static int batchBudget;
+
     @SubscribeEvent
     public static void onServerTick(final ServerTickEvent.Post event) {
         ++current;
+        batchBudget = Config.maxBatchedIterationsPerTick;
     }
 }
