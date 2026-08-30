@@ -209,6 +209,13 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
     @Unique
     private void rstweaks$trySubstituteWornTool(final ResourceList inputs,
                                                final MutableResourceList internalStorage) {
+        // Before the clear, deliberately. On a pattern with nothing durable in it the consumed
+        // list is never written, so clearing it is a no-op -- and this runs twice per iteration
+        // on the hottest loop in the mod. Measured at 1.43% of the server thread on a compression
+        // craft even after the guard below was added, purely from the work done reaching it.
+        if (Boolean.FALSE.equals(this.rstweaks$durable)) {
+            return;
+        }
         // Cleared every call, including the SIMULATE that precedes each EXECUTE, so a
         // tool recorded by one iteration can never age the byproduct of the next.
         this.rstweaks$consumedList().clear();

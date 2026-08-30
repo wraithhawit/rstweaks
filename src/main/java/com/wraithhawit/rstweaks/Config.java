@@ -433,15 +433,18 @@ public final class Config {
 
     public static final ModConfigSpec.BooleanValue QUIET_TASK_LOGGING = BUILDER
         .comment(
-            "Raise Refined Storage's per-iteration crafting debug logging to INFO.",
+            "Skip Refined Storage's per-iteration crafting debug calls entirely.",
             "",
             "InternalTaskPattern.step and AbstractTaskPattern.extractAll carry six LOGGER.debug",
             "calls between them, and they run ONCE PER CRAFTING ITERATION -- roughly 100,000 a",
             "tick when a multiblock crafter is driving them. In a pack with debug logging on,",
             "which this one is, those lines are formatted and written, not discarded.",
             "",
-            "Measured at 4.85% of the server thread in the log4j filter alone, before any of the",
-            "formatting or the disk I/O behind it.",
+            "Log4j consults the CONFIGURATION-WIDE FILTER BEFORE the level check, so in a pack with",
+            "a filter chain -- this one has one -- every call pays for it whatever the logger level",
+            "is. Raising the level does nothing; 0.11.0 tried that and the cost did not move.",
+            "Measured at 6.09% of the server thread, with LoggerConfig.log at 0.01% -- meaning",
+            "essentially nothing was being written and all of it was the decision not to write.",
             "",
             "Only DEBUG on those two classes is affected. Warnings and errors from Refined",
             "Storage still reach the log untouched. Turn this off if you are debugging",

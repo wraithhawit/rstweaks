@@ -66,9 +66,24 @@ public final class ItemDurability implements Durability {
     private static final java.util.concurrent.atomic.AtomicInteger NEXT_FAMILY =
         new java.util.concurrent.atomic.AtomicInteger();
 
+    /**
+     * Whether this wears out at all — answered from {@link #maxDamage}, not from {@link #family}.
+     *
+     * <p>The distinction is the whole cost. {@code maxDamage} is keyed by {@link Item}, so its
+     * lookup is an identity hash on a registry object. {@code family} is keyed by
+     * {@code ItemResource}, so its lookup hashes and equality-compares a {@code DataComponentPatch}
+     * — and this is asked once per ingredient, twice per crafting iteration.
+     *
+     * <p>0.10.1 routed it through {@code family} and profile {@code 8GrQL66Tfd} shows what that
+     * cost: {@code ItemResource.equals} went from 6.19% of the server thread to <b>24.03%</b>, and
+     * the durability path barely improved overall despite {@code findWornTool} collapsing from
+     * 29.06% to 1.43%. The scan was fixed and the map lookup replaced it.
+     *
+     * <p>Only {@link #sameTool} needs the family, and it is asked far less often.
+     */
     @Override
     public boolean isDurable(final ResourceKey resource) {
-        return resource instanceof ItemResource item && family(item) != NOT_A_TOOL;
+        return resource instanceof ItemResource item && maxDamage(item) > 0;
     }
 
     @Override

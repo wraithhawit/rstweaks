@@ -10,6 +10,25 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.11.1
+-----
+  Three corrections, all from profiles of 0.11.0 rather than reasoning.
+  isDURABLE WAS GOING THROUGH THE WRONG CACHE -- my regression from 0.10.1. Insanium profile
+  8GrQL66Tfd vs 0.10.0's K7rNc1lhrw: findWornTool 29.06% -> 1.43% (the int-family fix working) but
+  ItemResource.equals 6.19% -> 24.03%, and substituteWornTool overall only 43.35% -> 40.15%. The
+  scan collapsed and the cost RELOCATED INTO THE CACHE LOOKUP: FAMILY is keyed on ItemResource, so
+  every get hashes and equality-compares a DataComponentPatch, and 0.10.1 routed isDurable through
+  it. isDurable only needs maxDamage > 0, which is keyed by ITEM -- an identity hash. Reverted.
+  Only sameTool needs the family, and with the scan gone it is asked far less often.
+  RAISING A LOGGER'S LEVEL CANNOT SKIP A LOG4J FILTER. 0.11.0's quietTaskLogging set the two RS
+  loggers to INFO; it ran and the cost went UP (3.80% -> 6.09%). Log4j consults the CONFIG-WIDE
+  FILTER BEFORE the level check, so a pack with a filter chain pays on every call regardless.
+  LoggerConfig.log was 0.01% -- nothing written, all of it the decision not to write. Now a mixin
+  redirects the six LOGGER.debug invocations to nothing, require=0 on both signatures.
+  THE DURABILITY GUARD COMES FIRST NOW. The 0.11.0 early-out still did the consumed-list clear and
+  the config read before deciding there were no tools -- 1.43% purely to reach a return.
+
+
 0.11.0
 -----
   Three things the last clean profile (evmko3bHZl, netherrack, batching off) pointed at.

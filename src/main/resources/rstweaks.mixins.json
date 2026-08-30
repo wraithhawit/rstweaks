@@ -16,6 +16,7 @@
     "CraftingGridResultSlotTestMixin",
     "FluidHandlerExternalStorageProviderMixin",
     "InternalTaskPatternMixin",
+    "QuietTaskLoggingMixin",
     "IsCraftableCraftingCalculatorListenerMixin",
     "ItemHandlerExternalStorageProviderMixin",
     "ItemHandlerExtractableStorageMixin",

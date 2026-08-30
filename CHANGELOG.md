@@ -8,6 +8,60 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.11.1
+
+Three corrections, all of them from profiles of 0.11.0 rather than from reasoning.
+
+### `isDurable` was going through the wrong cache — my regression from 0.10.1
+
+Profile `8GrQL66Tfd` (insanium, so tools everywhere) against `K7rNc1lhrw` on 0.10.0:
+
+| | 0.10.0 | 0.11.0 |
+|---|---|---|
+| `findWornTool` | 29.06% | **1.43%** |
+| `containsAll` | 9.26% | 3.87% |
+| `ItemResource.equals` | 6.19% | **24.03%** |
+| `substituteWornTool` total | 43.35% | 40.15% |
+
+The int-family change did what it was meant to — the storage scan collapsed from 29% to 1.4% — and
+then the cost **relocated into the cache lookup itself**. `FAMILY` is keyed on `ItemResource`, so
+every `get` hashes and equality-compares a `DataComponentPatch`, and 0.10.1 routed `isDurable`
+through it.
+
+`isDurable` only ever needed `maxDamage > 0`, which is keyed by `Item` — an identity hash on a
+registry object. It goes back to that. Only `sameTool` needs the family, and now that the scan is
+gone it is asked far less often.
+
+Worth stating plainly: 0.10.1 claimed a win it did not deliver. Overall the durability path went
+43.35% → 40.15%, not because the idea was wrong but because I put the expensive lookup on the
+hottest call.
+
+### Raising a logger's level cannot skip a log4j filter
+
+0.11.0's `quietTaskLogging` set those two RS loggers to INFO. It ran, and the cost went **up**
+(3.80% → 6.09%). The profile says why:
+
+```
+6.50%  Log4jLogger.debug
+6.42%    Logger$PrivateConfig.filter
+6.38%      CompositeFilter.filter
+0.01%  LoggerConfig.log        <- nothing is actually written
+```
+
+Log4j consults the configuration-wide filter **before** the level check, so a pack with a filter
+chain pays on every call whatever the logger's level is. Nothing was being written; all of it was
+the decision not to write.
+
+So the setting now does what its name always implied: a mixin redirects the six `LOGGER.debug`
+invocations in those two classes to nothing. `require = 0` on both, so Refined Storage moving them
+costs the optimization and not the launch. Warnings and errors are untouched.
+
+### The durability guard now comes first
+
+The 0.11.0 early-out still ran the consumed-list clear and the config read before deciding there
+were no tools — 1.43% of the server thread on a compression craft, entirely to reach a `return`.
+The cached answer is checked first now; on a tool-free pattern the whole handler is one field read.
+
 ## 0.11.0
 
 Three things the last clean profile (`evmko3bHZl` — netherrack, batching off) pointed at, in the
