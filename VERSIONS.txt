@@ -10,6 +10,29 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.12.1
+------
+  THE PROBE FOR THE BIGGEST REMAINING WIN. Profile IiXxJ4Mk4j confirms 0.12.0 worked -- maxDamage
+  8.86% -> gone, HashMap.hash 22.74% -> 20.12%, ItemResource.equals 11.90% -> 9.95%, durability
+  path 38.82% -> 37.03% -- and the 2.0.9 bytecode of InternalTaskPattern.step shows where the real
+  duplication is: calculateIterationInputs(SIMULATE) + extractAll(SIMULATE) to TEST an iteration,
+  then the identical pair with EXECUTE to DO it. Our substitution therefore scans the task's whole
+  internal storage twice for one iteration's work, and SIMULATE does not mutate storage.
+  Caching the first answer for the second pass would halve 37% of the server thread -- IF the two
+  passes always agree. calculateIterationInputs takes the Action, so it is entitled to differ, and
+  assuming otherwise is exactly the mistake 0.11.2 made ("almost every candidate is a different
+  item" -- true in general, false for the only case that mattered).
+  So this MEASURES the invariant rather than assuming it. New substitutionProbe config, default
+  OFF, changes no behaviour: it compares the SIMULATE swap decision against the EXECUTE one and
+  counts agreements, disagreements, and execute-without-simulate. Read it with /rstweaks stats.
+  A disagreement count of zero over a long real craft is what would justify building the cache.
+  AND IT IS PROVEN TO FIRE. New gametest asserts the counters move and that every pair is
+  classified -- 89 pairs, 89 agreed in the fixture. The probe only writes on the EXECUTE half, so
+  "on but never reached" and "off" look identical, and this project has now shipped three things
+  whose presence was indistinguishable from their absence. The gametest deliberately does NOT
+  assert zero disagreements: that is the fixture's answer, not the game's.
+
+
 0.12.0
 ------
   THE HOIST, AND THE CORRECTION TO 0.11.2's PREMISE. Profile qRRh2NJvYs (1M insanium, 0.11.2)

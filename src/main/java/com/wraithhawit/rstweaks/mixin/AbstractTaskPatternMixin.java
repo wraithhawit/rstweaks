@@ -8,6 +8,7 @@ import com.refinedmods.refinedstorage.api.resource.list.MutableResourceList;
 import com.refinedmods.refinedstorage.api.resource.list.ResourceList;
 import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.RSTweaks;
+import com.wraithhawit.rstweaks.Stats;
 import com.wraithhawit.rstweaks.planner.Durability;
 import com.wraithhawit.rstweaks.storage.TaskConsumption;
 import com.wraithhawit.rstweaks.storage.TaskPatternInternals;
@@ -163,7 +164,7 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
                                            final Action action,
                                            final CallbackInfoReturnable<Boolean> cir) {
         try {
-            rstweaks$trySubstituteWornTool(inputs, internalStorage);
+            rstweaks$trySubstituteWornTool(inputs, internalStorage, action);
         } catch (RuntimeException | LinkageError e) {
             RSTweaks.LOGGER.error("[rstweaks] durability substitution failed; leaving this "
                 + "iteration's ingredients untouched. The task continues.", e);
@@ -208,7 +209,8 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
 
     @Unique
     private void rstweaks$trySubstituteWornTool(final ResourceList inputs,
-                                               final MutableResourceList internalStorage) {
+                                               final MutableResourceList internalStorage,
+                                               final Action action) {
         // Before the clear, deliberately. On a pattern with nothing durable in it the consumed
         // list is never written, so clearing it is a no-op -- and this runs twice per iteration
         // on the hottest loop in the mod. Measured at 1.43% of the server thread on a compression
@@ -254,12 +256,84 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
             }
         }
 
+        rstweaks$probeSimulateExecutePair(action, swaps);
+
         for (final ResourceKey[] swap : swaps) {
             final long amount = inputs.get(swap[0]);
             mutableInputs.remove(swap[0], amount);
             mutableInputs.add(swap[1], amount);
         }
     }
+
+    /**
+     * Measures whether the SIMULATE pass and the EXECUTE pass reach the same substitution.
+     *
+     * <p><b>Why this exists.</b> {@code InternalTaskPattern.step} runs every iteration twice —
+     * {@code calculateIterationInputs(SIMULATE)} then {@code extractAll(.., SIMULATE)} to test it,
+     * and the identical pair with {@code EXECUTE} to do it. Verified in the 2.0.9 bytecode. Our
+     * substitution therefore scans the task's whole internal storage <em>twice per iteration</em>,
+     * and SIMULATE does not mutate storage, so the second scan is looking at the same world.
+     *
+     * <p>Caching the first answer for the second pass would halve the 37% of the server thread this
+     * mixin costs — <b>if</b> the two passes really do agree. They are not obliged to:
+     * {@code calculateIterationInputs} takes the {@code Action} as a parameter and is entitled to
+     * return different resources for the two. Assuming otherwise is the same class of mistake as
+     * 0.11.2's "almost every candidate is a different item", which was true in general and false
+     * for the only case that mattered.
+     *
+     * <p>So this measures the invariant instead of assuming it, and changes no behaviour: it
+     * compares, counts, and returns. Off by default; turn on {@code substitutionProbe} and read
+     * {@code /rstweaks stats}. A disagreement count of zero over millions of iterations is what
+     * would justify building the cache.
+     */
+    @Unique
+    private void rstweaks$probeSimulateExecutePair(final Action action,
+                                                   final List<ResourceKey[]> swaps) {
+        if (!Config.substitutionProbe) {
+            return;
+        }
+        if (action == Action.SIMULATE) {
+            final List<ResourceKey> flat = new ArrayList<>(swaps.size() * 2);
+            for (final ResourceKey[] swap : swaps) {
+                flat.add(swap[0]);
+                flat.add(swap[1]);
+            }
+            this.rstweaks$simulatedSwaps = flat;
+            return;
+        }
+        final List<ResourceKey> simulated = this.rstweaks$simulatedSwaps;
+        // Cleared whatever the outcome, so the next pair starts clean and an EXECUTE that arrives
+        // without its SIMULATE is counted rather than silently compared against a stale answer.
+        this.rstweaks$simulatedSwaps = null;
+        if (simulated == null) {
+            Stats.substitutionExecuteWithoutSimulate++;
+            return;
+        }
+        Stats.substitutionPairs++;
+        if (simulated.size() != swaps.size() * 2) {
+            Stats.substitutionDisagreed++;
+            return;
+        }
+        for (int i = 0; i < swaps.size(); i++) {
+            if (!simulated.get(i * 2).equals(swaps.get(i)[0])
+                || !simulated.get(i * 2 + 1).equals(swaps.get(i)[1])) {
+                Stats.substitutionDisagreed++;
+                return;
+            }
+        }
+        Stats.substitutionAgreed++;
+    }
+
+    /**
+     * The SIMULATE pass's substitution, held only until the matching EXECUTE compares against it.
+     *
+     * <p>Null-safe and without an inline initializer, for the reason {@link #rstweaks$consumed}
+     * records at length: Mixin does not reliably run field initialisers, and a throw from this
+     * mixin does not degrade autocrafting — it destroys the items the task is holding.
+     */
+    @Unique
+    @Nullable
+    private List<ResourceKey> rstweaks$simulatedSwaps;
 
     /** The most worn matching tool that still covers this iteration. */
     @Unique

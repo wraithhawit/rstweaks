@@ -236,6 +236,37 @@ public final class Stats {
     /** Batches performed. {@code batchedIterations / batchedSteps} is the average batch width. */
     public static long batchedSteps;
 
+    /**
+     * SIMULATE/EXECUTE pairs the substitution probe has compared.
+     *
+     * <p>Refined Storage runs every crafting iteration twice — once with {@code SIMULATE} to test
+     * it and once with {@code EXECUTE} to do it — so our substitution scans the task's whole
+     * internal storage twice for one iteration's worth of work. Caching the first answer for the
+     * second pass would halve the cost, but only if the two passes always agree, and
+     * {@code calculateIterationInputs} takes the {@code Action} and may legitimately differ.
+     *
+     * <p>These count the answer instead of assuming it. Written only when
+     * {@code substitutionProbe} is on.
+     */
+    public static long substitutionPairs;
+
+    /** Pairs where EXECUTE chose exactly what SIMULATE did. */
+    public static long substitutionAgreed;
+
+    /**
+     * Pairs where it did not. <b>This is the number that decides the optimization.</b> Anything
+     * above zero means caching the SIMULATE answer would substitute the wrong tool.
+     */
+    public static long substitutionDisagreed;
+
+    /**
+     * EXECUTE passes that arrived with no SIMULATE before them.
+     *
+     * <p>Counted separately because it would break the pairing assumption itself rather than the
+     * agreement — a different failure, and one that a bare agree/disagree ratio would hide.
+     */
+    public static long substitutionExecuteWithoutSimulate;
+
     private Stats() {
     }
 }

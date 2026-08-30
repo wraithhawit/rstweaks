@@ -290,9 +290,41 @@ public final class ChatReporter {
         return parts;
     }
 
+    /**
+     * What the substitution probe has seen, when it is switched on.
+     *
+     * <p>Zero pairs is reported explicitly rather than by silence. The probe only writes on the
+     * EXECUTE half of a pair, so "on but never fired" and "off" look identical from the outside —
+     * and this project has now shipped three things whose presence was indistinguishable from
+     * their absence.
+     */
+    private static List<Component> substitutionProbeLines() {
+        if (!Config.substitutionProbe) {
+            return List.of();
+        }
+        if (Stats.substitutionPairs == 0) {
+            return List.of(Component.empty().append(PREFIX).append(Component.literal(
+                    "substitution probe on, no SIMULATE/EXECUTE pair seen yet -- craft something "
+                        + "with a wearing tool in it.")
+                .withStyle(ChatFormatting.GRAY)));
+        }
+        final String verdict = Stats.substitutionDisagreed == 0
+            ? " -- caching the SIMULATE answer looks safe"
+            : " -- DISAGREEMENTS: caching the SIMULATE answer would substitute the wrong tool";
+        return List.of(Component.empty().append(PREFIX).append(Component.literal(String.format(
+                "substitution probe: %,d pairs, %,d agreed, %,d disagreed, %,d execute-without-"
+                    + "simulate%s",
+                Stats.substitutionPairs, Stats.substitutionAgreed, Stats.substitutionDisagreed,
+                Stats.substitutionExecuteWithoutSimulate, verdict))
+            .withStyle(Stats.substitutionDisagreed == 0
+                ? ChatFormatting.GREEN : ChatFormatting.RED)));
+    }
+
     /** Session totals on demand, for {@code /rstweaks stats}. */
     public static List<Component> sessionTotals() {
-        final List<Component> lines = report(Counts.now(), "session totals");
+        final List<Component> lines = new java.util.ArrayList<>(report(Counts.now(),
+            "session totals"));
+        lines.addAll(substitutionProbeLines());
         if (!lines.isEmpty()) {
             return lines;
         }

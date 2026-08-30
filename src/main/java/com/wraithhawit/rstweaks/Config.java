@@ -388,6 +388,27 @@ public final class Config {
     /** Cached: read once per pattern per step, on the hottest path in the mod. */
     public static volatile boolean batchedExecution = false;
 
+    public static final ModConfigSpec.BooleanValue SUBSTITUTION_PROBE = BUILDER
+        .comment(
+            "DIAGNOSTIC. Measures whether the durability substitution reaches the same answer on",
+            "Refined Storage's SIMULATE pass as on its EXECUTE pass.",
+            "",
+            "RS runs every crafting iteration TWICE -- calculateIterationInputs + extractAll with",
+            "SIMULATE to test it, then the identical pair with EXECUTE to do it. So the worn-tool",
+            "scan walks the task's whole internal storage twice for one iteration of work, and it",
+            "was 37% of the server thread in profile IiXxJ4Mk4j. Caching the first answer for the",
+            "second pass would halve that -- but only if the two passes always agree, and",
+            "calculateIterationInputs takes the Action, so it is entitled to differ.",
+            "",
+            "This changes NOTHING about what the mod does. It compares the two answers and counts",
+            "them; read the result with /rstweaks stats. Leave it off for normal play -- it copies",
+            "a small list per iteration on the hottest path in the mod."
+        )
+        .define("substitutionProbe", false);
+
+    /** Cached: read once per iteration, on the hottest path in the mod. */
+    public static volatile boolean substitutionProbe = false;
+
     public static final ModConfigSpec.IntValue MAX_BATCHED_ITERATIONS = BUILDER
         .comment(
             "The most iterations batchedExecution will run in one go.",
@@ -460,6 +481,7 @@ public final class Config {
         lazyPatternPlanCopy = LAZY_PATTERN_PLAN_COPY.get();
         lpPlanner = LP_PLANNER.get();
         batchedExecution = BATCHED_EXECUTION.get();
+        substitutionProbe = SUBSTITUTION_PROBE.get();
         maxBatchedIterations = MAX_BATCHED_ITERATIONS.get();
         maxBatchedIterationsPerTick = MAX_BATCHED_ITERATIONS_PER_TICK.get();
         quietTaskLogging = QUIET_TASK_LOGGING.get();

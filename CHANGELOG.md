@@ -8,6 +8,64 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.12.1
+
+**A probe for the biggest remaining win, instead of a guess at it.**
+
+Profile `IiXxJ4Mk4j` confirms 0.12.0 did what it claimed:
+
+| self time | 0.11.2 | 0.12.0 |
+|---|---|---|
+| `HashMap.hash` | 22.74% | 20.12% |
+| `ItemResource.equals` | 11.90% | 9.95% |
+| `ItemDurability.maxDamage` | 8.86% | **gone** |
+| durability path total | 38.82% | **37.03%** |
+
+Four versions now: 40.15 → 41.11 → 38.82 → 37.03. Every fix real, every fix worth about a point
+and a half.
+
+### Where the duplication actually is
+
+The 2.0.9 bytecode of `InternalTaskPattern.step`:
+
+```java
+inputs1 = calculateIterationInputs(SIMULATE);
+if (!extractAll(inputs1, internalStorage, SIMULATE)) return IDLE;
+LOGGER.debug("Stepping {}", pattern);
+inputs2 = calculateIterationInputs(EXECUTE);
+extractAll(inputs2, internalStorage, EXECUTE);
+```
+
+**Refined Storage runs every iteration twice** — once to test it, once to do it. So the worn-tool
+scan walks the task's entire internal storage twice for one iteration's worth of work, and
+`SIMULATE` does not mutate storage, so the second walk is looking at the same world.
+
+Caching the first answer for the second pass would halve the 37% this mixin costs.
+
+### Why this is a probe and not the cache
+
+`calculateIterationInputs` **takes the `Action` as a parameter**, so it is entitled to return
+different resources for the two passes. Assuming it doesn't is precisely the mistake 0.11.2 made —
+"almost every candidate is a completely different item" was true in general and false for the only
+case that mattered.
+
+So `substitutionProbe` (config, default **off**) measures the invariant instead. It changes no
+behaviour: it compares the swap decision reached on SIMULATE against the one reached on EXECUTE and
+counts agreements, disagreements, and execute-without-simulate. `/rstweaks stats` reports it.
+
+A disagreement count of zero over a long real craft is what would justify building the cache.
+
+### Proven to fire
+
+The probe only writes on the EXECUTE half of a pair, so "switched on but never reached" and
+"switched off" produce identical output — and this project has now shipped three things whose
+presence was indistinguishable from their absence. A new gametest asserts the counters move *and*
+that every pair is classified as one thing or the other: **89 pairs, 89 agreed** in the fixture.
+
+It deliberately does not assert zero disagreements. That would pin the fixture's answer, not the
+game's, and the game is the thing being asked.
+
+
 ## 0.12.0
 
 **The hoist — and the correction to 0.11.2's premise.**

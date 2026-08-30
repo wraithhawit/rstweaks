@@ -192,6 +192,51 @@ public final class RSTweaksGameTests {
     }
 
     /**
+     * The substitution probe, against the real task engine.
+     *
+     * <p>The probe only writes on the EXECUTE half of a pair, so "switched on but never reached"
+     * and "switched off" produce identical output — and this project has already shipped three
+     * things whose presence was indistinguishable from their absence. This asserts the counters
+     * actually move, and that they add up: every pair is either an agreement or a disagreement.
+     *
+     * <p>It deliberately does <em>not</em> assert zero disagreements. Whether the two passes agree
+     * is the open question the probe exists to answer in a real world, at real scale, on a real
+     * tool chain; pinning the answer here would be pinning the fixture's answer, not the game's.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void theSubstitutionProbeActuallyFires(final GameTestHelper helper) {
+        final boolean original = Config.substitutionProbe;
+        final long beforePairs = Stats.substitutionPairs;
+        final long beforeAgreed = Stats.substitutionAgreed;
+        final long beforeDisagreed = Stats.substitutionDisagreed;
+        final CraftingPlanSelfTest.Result result;
+        try {
+            Config.substitutionProbe = true;
+            result = TaskEngineSelfTest.run();
+        } finally {
+            Config.substitutionProbe = original;
+        }
+        final long pairs = Stats.substitutionPairs - beforePairs;
+        if (pairs == 0L) {
+            helper.fail("the substitution probe never saw a SIMULATE/EXECUTE pair, so it measures "
+                + "nothing and a clean result from it would mean nothing");
+            return;
+        }
+        final long accounted = (Stats.substitutionAgreed - beforeAgreed)
+            + (Stats.substitutionDisagreed - beforeDisagreed);
+        if (accounted != pairs) {
+            helper.fail("the probe counted " + pairs + " pairs but classified " + accounted
+                + "; the counters do not add up and neither would the verdict");
+            return;
+        }
+        RSTweaks.LOGGER.info("[rstweaks] gametest substitution probe saw {} pairs ({} agreed, "
+                + "{} disagreed) across {} scenarios",
+            pairs, Stats.substitutionAgreed - beforeAgreed,
+            Stats.substitutionDisagreed - beforeDisagreed, result.scenarios());
+        report(helper, "substitution probe", result);
+    }
+
+    /**
      * {@link com.wraithhawit.rstweaks.storage.ItemDurability} against the real item registry.
      *
      * <p>The task-engine scenarios install a fake, so the class that answers this in game had no
