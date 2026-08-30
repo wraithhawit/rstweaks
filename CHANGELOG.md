@@ -8,6 +8,34 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.11.2
+
+**The tool scan rejects on the item first.** With the cheaper costs around it gone, profile
+`r3z1C0CsZx` put `findWornTool` at **25.85%** of the server thread. It walks the task's entire
+internal storage calling `sameTool` on every resource, once per ingredient, per iteration — and
+`sameTool` did two family lookups, each hashing and equality-comparing a `DataComponentPatch`.
+
+Almost every candidate is a completely different item. `Item` is a registry singleton, so comparing
+that first is a reference comparison and it rejects nearly everything before any hashing happens.
+Sound because a family is derived from the resource with its damage removed, so two resources in one
+family necessarily share an item — rejecting on a different item can never skip a real match.
+`findWornTool` checks storage availability only *after* `sameTool`, so rejected candidates now cost
+one reference comparison and nothing else.
+
+### Where 0.11.1 actually landed
+
+Both of its fixes worked and the total did not move, which is worth recording plainly:
+
+| | 0.11.0 | 0.11.1 |
+|---|---|---|
+| `CompositeFilter.filter` | 6.46% | gone |
+| `ItemResource.equals` | 24.03% | 11.40% |
+| `findWornTool` | 1.43% | 25.85% |
+| durability path total | 40.15% | 41.11% |
+
+The expensive `isDurable` had been **masking** the scan. Removing it did not reduce the work, it
+revealed where the work always was.
+
 ## 0.11.1
 
 Three corrections, all of them from profiles of 0.11.0 rather than from reasoning.

@@ -10,6 +10,21 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.11.2
+-----
+  THE TOOL SCAN REJECTS ON THE ITEM FIRST. With the cheaper costs around it gone, profile r3z1C0CsZx
+  put findWornTool at 25.85% of the server thread: it walks the task's whole internal storage calling
+  sameTool per resource, per ingredient, per iteration, and sameTool did two family lookups each
+  hashing and equality-comparing a DataComponentPatch. Almost every candidate is a different item,
+  and Item is a registry singleton, so comparing that first rejects nearly everything for the cost of
+  a reference comparison. Sound because a family comes from the resource with its damage removed, so
+  one family implies one item.
+  WHERE 0.11.1 LANDED: both its fixes worked and the total did not move. CompositeFilter 6.46% ->
+  gone, ItemResource.equals 24.03% -> 11.40%, but findWornTool 1.43% -> 25.85% and the durability
+  path stayed at ~41%. The expensive isDurable had been MASKING the scan; removing it revealed where
+  the work always was rather than reducing it.
+
+
 0.11.1
 -----
   Three corrections, all from profiles of 0.11.0 rather than reasoning.
