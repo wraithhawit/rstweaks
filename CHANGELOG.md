@@ -60,6 +60,16 @@ simulates by construction.
 
 Mixin confirmed applying to `InternalTaskPattern`; 32 gametests pass, task engine included.
 
+### Verified in game
+
+```
+steps skipped whole: 0  (verifier: 442,767,424 checked, 0 DIVERGED)
+```
+
+442 million skippable steps allowed to run and checked against what the skip would have returned.
+Every one really did return `IDLE`. The `0 skipped` on that same reading is the verifier doing its
+job -- it lets every skip run so it has something to compare against.
+
 
 ## 0.15.0
 

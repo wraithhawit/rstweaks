@@ -36,6 +36,8 @@ The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a
   checks and 0 divergences, which is stronger evidence than the fixture could ever give -- the
   task-engine suite has no repeated failing simulates in it by construction.
   Mixin confirmed applying to InternalTaskPattern; 32 gametests pass including the task engine.
+  VERIFIED IN GAME 2026-08-30: 442,767,424 skippable steps allowed to run and checked, 0 DIVERGED.
+  Every one really did return IDLE. Same discipline, same result as 0.15.0's replay at 118M/0.
 
 
 0.15.0
