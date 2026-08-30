@@ -364,7 +364,14 @@ public final class ChatReporter {
                         Stats.replaysVerified, Stats.replaysDiverged))
                 .withStyle(Stats.replaysDiverged > 0L ? ChatFormatting.RED
                     : Stats.replaysVerified > 0L ? ChatFormatting.GREEN
-                        : ChatFormatting.DARK_GRAY)));
+                        : ChatFormatting.DARK_GRAY)),
+            Component.empty().append(PREFIX).append(Component.literal(String.format(
+                    "steps skipped whole: %,d%s", Stats.stepsSkipped,
+                    Stats.stepSkipsVerified == 0L ? ""
+                        : String.format("  (verifier: %,d checked, %,d DIVERGED)",
+                            Stats.stepSkipsVerified, Stats.stepSkipsDiverged)))
+                .withStyle(Stats.stepSkipsDiverged > 0L ? ChatFormatting.RED
+                    : ChatFormatting.GREEN)));
     }
 
     /**

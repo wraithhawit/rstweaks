@@ -303,6 +303,21 @@ public final class Stats {
     public static long replaysDiverged;
 
     /**
+     * Crafting steps skipped whole because the task internal storage had not changed since the
+     * same step was proven to do nothing.
+     *
+     * <p>Each one skips calculateIterationInputs and extractAll as well as our own substitution --
+     * work no cache inside the substitution could reach.
+     */
+    public static long stepsSkipped;
+
+    /** Step skips checked against letting the step run, and how many were wrong. Must be zero. */
+    public static long stepSkipsVerified;
+
+    /** Step skips that would have been wrong. Must be zero. */
+    public static long stepSkipsDiverged;
+
+    /**
      * Why the reuse did not fire, split three ways.
      *
      * <p>0.13.0 shipped the reuse with only {@link #substitutionScansAvoided} and never surfaced

@@ -10,6 +10,34 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.16.0
+------
+  SKIP THE WHOLE STEP, NOT JUST OUR PART OF IT. Profile L7lGOu8YyD: 0.15.0's replay works exactly as
+  designed (236,864,784 decisions replayed of 322,780,160 calls, 73.4%, dead on the ceiling) and
+  bought 1.01 points -- 32.04% -> 31.03%. I predicted more than 0.14.0's 4.24 and was wrong for the
+  third time; the reason is a floor, not a mistake. replayDecision alone is 10.42% of the server
+  thread for 236.9M replays: ~53ns each, on a method called 2.7 MILLION TIMES A SECOND. At that
+  volume no per-call work is cheap, so the next win cannot come from making the call cheaper.
+  InternalTaskPattern.step returns IDLE the instant extractAll(SIMULATE) is false, having done
+  nothing else. When internal storage has not changed since such a step it reaches the same
+  conclusion by the same route, so returning IDLE up front is not an approximation of RS -- it is
+  what RS does. That also skips calculateIterationInputs (28.24% inclusive) and extractAll (34.56%),
+  which no cache inside our own mixin could ever reach.
+  VERIFIED IN THE 2.0.9 BYTECODE, because the whole idea rests on a failed simulate having no side
+  effects: calculateIterationInputs' mutating branch is gated on Action.EXECUTE; step returns before
+  touching outputs, byproducts, wear or the root storage; and TaskImpl.stepPatterns only asks whether
+  the result is COMPLETED and whether isChanged(), so IDLE is its ordinary no-change path.
+  RETURNS A VALUE IT CANNOT NAME. PatternStepResult is package-private, so StepSkipMixin captures the
+  IDLE instance from a real return, recognising it by Enum.name(), and hands that same object back.
+  Fail-safe in the right direction: until an IDLE has actually been observed nothing is ever skipped,
+  and a rename upstream ends the optimization rather than breaking it.
+  SHIPS WITH ITS OWN VERIFIER AGAIN. verifyStepSkip (default off) lets every skippable step run and
+  asserts it really did return IDLE. The same discipline cleared 0.15.0's replay at 118,470,766
+  checks and 0 divergences, which is stronger evidence than the fixture could ever give -- the
+  task-engine suite has no repeated failing simulates in it by construction.
+  Mixin confirmed applying to InternalTaskPattern; 32 gametests pass including the task engine.
+
+
 0.15.0
 ------
   THE LOOP WAS THE COST, NOT THE SCAN. 0.14.0 skipped the storage scan on a repeated failing

@@ -512,6 +512,47 @@ public final class Config {
     /** Cached: read once per iteration, on the hottest path in the mod. */
     public static volatile boolean verifyReplayedDecisions = false;
 
+    public static final ModConfigSpec.BooleanValue SKIP_UNCHANGED_STEPS = BUILDER
+        .comment(
+            "Skip a crafting step that has already been proven to do nothing.",
+            "",
+            "InternalTaskPattern.step returns IDLE the instant extractAll(SIMULATE) is false,",
+            "having done nothing else. When the task internal storage has not changed since such a",
+            "step, it reaches the same conclusion by the same route -- so returning IDLE up front",
+            "is not an approximation of what RS does, it is what RS does.",
+            "",
+            "This is where the remaining time is. Caching inside the substitution has run out of",
+            "room: profile L7lGOu8YyD has replayDecision alone at 10.42% of the server thread for",
+            "236,864,784 replays, about 53ns each, on a method called 2.7 million times a second.",
+            "At that volume the next win cannot come from making the call cheaper. Skipping the step",
+            "also skips calculateIterationInputs (28.24% inclusive) and extractAll (34.56%).",
+            "",
+            "Verified against the 2.0.9 bytecode: calculateIterationInputs mutates only on EXECUTE,",
+            "step returns IDLE before touching outputs, byproducts, wear or the root storage, and",
+            "TaskImpl.stepPatterns treats IDLE as its ordinary no-change path.",
+            "",
+            "Fail-safe by construction: PatternStepResult is package-private, so the IDLE instance is",
+            "captured from a real return rather than named. Until one has been observed nothing is",
+            "ever skipped."
+        )
+        .define("skipUnchangedSteps", true);
+
+    /** Cached: read once per crafting step, which is the most frequent call in the mod. */
+    public static volatile boolean skipUnchangedSteps = true;
+
+    public static final ModConfigSpec.BooleanValue VERIFY_STEP_SKIP = BUILDER
+        .comment(
+            "DIAGNOSTIC. Lets every skippable step run anyway and checks that it really did return",
+            "IDLE, instead of skipping it.",
+            "",
+            "Switch this on for one craft and read /rstweaks stats. It costs the entire saving while",
+            "it runs. Anything other than 0 diverged means skipUnchangedSteps has to come out."
+        )
+        .define("verifyStepSkip", false);
+
+    /** Cached: read once per crafting step. */
+    public static volatile boolean verifyStepSkip = false;
+
     public static final ModConfigSpec.IntValue MAX_BATCHED_ITERATIONS = BUILDER
         .comment(
             "The most iterations batchedExecution will run in one go.",
@@ -589,6 +630,8 @@ public final class Config {
         simulateRepeatProbe = SIMULATE_REPEAT_PROBE.get();
         reuseFailedSimulate = REUSE_FAILED_SIMULATE.get();
         verifyReplayedDecisions = VERIFY_REPLAYED_DECISIONS.get();
+        skipUnchangedSteps = SKIP_UNCHANGED_STEPS.get();
+        verifyStepSkip = VERIFY_STEP_SKIP.get();
         maxBatchedIterations = MAX_BATCHED_ITERATIONS.get();
         maxBatchedIterationsPerTick = MAX_BATCHED_ITERATIONS_PER_TICK.get();
         quietTaskLogging = QUIET_TASK_LOGGING.get();

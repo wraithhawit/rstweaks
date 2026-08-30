@@ -8,6 +8,59 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.16.0
+
+**Skip the whole step, not just our part of it.**
+
+Profile `L7lGOu8YyD`: 0.15.0's replay works exactly as designed — **236,864,784 decisions replayed of
+322,780,160 calls (73.4%)**, dead on the ceiling — and bought **1.01 points**, 32.04% → 31.03%. I
+predicted more than 0.14.0's 4.24 and was wrong for the third time.
+
+The reason is a floor, not a mistake. `replayDecision` alone is **10.42%** of the server thread for
+236.9M replays: about **53ns each**, on a method called **2.7 million times a second**. At that
+volume nothing per-call is cheap, so the next win cannot come from making the call cheaper. It has
+to come from not making the call.
+
+### The step itself
+
+`InternalTaskPattern.step` returns `IDLE` the instant `extractAll(SIMULATE)` is false, having done
+nothing else. When internal storage has not changed since such a step, it reaches the same
+conclusion by the same route — so returning `IDLE` up front is not an approximation of what Refined
+Storage does, it is what Refined Storage does.
+
+And it skips what we could never otherwise touch: `calculateIterationInputs` (28.24% inclusive) and
+`extractAll` (34.56%).
+
+### Verified in the bytecode, because the idea rests on it
+
+A failed simulate must have no side effects:
+
+- `calculateIterationInputs`' mutating branch is gated on `Action.EXECUTE` — the simulate pass reads
+  the ingredient budget and writes nothing
+- `step` returns before touching outputs, byproducts, wear, or the root storage
+- `TaskImpl.stepPatterns` only asks whether the result is `COMPLETED` and whether `isChanged()`, so
+  `IDLE` is its ordinary "nothing happened" path
+
+### It returns a value it cannot name
+
+`PatternStepResult` is package-private, so `StepSkipMixin` cannot reference the type or its `IDLE`
+constant. It doesn't need to: it **captures the instance** from a real return, recognising it by
+`Enum.name()`, and hands that same object back.
+
+Fail-safe in the right direction. Until an `IDLE` has actually been observed there is nothing to
+return and nothing is skipped; and if RS ever renames the constant, the optimization disappears
+rather than misbehaving.
+
+### The verifier again
+
+`verifyStepSkip` (default **off**) lets every skippable step run and asserts it really did return
+`IDLE`. The same discipline cleared 0.15.0's replay at **118,470,766 checks, 0 diverged** — stronger
+evidence than the fixture can give, since the task-engine suite contains no repeated failing
+simulates by construction.
+
+Mixin confirmed applying to `InternalTaskPattern`; 32 gametests pass, task engine included.
+
+
 ## 0.15.0
 
 **The loop was the cost, not the scan.**

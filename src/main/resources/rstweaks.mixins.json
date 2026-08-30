@@ -29,6 +29,7 @@
     "MutablePatternPlanMixin",
     "MutableResourceListEntryMixin",
     "MutableResourceListImplMixin",
+    "StepSkipMixin",
     "PatternResolverFuzzyMixin",
     "PreviewCraftingCalculatorListenerMixin",
     "TaskImplMixin",
