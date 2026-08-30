@@ -241,6 +241,23 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
         // count cannot change while this method runs, and asking per resource would put two extra
         // reads on the hottest loop in the mod to answer the same question repeatedly.
         this.rstweaks$repeatValid = rstweaks$canReuseFailedSimulate(action, inputs, internalStorage);
+        // The verifier deliberately does NOT take the fast path. It runs the full computation and
+        // then checks it against what the replay would have produced, which is the only way to
+        // catch a replay that is confidently wrong -- comparing the cache against itself is the
+        // mistake both earlier probes were designed around.
+        final boolean verifying = this.rstweaks$repeatValid && Config.verifyReplayedDecisions;
+        final List<ResourceKey> expected = verifying ? this.rstweaks$simulatedSwaps : null;
+        final List<ResourceKey> expectedConsumed = verifying ? this.rstweaks$rememberedConsumed : null;
+        if (this.rstweaks$repeatValid && !verifying) {
+            // The whole decision is replayed, not re-derived. 0.14.0 skipped only the storage scan
+            // and left the loop around it running: profile m4dQmEhBRW put findWornTool at 1.60% of
+            // the server thread while the machinery enclosing it — walking every input, asking
+            // isDurable, one map lookup per durable ingredient — was over ten times that. Nothing
+            // in that loop can reach a different answer while the storage version and the input
+            // count are unchanged, which is exactly what got us here.
+            rstweaks$replayDecision(inputs, mutableInputs);
+            return;
+        }
 
         // Collected before applying: rewriting the list while iterating its key set
         // would throw, and the substitution has to be decided against a stable view.
@@ -263,6 +280,9 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
             }
         }
 
+        if (verifying) {
+            rstweaks$verifyReplay(expected, expectedConsumed, swaps);
+        }
         rstweaks$probeSimulateExecutePair(action, swaps);
         rstweaks$rememberDecision(action, swaps, inputs, internalStorage);
 
@@ -306,14 +326,9 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
         // EXECUTE pass, the probe would be comparing the remembered answer against itself and would
         // report agreement no matter what -- a measurement that cannot fail is not a measurement.
         if (action == Action.SIMULATE) {
-            if (this.rstweaks$repeatValid) {
-                // The cached answer includes "no substitute": a wanted that is absent from the
-                // remembered decision is one the previous scan found nothing for, and that is
-                // exactly the answer to reuse. Case #1 in the disagreement log was precisely this
-                // transition, which is why the version guard has to be exact rather than close.
-                Stats.failedSimulateScansAvoided++;
-                return rstweaks$rememberedSubstitute(wanted);
-            }
+            // A reusable simulate never reaches this method any more -- the whole decision is
+            // replayed before the loop starts -- so reaching here means the decision is genuinely
+            // being recomputed and the scan is the point.
             Stats.substitutionScansNotEligible++;
             return findWornTool(internalStorage, durability, wanted, needed);
         }
@@ -380,17 +395,17 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
             return;
         }
         rstweaks$probeRepeatedSimulate(swaps, inputs, internalStorage);
-        if (this.rstweaks$repeatValid) {
-            // Reused wholesale, so the remembered decision is still the decision and re-flattening
-            // it would allocate a list a tick's worth of times to arrive at what is already there.
-            return;
-        }
+        Stats.simulateDecisionsComputed++;
         final List<ResourceKey> flat = new ArrayList<>(swaps.size() * 2);
         for (final ResourceKey[] swap : swaps) {
             flat.add(swap[0]);
             flat.add(swap[1]);
         }
         this.rstweaks$simulatedSwaps = flat;
+        // Copied, not aliased. rstweaks$consumed is cleared at the top of every call, so holding a
+        // reference to it would leave the replay restoring an empty list -- and an empty consumed
+        // list means byproducts come back as encoded, which is a repaired tool.
+        this.rstweaks$rememberedConsumed = List.copyOf(this.rstweaks$consumedList());
         this.rstweaks$rememberedVersion =
             internalStorage instanceof VersionedResourceList versioned
                 ? versioned.rstweaks$version()
@@ -515,6 +530,87 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
     /** Consecutive failing simulates on this pattern, for the streak-length figure. */
     @Unique
     private int rstweaks$simulateStreak;
+
+    /**
+     * Applies the remembered decision without re-deriving it.
+     *
+     * <p>The swaps still have to be applied: {@code calculateIterationInputs} builds a fresh input
+     * list every step, so each call gets a new object that has not been rewritten yet. What is
+     * skipped is everything that <em>decided</em> the swaps — the walk over every input, the
+     * durability question per ingredient, and a storage lookup each.
+     *
+     * <p>The consumed list is restored rather than recomputed, because
+     * {@link InternalTaskPatternMixin} reads it to age byproducts. Leaving it empty here would hand
+     * back tools as encoded — a repaired tool, which is durability created out of nothing, and the
+     * bug 0.2.57 shipped.
+     */
+    @Unique
+    private void rstweaks$replayDecision(final ResourceList inputs,
+                                         final MutableResourceList mutableInputs) {
+        Stats.simulateDecisionsReplayed++;
+        final List<ResourceKey> consumed = this.rstweaks$rememberedConsumed;
+        if (consumed != null && !consumed.isEmpty()) {
+            this.rstweaks$consumedList().addAll(consumed);
+        }
+        final List<ResourceKey> swaps = this.rstweaks$simulatedSwaps;
+        if (swaps == null) {
+            return;
+        }
+        for (int i = 0; i < swaps.size(); i += 2) {
+            final ResourceKey wanted = swaps.get(i);
+            final long amount = inputs.get(wanted);
+            mutableInputs.remove(wanted, amount);
+            mutableInputs.add(swaps.get(i + 1), amount);
+        }
+    }
+
+    /**
+     * Checks what the replay <em>would</em> have produced against what recomputing actually
+     * produces.
+     *
+     * <p>The replay skips the whole decision loop on a repeated failing simulate, and no automated
+     * test can cover it: the task-engine fixture treats a step that makes no progress as a deadlock
+     * and fails the scenario, so it contains zero failing simulates by construction. That leaves a
+     * change on the item-correctness path with no coverage, which is not something to ship on
+     * reasoning alone.
+     *
+     * <p>So this exists to be switched on for one real craft. It costs the whole saving while it
+     * runs — the point is to answer the question, not to be fast — and a single clean reading over
+     * a craft that produces tens of millions of replays is worth more than any fixture could be.
+     */
+    @Unique
+    private void rstweaks$verifyReplay(@Nullable final List<ResourceKey> expected,
+                                       @Nullable final List<ResourceKey> expectedConsumed,
+                                       final List<ResourceKey[]> swaps) {
+        Stats.replaysVerified++;
+        final boolean swapsMatch = expected != null && rstweaks$sameDecision(expected, swaps);
+        final boolean consumedMatch = expectedConsumed != null
+            && expectedConsumed.equals(this.rstweaks$consumedList());
+        if (swapsMatch && consumedMatch) {
+            return;
+        }
+        Stats.replaysDiverged++;
+        if (Stats.replaysDiverged <= DISAGREEMENTS_LOGGED_MAX) {
+            RSTweaks.LOGGER.warn("[rstweaks] replay would have been WRONG (#{}): swaps {}, "
+                    + "consumed {}\n  replay swaps:    {}\n  recomputed:      {}"
+                    + "\n  replay consumed: {}\n  recomputed:      {}",
+                Stats.replaysDiverged, swapsMatch ? "match" : "DIFFER",
+                consumedMatch ? "match" : "DIFFER",
+                expected, swaps.stream().map(s -> s[0] + "->" + s[1]).toList(),
+                expectedConsumed, this.rstweaks$consumedList());
+        }
+    }
+
+    /**
+     * The consumed list from the remembered decision, so a replay can restore it.
+     *
+     * <p>Held separately from {@link #rstweaks$simulatedSwaps} because the two are not the same
+     * thing: a tool whose encoded wear level happens to be the one in hand is <em>consumed</em>
+     * without being <em>swapped</em>, so it appears here and not there.
+     */
+    @Unique
+    @Nullable
+    private List<ResourceKey> rstweaks$rememberedConsumed;
 
     /**
      * Whether this SIMULATE may reuse the previous one's answer wholesale.

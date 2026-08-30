@@ -8,6 +8,59 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.15.0
+
+**The loop was the cost, not the scan.**
+
+0.14.0 skipped the storage scan on a repeated failing simulate and left the machinery around it
+running. Profile `m4dQmEhBRW`, inside `trySubstituteWornTool` (31.82% of the server thread):
+
+| | share of that subtree |
+|---|---|
+| loop overhead (self) | **30.46%** |
+| `findWornTool` — the scan 0.14.0 removed | 1.60% *of thread* |
+| `getAll` + `get` + `isDurable` | 9.64% |
+| `rememberedSubstitute` | 2.00% *of thread* |
+
+Walking every input and asking a map about each one, to arrive at an answer already in hand.
+
+A valid repeat now **replays** the whole decision: restore the consumed list, apply the remembered
+swaps, return. No walk, no durability question, no per-ingredient lookup. The swaps still have to be
+applied, because `calculateIterationInputs` builds a fresh input list every step.
+
+### The consumed list is copied, not aliased
+
+`rstweaks$consumed` is cleared at the top of every call, so holding a reference to it would replay an
+**empty** list — and an empty consumed list means byproducts come back as encoded. That is a
+repaired tool: durability created out of nothing, which is the 0.2.57 bug.
+
+### No test can cover this, and that is the honest problem
+
+The task-engine fixture treats a step that makes no progress as a deadlock and fails the scenario,
+so it contains **zero failing simulates by construction** — measured, not assumed. That leaves a
+change on the item-correctness path with no automated coverage, which is not something to ship on
+reasoning alone.
+
+### So it ships with its own verifier
+
+`verifyReplayedDecisions` (default **off**) recomputes every replayed decision and compares **both**
+the swaps and the consumed list, logging the first 20 divergences in full:
+
+```
+worn-tool reuse (failing simulate): N decisions replayed of M calls (X%); K recomputed
+replay verifier: 12,481,003 checked, 0 DIVERGED
+```
+
+It costs the entire saving while it runs — the point is to answer the question, not to be fast.
+Anything other than `0 DIVERGED` means `reuseFailedSimulate` comes back out.
+
+### Counters are a matched pair now
+
+`simulateDecisionsReplayed` / `simulateDecisionsComputed` are both **per call**. The previous pair
+mixed a per-call numerator with a per-resource denominator, which would have produced a confident
+nonsense percentage — a worse failure than no counter at all.
+
+
 ## 0.14.1
 
 **0.14.0's counter was never printed, and its changelog said it was.**

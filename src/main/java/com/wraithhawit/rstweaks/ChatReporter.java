@@ -335,16 +335,15 @@ public final class ChatReporter {
         }
         final double hitRate = eligible == 0L
             ? 0.0 : 100.0 * Stats.substitutionScansAvoided / eligible;
-        // The failing-simulate cache is reported on its own line and NOT folded into the execute
-        // figures above. 0.14.0 shipped its counter written but never printed -- the fourth time
-        // this project has shipped something whose behaviour could not be read from inside the
-        // game, and it happened two versions after the changelog entry complaining about it. The
-        // denominator is the simulate passes that fell through, which is what
-        // substitutionScansNotEligible counts once the simulate branch is in play.
-        final long simulateEligible =
-            Stats.failedSimulateScansAvoided + Stats.substitutionScansNotEligible;
-        final double simulateHitRate = simulateEligible == 0L
-            ? 0.0 : 100.0 * Stats.failedSimulateScansAvoided / simulateEligible;
+        // Reported on its own line and NOT folded into the execute figures above. 0.14.0 shipped
+        // its counter written but never printed -- the fourth time this project has shipped
+        // something whose presence is indistinguishable from its absence. These two are per CALL
+        // while the execute-side pair is per resource, which is the other reason they cannot share
+        // a line: one denominator would make both percentages lies.
+        final long simulateCalls =
+            Stats.simulateDecisionsReplayed + Stats.simulateDecisionsComputed;
+        final double simulateHitRate = simulateCalls == 0L
+            ? 0.0 : 100.0 * Stats.simulateDecisionsReplayed / simulateCalls;
         return List.of(
             Component.empty().append(PREFIX).append(Component.literal(String.format(
                     "worn-tool reuse (execute): %,d scans avoided of %,d eligible (%.1f%%); "
@@ -353,12 +352,19 @@ public final class ChatReporter {
                     Stats.substitutionNothingRemembered, Stats.substitutionRevalidationFailed))
                 .withStyle(hitRate >= 40.0 ? ChatFormatting.GREEN : ChatFormatting.YELLOW)),
             Component.empty().append(PREFIX).append(Component.literal(String.format(
-                    "worn-tool reuse (failing simulate): %,d scans avoided of %,d (%.1f%%); "
-                        + "%,d rescanned because storage or inputs had changed",
-                    Stats.failedSimulateScansAvoided, simulateEligible, simulateHitRate,
-                    Stats.substitutionScansNotEligible))
+                    "worn-tool reuse (failing simulate): %,d decisions replayed of %,d calls "
+                        + "(%.1f%%); %,d recomputed because storage or inputs had changed",
+                    Stats.simulateDecisionsReplayed, simulateCalls, simulateHitRate,
+                    Stats.simulateDecisionsComputed))
                 .withStyle(simulateHitRate >= 40.0
-                    ? ChatFormatting.GREEN : ChatFormatting.YELLOW)));
+                    ? ChatFormatting.GREEN : ChatFormatting.YELLOW)),
+            Component.empty().append(PREFIX).append(Component.literal(Stats.replaysVerified == 0L
+                    ? "replay verifier off"
+                    : String.format("replay verifier: %,d checked, %,d DIVERGED",
+                        Stats.replaysVerified, Stats.replaysDiverged))
+                .withStyle(Stats.replaysDiverged > 0L ? ChatFormatting.RED
+                    : Stats.replaysVerified > 0L ? ChatFormatting.GREEN
+                        : ChatFormatting.DARK_GRAY)));
     }
 
     /**

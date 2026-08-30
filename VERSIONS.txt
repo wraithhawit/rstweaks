@@ -10,6 +10,33 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.15.0
+------
+  THE LOOP WAS THE COST, NOT THE SCAN. 0.14.0 skipped the storage scan on a repeated failing
+  simulate and left the machinery around it running. Profile m4dQmEhBRW: findWornTool is down to
+  1.60% of the server thread while trySubstituteWornTool is 31.82% -- self 30.46% of that, plus
+  getAll 5.19%, get 3.21%, isDurable 1.24% and rememberedSubstitute 2.00%. Walking every input and
+  asking a map about each one, to arrive at an answer already in hand.
+  A valid repeat now REPLAYS the whole decision instead of re-deriving it: restore the consumed
+  list, apply the remembered swaps, return. No walk, no durability question, no per-ingredient
+  lookup. The swaps still have to be applied because calculateIterationInputs builds a fresh input
+  list every step.
+  THE CONSUMED LIST IS COPIED, NOT ALIASED. rstweaks$consumed is cleared at the top of every call,
+  so keeping a reference would replay an empty list -- and an empty consumed list means byproducts
+  come back as encoded, which is a repaired tool: durability created from nothing, the 0.2.57 bug.
+  NO TEST CAN COVER THIS, AND THAT IS THE HONEST PROBLEM. The task-engine fixture treats a step that
+  makes no progress as a deadlock and fails the scenario, so it contains ZERO failing simulates by
+  construction -- measured, not assumed. A change on the item-correctness path with no coverage is
+  not something to ship on reasoning.
+  SO IT SHIPS WITH ITS OWN VERIFIER. verifyReplayedDecisions (default off) recomputes every replayed
+  decision and compares both the swaps and the consumed list, logging the first 20 divergences. It
+  costs the entire saving while it runs; the point is to answer the question. Anything other than
+  "0 diverged" means reuseFailedSimulate comes back out.
+  Counters are now a matched per-CALL pair (decisions replayed / decisions computed) rather than
+  mixing a per-call numerator with a per-resource denominator, which would have produced a confident
+  nonsense percentage.
+
+
 0.14.1
 ------
   0.14.0's COUNTER WAS NEVER PRINTED, and its changelog claimed it was. failedSimulateScansAvoided

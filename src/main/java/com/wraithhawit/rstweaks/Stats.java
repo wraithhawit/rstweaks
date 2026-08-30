@@ -277,12 +277,30 @@ public final class Stats {
     public static long substitutionScansAvoided;
 
     /**
-     * Internal-storage scans a repeated FAILING simulate skipped because nothing had changed.
+     * Whole substitution decisions replayed on a repeated failing simulate, and decisions computed
+     * from scratch on a simulate. <b>Both are per CALL, not per resource</b> -- unlike the
+     * execute-side counters above, which are per durable ingredient.
      *
-     * <p>The counter that says whether the biggest of these optimizations is doing anything. 0.13.0
-     * shipped its predecessor with the equivalent number unsurfaced and cost a release to find out.
+     * <p>Kept as a matched pair with the same unit so the ratio between them means something. Mixing
+     * a per-call numerator with a per-resource denominator would produce a confident nonsense
+     * percentage, which is a worse failure than no counter at all.
      */
-    public static long failedSimulateScansAvoided;
+    public static long simulateDecisionsReplayed;
+
+    /** Simulate passes that derived the decision from scratch. See {@link #simulateDecisionsReplayed}. */
+    public static long simulateDecisionsComputed;
+
+    /**
+     * Replays checked against a full recomputation, and how many disagreed.
+     *
+     * <p>Written only while { verifyReplayedDecisions} is on. { #replaysDiverged} above
+     * zero means the replay is producing a different substitution than deriving it would, and the
+     * fast path has to come out.
+     */
+    public static long replaysVerified;
+
+    /** Replays that would have been wrong. Must be zero. */
+    public static long replaysDiverged;
 
     /**
      * Why the reuse did not fire, split three ways.

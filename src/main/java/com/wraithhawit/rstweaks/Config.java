@@ -493,6 +493,25 @@ public final class Config {
     /** Cached: read once per iteration, on the hottest path in the mod. */
     public static volatile boolean reuseFailedSimulate = true;
 
+    public static final ModConfigSpec.BooleanValue VERIFY_REPLAYED_DECISIONS = BUILDER
+        .comment(
+            "DIAGNOSTIC. Recomputes every replayed worn-tool decision and checks it against what",
+            "the replay would have produced.",
+            "",
+            "The replay skips the whole decision loop on a repeated failing simulate, and no test",
+            "covers it: the task-engine fixture treats a step that makes no progress as a deadlock",
+            "and fails the scenario, so it contains zero failing simulates by construction. That",
+            "leaves a change on the item-correctness path with no automated coverage.",
+            "",
+            "Switch this on for one craft and read /rstweaks stats. It costs the entire saving",
+            "while it runs -- the point is to answer the question, not to be fast. Anything other",
+            "than '0 diverged' means reuseFailedSimulate has to be switched off."
+        )
+        .define("verifyReplayedDecisions", false);
+
+    /** Cached: read once per iteration, on the hottest path in the mod. */
+    public static volatile boolean verifyReplayedDecisions = false;
+
     public static final ModConfigSpec.IntValue MAX_BATCHED_ITERATIONS = BUILDER
         .comment(
             "The most iterations batchedExecution will run in one go.",
@@ -569,6 +588,7 @@ public final class Config {
         reuseSimulatedSubstitution = REUSE_SIMULATED_SUBSTITUTION.get();
         simulateRepeatProbe = SIMULATE_REPEAT_PROBE.get();
         reuseFailedSimulate = REUSE_FAILED_SIMULATE.get();
+        verifyReplayedDecisions = VERIFY_REPLAYED_DECISIONS.get();
         maxBatchedIterations = MAX_BATCHED_ITERATIONS.get();
         maxBatchedIterationsPerTick = MAX_BATCHED_ITERATIONS_PER_TICK.get();
         quietTaskLogging = QUIET_TASK_LOGGING.get();
