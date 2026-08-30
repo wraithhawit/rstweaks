@@ -8,6 +8,59 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.13.3
+
+**What are the 464?**
+
+0.13.2's probe, on a real insanium craft:
+
+```
+simulate repeats: 75,360,365, 75,359,901 agreed, 464 disagreed;
+                  longest failing streak 701,697
+```
+
+**The payoff is enormous** — one pattern rescanned the task's entire internal storage **701,697
+times in a row** for the same answer, and there are 75 million of these repeats against 27 million
+execute-side calls. This is roughly four times the prize the execute-side cache was chasing.
+
+**And the invariant is 99.99938%, not 100%.** That is exactly the shape that gets a wrong answer
+shipped, because the number looks close enough to round up.
+
+### Two causes would produce 464, and they need different fixes
+
+| cause | what it looks like | fix |
+|---|---|---|
+| internal storage changed between the two simulates — RS steps many patterns per tick inside one task, and a sibling executing mutates the shared storage | equal `wanted` keys, different amounts | version the storage, invalidate on mutation |
+| the **inputs** changed — `calculateIterationInputs` is recomputed every step and takes the `Action`, so the wanted wear level itself can differ | a different `wanted` key | versioning storage would not catch this at all |
+
+I had inferred the first and demonstrated neither.
+
+### So it logs the evidence
+
+A disagreement now prints both decisions with, for every resource named on either side, what internal
+storage holds and what the inputs ask for:
+
+```
+[rstweaks] simulate repeat disagreed (#3, streak 41207)
+  before:
+    wanted ItemResource[...crystal, damage=41] (inputs ask 1, storage has 0)
+      -> ItemResource[...crystal, damage=52] (storage has 1)
+  now:
+    wanted ItemResource[...crystal, damage=41] (inputs ask 1, storage has 0)
+      -> ItemResource[...crystal, damage=53] (storage has 1)
+```
+
+Capped at 20 lines. This is the hottest path in the mod, and a rare event logged without a bound is
+how a diagnostic becomes the outage.
+
+Rides on `simulateRepeatProbe` — no new config key to set. No behaviour change.
+
+### Not building the cache yet
+
+It needs a new mixin on RS's `MutableResourceListImpl` to be exact rather than statistical. Worth
+knowing which cause is real before adding coupling to a core RS class.
+
+
 ## 0.13.2
 
 **The reuse is perfect. The ceiling was the ratio, and I misread it.**

@@ -10,6 +10,29 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.13.3
+------
+  WHAT ARE THE 464? 0.13.2's probe, on a real insanium craft: 75,360,365 repeated failing simulates,
+  75,359,901 agreed, 464 disagreed, and a LONGEST FAILING STREAK OF 701,697 -- one pattern rescanning
+  the task's whole internal storage seven hundred thousand times in a row for the same answer. The
+  payoff is enormous and the invariant is 99.99938%, which is exactly the shape that gets a wrong
+  answer shipped because the number looked close enough.
+  TWO CAUSES WOULD PRODUCE 464 AND THEY NEED DIFFERENT FIXES. (1) Internal storage changed: RS steps
+  many patterns per tick inside one task, so a sibling executing mutates the shared storage and this
+  pattern's next simulate legitimately sees a different world -- fixable by versioning the storage.
+  (2) The inputs changed: calculateIterationInputs is recomputed every step and takes the Action, so
+  the WANTED wear level itself can differ between two simulates -- versioning storage would not catch
+  that at all. I had inferred (1) and had shown neither.
+  So a disagreement now logs both decisions with, for every resource named on either side, what
+  internal storage holds and what the inputs ask for. A differing wanted key points at cause 2; equal
+  keys with different amounts point at cause 1. Capped at 20 lines -- this is the hottest path in the
+  mod, and a rare event logged without a bound is how a diagnostic becomes the outage.
+  Rides on simulateRepeatProbe, no new config. No behaviour change.
+  NOT BUILDING THE CACHE YET. On these numbers it is worth roughly four times what the execute-side
+  reuse was worth, and it needs a new mixin on RS's MutableResourceListImpl to be exact rather than
+  statistical. Worth knowing the cause first.
+
+
 0.13.2
 ------
   THE REUSE IS PERFECT; THE CEILING WAS THE RATIO. 0.13.1's counters, from a real insanium craft:

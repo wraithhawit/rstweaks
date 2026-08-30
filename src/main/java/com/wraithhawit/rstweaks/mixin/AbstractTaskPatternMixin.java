@@ -258,7 +258,7 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
         }
 
         rstweaks$probeSimulateExecutePair(action, swaps);
-        rstweaks$rememberDecision(action, swaps);
+        rstweaks$rememberDecision(action, swaps, inputs, internalStorage);
 
         for (final ResourceKey[] swap : swaps) {
             final long amount = inputs.get(swap[0]);
@@ -350,7 +350,9 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
      * and scans, which is exactly the old behaviour.
      */
     @Unique
-    private void rstweaks$rememberDecision(final Action action, final List<ResourceKey[]> swaps) {
+    private void rstweaks$rememberDecision(final Action action, final List<ResourceKey[]> swaps,
+                                           final ResourceList inputs,
+                                           final MutableResourceList internalStorage) {
         if (Config.substitutionProbe
             || (!Config.reuseSimulatedSubstitution && !Config.simulateRepeatProbe)) {
             return;
@@ -360,7 +362,7 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
             this.rstweaks$simulateStreak = 0;
             return;
         }
-        rstweaks$probeRepeatedSimulate(swaps);
+        rstweaks$probeRepeatedSimulate(swaps, inputs, internalStorage);
         final List<ResourceKey> flat = new ArrayList<>(swaps.size() * 2);
         for (final ResourceKey[] swap : swaps) {
             flat.add(swap[0]);
@@ -393,7 +395,9 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
      * saves a thousand is.
      */
     @Unique
-    private void rstweaks$probeRepeatedSimulate(final List<ResourceKey[]> swaps) {
+    private void rstweaks$probeRepeatedSimulate(final List<ResourceKey[]> swaps,
+                                                final ResourceList inputs,
+                                                final MutableResourceList internalStorage) {
         if (!Config.simulateRepeatProbe) {
             return;
         }
@@ -407,12 +411,79 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
             Stats.simulateRepeatsAgreed++;
         } else {
             Stats.simulateRepeatsDisagreed++;
+            rstweaks$reportDisagreement(previous, swaps, inputs, internalStorage);
         }
         this.rstweaks$simulateStreak++;
         if (this.rstweaks$simulateStreak > Stats.simulateStreakLongest) {
             Stats.simulateStreakLongest = this.rstweaks$simulateStreak;
         }
     }
+
+    /**
+     * Writes out what one disagreeing repeat actually looked like.
+     *
+     * <p>464 disagreements in 75,360,365 repeats — one in 162,000 — is small enough to be tempting
+     * and far too large to gamble a wrong tool substitution on. <b>Two causes would produce it and
+     * they need different fixes</b>, so this prints the evidence that separates them instead of
+     * letting me pick the one I already believe:
+     *
+     * <ul>
+     *   <li><b>Internal storage changed.</b> Refined Storage steps many patterns per tick inside one
+     *       task; a sibling pattern executing adds or removes resources from the shared storage, so
+     *       this pattern's next simulate legitimately sees a different world. The fix would be to
+     *       version the storage and invalidate on mutation.</li>
+     *   <li><b>The inputs changed.</b> {@code calculateIterationInputs} is recomputed every step and
+     *       takes the {@code Action}; if the ingredient budget draws down, the <em>wanted</em> wear
+     *       level itself can differ between two simulates. Versioning storage would not catch that
+     *       at all.</li>
+     * </ul>
+     *
+     * <p>So it logs, for every resource named on either side, what storage holds and what the inputs
+     * ask for. A {@code wanted} key that differs points at the second cause; equal keys with
+     * different amounts point at the first.
+     *
+     * <p>Capped at {@link #DISAGREEMENTS_LOGGED_MAX} lines. This runs on the hottest path in the
+     * mod, and a rare event logged without a bound is how a diagnostic becomes the outage.
+     */
+    @Unique
+    private void rstweaks$reportDisagreement(final List<ResourceKey> previous,
+                                             final List<ResourceKey[]> swaps,
+                                             final ResourceList inputs,
+                                             final MutableResourceList internalStorage) {
+        if (Stats.simulateRepeatsDisagreed > DISAGREEMENTS_LOGGED_MAX) {
+            return;
+        }
+        final StringBuilder detail = new StringBuilder(256);
+        detail.append("[rstweaks] simulate repeat disagreed (#")
+            .append(Stats.simulateRepeatsDisagreed).append(", streak ")
+            .append(this.rstweaks$simulateStreak).append(")\n  before:");
+        for (int i = 0; i < previous.size(); i += 2) {
+            rstweaks$describe(detail, previous.get(i), previous.get(i + 1), inputs, internalStorage);
+        }
+        detail.append("\n  now:   ");
+        for (final ResourceKey[] swap : swaps) {
+            rstweaks$describe(detail, swap[0], swap[1], inputs, internalStorage);
+        }
+        RSTweaks.LOGGER.info(detail.toString());
+    }
+
+    /** One {@code wanted -> substitute} pair with what storage and the inputs currently say. */
+    @Unique
+    private static void rstweaks$describe(final StringBuilder out,
+                                          final ResourceKey wanted,
+                                          final ResourceKey substitute,
+                                          final ResourceList inputs,
+                                          final MutableResourceList internalStorage) {
+        out.append("\n    wanted ").append(wanted)
+            .append(" (inputs ask ").append(inputs.get(wanted))
+            .append(", storage has ").append(internalStorage.get(wanted))
+            .append(")\n      -> ").append(substitute)
+            .append(" (storage has ").append(internalStorage.get(substitute)).append(')');
+    }
+
+    /** Enough to see a pattern, few enough that a burst cannot flood the log. */
+    @Unique
+    private static final int DISAGREEMENTS_LOGGED_MAX = 20;
 
     /** Consecutive failing simulates on this pattern, for the streak-length figure. */
     @Unique
