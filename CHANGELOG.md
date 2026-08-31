@@ -8,6 +8,29 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.22.0
+
+**`/rstweaks stats` shows the crafts you asked for, not the ones your base did on its own.**
+
+Asked for after a benchmark run in a live world. A base with exporters, Step Requesters and
+autocrafting upgrades finishes crafts constantly, and they shared one eight-entry history with the
+manual ones — so a benchmark was gone before it could be read.
+
+Told apart by **Refined Storage's own distinction**, not a guess of ours: a manual request carries a
+`PlayerActor`, an automated one a `NetworkNodeActor`. `TaskImpl.getActor()` is public.
+
+```
+recent crafts you asked for (newest first):
+  100,000 x insanium_essence in 30.6s  (3,268/s)
+  (plus 1,284 automated crafts this session, not listed)
+```
+
+Automated crafts are **counted and logged, never listed and never kept**. They are not measurements
+— the amount and the timing are whatever an exporter happened to ask for — but a base quietly
+crafting in the background is exactly what explains a benchmark that reads slow, so hiding them
+entirely would be worse than the flooding was.
+
+
 ## 0.21.2
 
 **A cancelled craft was being recorded as a finished one.**

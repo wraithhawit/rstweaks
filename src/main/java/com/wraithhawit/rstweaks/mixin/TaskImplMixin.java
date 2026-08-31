@@ -4,6 +4,7 @@ import com.refinedmods.refinedstorage.api.autocrafting.task.TaskPlan;
 import com.refinedmods.refinedstorage.api.autocrafting.task.TaskState;
 import com.refinedmods.refinedstorage.api.resource.ResourceKey;
 import com.refinedmods.refinedstorage.api.storage.Actor;
+import com.refinedmods.refinedstorage.common.api.storage.PlayerActor;
 import com.wraithhawit.rstweaks.CraftTimings;
 import com.wraithhawit.rstweaks.storage.TaskConsumption;
 
@@ -64,6 +65,9 @@ public abstract class TaskImplMixin {
     @Shadow
     public abstract long getAmount();
 
+    @Shadow
+    public abstract Actor getActor();
+
     /**
      * Whether the task was called off rather than finishing.
      *
@@ -121,6 +125,8 @@ public abstract class TaskImplMixin {
             CraftTimings.recordCancelled(resource, getAmount(), millis);
             return;
         }
-        CraftTimings.record(resource, getAmount(), millis);
+        // RS attributes a manual request to a PlayerActor and an automated one to a
+        // NetworkNodeActor, so this is its own distinction rather than a guess of ours.
+        CraftTimings.record(resource, getAmount(), millis, getActor() instanceof PlayerActor);
     }
 }

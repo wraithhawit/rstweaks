@@ -10,6 +10,22 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.22.0
+------
+  /rstweaks stats SHOWS THE CRAFTS YOU ASKED FOR, not the ones your base did on its own. Asked for
+  after a benchmark run in a live world: a base with exporters, Step Requesters and autocrafting
+  upgrades finishes crafts constantly, and they shared one eight-entry history with the manual ones
+  -- so a benchmark was gone before it could be read.
+  TOLD APART BY RS'S OWN DISTINCTION, not a guess of ours: a manual request carries a PlayerActor and
+  an automated one a NetworkNodeActor. TaskImpl.getActor() is public and shadowable.
+  Automated crafts are COUNTED AND LOGGED, never listed and never kept: "(plus 1,284 automated
+  crafts this session, not listed)". They are not measurements -- the amount and the timing are
+  whatever an exporter happened to ask for -- but a base quietly crafting in the background is
+  exactly what explains a benchmark that reads slow, so making them invisible would be worse than
+  the flooding.
+  The history now holds only manual crafts, so automation cannot evict one.
+
+
 0.21.2
 ------
   A CANCELLED CRAFT WAS BEING RECORDED AS A FINISHED ONE. Reported from the test world: "1,000,000 x

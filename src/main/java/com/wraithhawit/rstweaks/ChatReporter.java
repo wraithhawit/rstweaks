@@ -411,17 +411,27 @@ public final class ChatReporter {
      */
     private static List<Component> craftTimingLines() {
         final List<CraftTimings.Finished> recent = CraftTimings.recent();
-        if (recent.isEmpty()) {
+        final long automated = CraftTimings.automaticCrafts();
+        if (recent.isEmpty() && automated == 0L) {
             return List.of();
         }
         final List<Component> lines = new ArrayList<>();
-        lines.add(Component.empty().append(PREFIX).append(Component.literal(
-                "recent crafts (newest first):").withStyle(ChatFormatting.GRAY)));
+        lines.add(Component.empty().append(PREFIX).append(Component.literal(recent.isEmpty()
+                ? "no crafts you asked for yet:"
+                : "recent crafts you asked for (newest first):").withStyle(ChatFormatting.GRAY)));
         recent.forEach(finished -> lines.add(Component.literal(
                 String.format("  %,d x %s in %s  (%,.0f/s)", finished.amount(),
                     finished.resource(), CraftTimings.describe(finished.millis()),
                     finished.perSecond()))
             .withStyle(ChatFormatting.AQUA)));
+        if (automated > 0L) {
+            // Counted rather than listed. Automation is not a measurement -- the amount and the
+            // timing are whatever an exporter happened to ask for -- but a base quietly crafting in
+            // the background is worth knowing about when a benchmark reads slow.
+            lines.add(Component.literal(String.format(
+                    "  (plus %,d automated crafts this session, not listed)", automated))
+                .withStyle(ChatFormatting.DARK_GRAY));
+        }
         return lines;
     }
 

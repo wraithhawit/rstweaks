@@ -46,7 +46,21 @@ public final class CraftTimings {
     /** Enough to compare a few runs, few enough to print in chat without scrolling. */
     private static final int KEPT = 8;
 
+    /**
+     * Crafts a player asked for, which are the only ones worth comparing.
+     *
+     * <p><b>Automation is not in here, and that is the point.</b> A real base has exporters, Step
+     * Requesters and autocrafting upgrades finishing crafts constantly; sharing one eight-entry
+     * history with them means a benchmark run is gone before you can read it. They are counted
+     * rather than discarded, so the report can still say they happened.
+     *
+     * <p>Told apart by the task's {@code Actor}: Refined Storage attributes a manual request to a
+     * {@code PlayerActor} and an automated one to a {@code NetworkNodeActor}, so this is RS's own
+     * distinction rather than a guess of ours.
+     */
     private static final Deque<Finished> HISTORY = new ArrayDeque<>();
+
+    private static long automaticCrafts;
 
     private CraftTimings() {
     }
@@ -84,13 +98,27 @@ public final class CraftTimings {
         }
     }
 
-    /** Records a completed craft and logs it. Called from the task engine, on the server thread. */
+    /**
+     * Records a completed craft and logs it. Called from the task engine, on the server thread.
+     *
+     * @param manual whether a player asked for this, rather than an exporter or a Step Requester
+     */
     public static synchronized void record(final String resource, final long amount,
-                                           final long millis) {
+                                           final long millis, final boolean manual) {
         if (selfTestDepth > 0) {
             return;
         }
         final Finished finished = new Finished(resource, amount, millis);
+        if (!manual) {
+            // Counted, logged, and kept out of the history. Automation finishing a craft is worth
+            // seeing in a log when something is wrong; it is not a measurement, and a base with a
+            // dozen exporters would otherwise flush the benchmark before it could be read.
+            automaticCrafts++;
+            RSTweaks.LOGGER.info("[rstweaks] automated craft finished: {} x {} in {} ({}/s)",
+                String.format("%,d", amount), resource, describe(millis),
+                String.format("%,.0f", finished.perSecond()));
+            return;
+        }
         HISTORY.addFirst(finished);
         while (HISTORY.size() > KEPT) {
             HISTORY.removeLast();
@@ -98,6 +126,11 @@ public final class CraftTimings {
         RSTweaks.LOGGER.info("[rstweaks] craft finished: {} x {} in {} ({}/s)",
             String.format("%,d", amount), resource, describe(millis),
             String.format("%,.0f", finished.perSecond()));
+    }
+
+    /** How many automated crafts have finished this session, for the one-line note in the report. */
+    public static synchronized long automaticCrafts() {
+        return automaticCrafts;
     }
 
     /**
