@@ -11,10 +11,14 @@ import java.util.List;
  * <h2>Why this exists</h2>
  *
  * <p><b>Every performance number in this mod's history is a share of the server thread, and a share
- * cannot measure these optimizations.</b> The multiblock crafter has no time budget, so it expands
- * to fill the tick: make a step cheaper and Refined Storage simply runs more steps, leaving
- * {@code tickNode} pinned at ~95% no matter what. "The durability path went 40.15% to 26.87%"
+ * cannot measure these optimizations.</b> The multiblock crafter fills whatever tick it is given, so
+ * making a step cheaper raises the number of steps rather than lowering the share, leaving
+ * {@code tickNode} pinned near the top no matter what. "The durability path went 40.15% to 26.87%"
  * describes a redistribution, not a saving.
+ *
+ * <p>rsmbac 0.4.0 added a tick budget, which bounds how much of a tick the crafter may take — but it
+ * does not change this. The crafter still fills the slice it is allowed, so the share within that
+ * slice is just as uninformative.
  *
  * <p>Wall-clock time for a known craft has none of that problem. Ask for a million insanium twice,
  * on two builds, and the difference is the answer — no profile, no interpretation, no arguing about
@@ -94,6 +98,23 @@ public final class CraftTimings {
         RSTweaks.LOGGER.info("[rstweaks] craft finished: {} x {} in {} ({}/s)",
             String.format("%,d", amount), resource, describe(millis),
             String.format("%,.0f", finished.perSecond()));
+    }
+
+    /**
+     * Logs a craft that was called off, and deliberately does NOT keep it.
+     *
+     * <p>The amount is what was <em>asked for</em>, not what was made, so a rate computed from it is
+     * fiction. Logging it is still worth doing -- "why did my craft stop" is a real question -- but
+     * it stays out of the history so it cannot be mistaken for a benchmark or push a real one out.
+     */
+    public static synchronized void recordCancelled(final String resource, final long amount,
+                                                    final long millis) {
+        if (selfTestDepth > 0) {
+            return;
+        }
+        RSTweaks.LOGGER.info("[rstweaks] craft CANCELLED after {}: was asked for {} x {} (no rate:"
+            + " the amount is what was requested, not what was made)",
+            describe(millis), String.format("%,d", amount), resource);
     }
 
     /** Most recent first. */

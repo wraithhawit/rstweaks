@@ -10,6 +10,26 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.21.2
+------
+  A CANCELLED CRAFT WAS BEING RECORDED AS A FINISHED ONE. Reported from the test world: "1,000,000 x
+  insanium in 56 seconds" for a craft that was cancelled part way. A cancelled TaskImpl reaches
+  COMPLETED like any other, so 0.19.0's timer recorded it -- and the amount in that line is what was
+  ASKED FOR, not what was made, so the rate is fiction. Worse, the history keeps eight entries, so a
+  cancelled craft evicts a real benchmark.
+  Now told apart by shadowing TaskImpl.cancelled (declared on TaskImpl itself, so the shadow is safe
+  -- an inherited field fails at APPLY time and takes the task engine with it). A cancelled craft
+  logs "craft CANCELLED after 56s: was asked for 1,000,000 x ..." with no rate and does not enter
+  the history. Still logged, because "why did my craft stop" is a real question; just never counted
+  as a measurement.
+  Also corrected two statements that had gone stale: the timer's javadoc still said cancelled tasks
+  were the reason the log read "finished", and CraftTimings still claimed the crafter has no time
+  budget -- rsmbac 0.4.0 gave it one. The measurement argument survives the change and is restated
+  rather than deleted: the crafter fills whatever slice it is allowed, so a share within that slice
+  is exactly as uninformative as before.
+  recordCancelled honours the self-test guard too, so fixture cancellations cannot spam the log.
+
+
 0.21.1
 ------
   THE SELF-TEST WAS DELETING THE BENCHMARK IT EXISTS TO PROTECT. The suites build real TaskImpls and

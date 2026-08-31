@@ -8,6 +8,39 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.21.2
+
+**A cancelled craft was being recorded as a finished one.**
+
+Reported from the test world: *"1,000,000 x insanium in 56 seconds"* for a craft that was cancelled
+part way through. A cancelled `TaskImpl` reaches `COMPLETED` like any other, so 0.19.0's timer
+recorded it — and **the amount in that line is what was asked for, not what was made**, so the rate
+is fiction. Worse, the history keeps eight entries, so a cancelled craft evicts a real benchmark.
+
+Told apart now by shadowing `TaskImpl.cancelled` — declared on `TaskImpl` itself, so the shadow is
+safe; an inherited field would fail at APPLY time and take the task engine with it.
+
+```
+[rstweaks] craft CANCELLED after 56s: was asked for 1,000,000 x insanium_essence
+           (no rate: the amount is what was requested, not what was made)
+```
+
+Still logged, because "why did my craft stop" is a real question. Just never counted as a
+measurement, and never kept.
+
+### Two statements that had gone stale
+
+The timer's javadoc still said cancelled tasks were the reason the log read "finished" — that was
+the old behaviour, and it is now the thing being fixed.
+
+`CraftTimings` still claimed the crafter has no time budget. **rsmbac 0.4.0 gave it one.** The
+measurement argument survives the change, so it is restated rather than deleted: the crafter fills
+whatever slice it is allowed, so a share *within that slice* is exactly as uninformative as a share
+of the whole tick was.
+
+`recordCancelled` honours the self-test guard too, so fixture cancellations cannot spam the log.
+
+
 ## 0.21.1
 
 **The self-test was deleting the benchmark it exists to protect.**

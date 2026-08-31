@@ -65,6 +65,15 @@ public abstract class TaskImplMixin {
     public abstract long getAmount();
 
     /**
+     * Whether the task was called off rather than finishing.
+     *
+     * <p>Declared on {@code TaskImpl} itself, so shadowing it is safe -- an inherited field would
+     * fail at APPLY time and take the task engine with it.
+     */
+    @Shadow
+    private boolean cancelled;
+
+    /**
      * When this task was built, so its wall-clock duration can be reported when it finishes.
      *
      * <p>{@code TaskImpl} keeps a {@code startTime} of its own, but it is milliseconds from
@@ -91,8 +100,8 @@ public abstract class TaskImplMixin {
      * measurement that compares two builds without any of that.
      *
      * <p>Hooked on {@code updateState} rather than on a listener because every completion path in
-     * {@code TaskImpl} goes through it — including a cancelled task, which is why the log says
-     * "finished" rather than "crafted".
+     * {@code TaskImpl} goes through it. That includes a CANCELLED task, which is why the two are
+     * told apart here rather than both being reported as crafts.
      */
     @Inject(method = "updateState", at = @At("HEAD"))
     private void rstweaks$timeCraft(final TaskState state, final CallbackInfo ci) {
@@ -101,7 +110,17 @@ public abstract class TaskImplMixin {
             return;
         }
         this.rstweaks$timed = true;
-        CraftTimings.record(CraftTimings.shorten(String.valueOf(getResource())), getAmount(),
-            (System.nanoTime() - this.rstweaks$startedNanos) / 1_000_000L);
+        final long millis = (System.nanoTime() - this.rstweaks$startedNanos) / 1_000_000L;
+        final String resource = CraftTimings.shorten(String.valueOf(getResource()));
+        if (this.cancelled) {
+            // A cancelled task reaches COMPLETED like any other, and 0.19.0 recorded it as a
+            // finished craft: "1,000,000 x insanium in 56s" for a craft that was called off after
+            // a fraction of it. That number is not wrong so much as meaningless -- the amount is
+            // what was ASKED for, not what was made -- and worse, it evicted a real benchmark entry
+            // from a history that only keeps eight.
+            CraftTimings.recordCancelled(resource, getAmount(), millis);
+            return;
+        }
+        CraftTimings.record(resource, getAmount(), millis);
     }
 }
