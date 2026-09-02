@@ -34,6 +34,12 @@ import net.neoforged.neoforge.items.ItemStackHandler;
  * Refined Storage believes it can extract more than exists. Nothing crashes — the
  * craft simply stalls later, far from the cause.
  *
+ * <p><b>Under-reporting is the other half, and it took until 0.22.1 to cover.</b> The
+ * scenarios were all built from slots holding at most one stack, and on those the two
+ * paths cannot disagree — a green differential that proved only that the test could not
+ * tell them apart. The drawer scenarios put more than a stack in one slot, which is where
+ * {@code extractSlot} does something the indexed pass has to match rather than skip.
+ *
  * <p>{@code CapabilityCache} is an interface of default methods, so a real
  * {@link ItemHandlerExtractableStorage} can be built over a plain
  * {@link ItemStackHandler}. This exercises the actual mixed-in code, not a
@@ -41,6 +47,18 @@ import net.neoforged.neoforge.items.ItemStackHandler;
  */
 public final class ExtractionSelfTest {
     private static final Actor ACTOR = () -> "rstweaks-extraction-test";
+
+    /**
+     * The slot the drawer scenarios overfill, and what goes in it.
+     *
+     * <p>A plain {@link ItemStackHandler} reproduces the part of a drawer that matters here
+     * exactly: {@code extractItem} hands back at most {@code getMaxStackSize()} per call however
+     * much is asked for, so a slot holding 16,900 answers a request for {@code MAX_VALUE} with
+     * 64. No drawer mod is needed to test it, and none is a dependency.
+     */
+    private static final int OVERSTACKED_SLOT = 7;
+
+    private static final Item OVERSTACKED_ITEM = Items.IRON_INGOT;
 
     private ExtractionSelfTest() {
     }
@@ -51,7 +69,16 @@ public final class ExtractionSelfTest {
         }
     }
 
-    private record Scenario(String name, int slots, long request, Action action, Item wanted) {
+    /**
+     * @param overstack how many of {@link #OVERSTACKED_ITEM} to put in one slot, drawer-style,
+     *                  or zero for an ordinary inventory
+     */
+    private record Scenario(String name, int slots, long request, Action action, Item wanted,
+                            int overstack) {
+        Scenario(final String name, final int slots, final long request, final Action action,
+                 final Item wanted) {
+            this(name, slots, request, action, wanted, 0);
+        }
     }
 
     public static Result run() {
@@ -82,11 +109,11 @@ public final class ExtractionSelfTest {
 
     private static void compare(final Scenario s, final List<String> failures) {
         Config.externalStorageSlotIndex = true;
-        final ItemStackHandler indexed = populate(s.slots(), s.name());
+        final ItemStackHandler indexed = populate(s.slots(), s.name(), s.overstack());
         final long indexedResult = extract(indexed, s);
 
         Config.externalStorageSlotIndex = false;
-        final ItemStackHandler plain = populate(s.slots(), s.name());
+        final ItemStackHandler plain = populate(s.slots(), s.name(), s.overstack());
         final long plainResult = extract(plain, s);
 
         if (indexedResult != plainResult) {
@@ -350,6 +377,11 @@ public final class ExtractionSelfTest {
 
     /** Deterministic contents, so both runs start from an identical inventory. */
     private static ItemStackHandler populate(final int slots, final String seed) {
+        return populate(slots, seed, 0);
+    }
+
+    private static ItemStackHandler populate(final int slots, final String seed,
+                                             final int overstack) {
         final ItemStackHandler handler = new ItemStackHandler(slots);
         final Random rng = new Random(seed.hashCode());
         final Item[] palette = {Items.IRON_INGOT, Items.GOLD_INGOT, Items.COPPER_INGOT,
@@ -360,6 +392,9 @@ public final class ExtractionSelfTest {
             }
             final Item item = palette[rng.nextInt(palette.length)];
             handler.setStackInSlot(slot, new ItemStack(item, 1 + rng.nextInt(64)));
+        }
+        if (overstack > 0) {
+            handler.setStackInSlot(OVERSTACKED_SLOT, new ItemStack(OVERSTACKED_ITEM, overstack));
         }
         return handler;
     }
@@ -388,6 +423,23 @@ public final class ExtractionSelfTest {
             out.add(new Scenario("below index threshold, " + tag, 8, 64L, action, Items.IRON_INGOT));
             out.add(new Scenario("large inventory, " + tag, 2000, 5000L, action, Items.REDSTONE));
             out.add(new Scenario("zero request, " + tag, 200, 0L, action, Items.GOLD_INGOT));
+
+            // A drawer: one slot holding far more than a stack. Shipped wrong from 0.2.3 to
+            // 0.22.0 -- the indexed pass called extractItem directly, so it answered 64 for a
+            // drawer of 16,900, while the scan it stands in for reports what the slot holds.
+            // Nothing above noticed until shift-click crafting, which budgets a whole run from
+            // one simulated extraction, stopped after 22 crafts.
+            //
+            // The scenarios up to here could never have caught it: every slot they build holds
+            // at most one stack, and with no slot over the limit both paths agree.
+            out.add(new Scenario("drawer, whole inventory asked for, " + tag, 200,
+                Integer.MAX_VALUE, action, OVERSTACKED_ITEM, 16900));
+            out.add(new Scenario("drawer, more than one stack asked for, " + tag, 200, 5000L,
+                action, OVERSTACKED_ITEM, 16900));
+            out.add(new Scenario("drawer, exactly one stack asked for, " + tag, 200, 64L,
+                action, OVERSTACKED_ITEM, 16900));
+            out.add(new Scenario("drawer, less than one stack asked for, " + tag, 200, 5L,
+                action, OVERSTACKED_ITEM, 16900));
         }
         return out;
     }

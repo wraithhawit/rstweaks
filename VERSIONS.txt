@@ -10,6 +10,23 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.22.1
+------
+  SHIFT-CLICK CRAFTING STOPPED AFTER ~22 CRAFTS when the ingredients were in a drawer wall.
+  Reported from a live world: 22 x 4k ME storage component, then "out of 1k components", with
+  16,900 of them in an External Storage. Ours, and off by a factor of 264.
+  SHIFT-CLICK BUDGETS THE WHOLE RUN FROM ONE SIMULATE EXTRACT -- SnapshotExtractTransaction asks
+  rootStorage.extract(resource, Integer.MAX_VALUE, SIMULATE) once, up front, and that number is all
+  you get. A single click uses a real EXECUTE extraction each time and was never affected.
+  The simulation answered 64. An IItemHandler can only hand back one stack per extractItem call, so
+  RS's extractSlot detects that shape (extracted == maxStackSize && amountInSlot > maxStackSize) and
+  reports what the slot really holds. Our slot index (0.2.3) called extractItem directly and
+  returned the 64. Three 1k per craft, three already in the matrix: 64 buys exactly 22 crafts.
+  FIXED BY CALLING extractSlot RATHER THAN REIMPLEMENTING IT -- @Shadow, so the fast path and the
+  scan it stands in for cannot drift apart again.
+  Nothing was ever lost: the EXECUTE branch loops until the handler stops giving. Needed a >=64-slot
+  inventory (minSlotsToIndex) to appear at all, which is why a chest never showed it.
+
 0.22.0
 ------
   /rstweaks stats SHOWS THE CRAFTS YOU ASKED FOR, not the ones your base did on its own. Asked for

@@ -8,6 +8,52 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.22.1
+
+**Shift-click crafting no longer stops after ~22 crafts when the ingredients live in a drawer wall.**
+
+Reported from a live world: shift-clicking a 4k ME storage component in the Crafting Grid made 22
+and stopped, saying it was out of 1k components, with 16,900 of them sitting in an External
+Storage. Ours, not Refined Storage's, and off by a factor of 264.
+
+Shift-click and single-click take different routes. A single click uses
+`DirectCommitExtractTransaction`, which does a real `EXECUTE` extraction per ingredient and so is
+never wrong. Shift-click uses `SnapshotExtractTransaction`, which **asks once, up front, how much
+of each ingredient exists** —
+
+```java
+long amount = rootStorage.extract(resource, Integer.MAX_VALUE, Action.SIMULATE, playerActor);
+```
+
+— and that number is the entire budget for the whole shift-click. Whatever the simulation says is
+what you get; the loop ends the moment the matrix cannot be refilled from it.
+
+The simulation was answering 64. `ItemHandlerExtractableStorage.extractSlot` handles this case
+deliberately: an `IItemHandler` can only hand back one stack per `extractItem` call, so a drawer
+holding 16,900 answers a request for `Integer.MAX_VALUE` with 64. Refined Storage recognises that
+shape — `extracted == maxStackSize && amountInSlot > maxStackSize` — and reports `amountInSlot`
+instead. Our slot index (0.2.3) replaced that method with a direct `extractItem` call on the
+candidate slots and returned the 64 verbatim.
+
+The arithmetic matches exactly. The recipe takes three 1k components; the grid starts with three in
+the matrix, so 64 available buys 21 full refills and one short one — 22 crafts, then two empty
+slots and the recipe stops matching.
+
+**The fix is to call `extractSlot` rather than reimplement it.** It is `@Shadow`ed now, so the fast
+path and the scan it stands in for cannot drift apart again. The signature was already load-bearing
+in this mixin — `rstweaks$invalidateAfterExtract` redirects inside that same method — so nothing is
+newly coupled.
+
+Two things this was *not*. Real extraction was always correct: the `EXECUTE` branch loops until the
+handler stops giving, so nothing was ever lost or destroyed, and single-click crafting worked all
+along. And it needed a big inventory to show up at all — the indexed path only runs at
+`minSlotsToIndex` (64) slots or more, which is why a chest never showed it and a drawer controller
+always did.
+
+Delegating also closes a smaller hole in passing: the hand-rolled `EXECUTE` loop never invalidated
+the cached slot count, so a real extraction that resized the handler left the fallback scan reading
+a stale count — the exact hazard this class's own comments warn about.
+
 ## 0.22.0
 
 **`/rstweaks stats` shows the crafts you asked for, not the ones your base did on its own.**

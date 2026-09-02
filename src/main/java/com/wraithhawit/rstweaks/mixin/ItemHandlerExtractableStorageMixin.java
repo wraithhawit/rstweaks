@@ -14,6 +14,7 @@ import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.items.IItemHandler;
 
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -181,6 +182,30 @@ public abstract class ItemHandlerExtractableStorageMixin {
     @Unique
     private long rstweaks$partial;
 
+    /**
+     * Refined Storage's own per-slot extraction, called rather than reimplemented.
+     *
+     * <p>Reimplementing it is what broke shift-click crafting from a drawer wall. The simulated
+     * branch is not the one-liner it looks like: a drawer holding 16,900 of an item answers
+     * {@code extractItem(slot, MAX_VALUE, true)} with a single stack, because one call can only
+     * hand back one stack. Refined Storage recognises that shape --
+     * {@code extracted == maxStackSize && amountInSlot > maxStackSize} -- and reports what the
+     * slot really holds. Our indexed pass called {@code extractItem} directly and returned the 64,
+     * so anything that asks "how many could I get?" was told 64 while the drawer held thousands.
+     *
+     * <p>Shadowed so the fast path and the scan it stands in for can never disagree again. The
+     * signature is already load-bearing here -- {@link #rstweaks$invalidateAfterExtract} redirects
+     * inside this same method -- so this adds no coupling that was not there.
+     */
+    @Shadow
+    private int extractSlot(final Action action,
+                            final IItemHandler itemHandler,
+                            final ItemStack stackInSlot,
+                            final int slot,
+                            final int amount) {
+        throw new AssertionError("shadow");
+    }
+
     @Unique
     private long rstweaks$extractFromSlot(final Action action,
                                         final IItemHandler itemHandler,
@@ -188,21 +213,17 @@ public abstract class ItemHandlerExtractableStorageMixin {
                                         final int slot,
                                         final long amount) {
         final int capped = (int) Math.min(amount, Integer.MAX_VALUE);
+        // Goes through the redirect below, so a real extraction that resizes the handler drops the
+        // cached slot count -- which the hand-rolled loop this replaced never did.
+        final int extracted = this.extractSlot(action, itemHandler, inSlot, slot, capped);
         if (action == Action.SIMULATE) {
-            return itemHandler.extractItem(slot, capped, true).getCount();
+            return extracted;
         }
-        int total = 0;
-        while (total < capped) {
-            final int got = itemHandler.extractItem(slot, capped - total, false).getCount();
-            if (got <= 0) {
-                break;
-            }
-            total += got;
-        }
-        if (total > 0 && itemHandler.getStackInSlot(slot).isEmpty() && this.rstweaks$index != null) {
+        if (extracted > 0 && itemHandler.getStackInSlot(slot).isEmpty()
+            && this.rstweaks$index != null) {
             this.rstweaks$index.forget(ItemResource.ofItemStack(inSlot), slot);
         }
-        return total;
+        return extracted;
     }
 
     @Redirect(
