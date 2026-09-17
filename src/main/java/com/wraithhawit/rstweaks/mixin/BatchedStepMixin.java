@@ -16,6 +16,7 @@ import com.wraithhawit.rstweaks.Stats;
 import com.wraithhawit.rstweaks.pattern.PatternStepResults;
 import com.wraithhawit.rstweaks.planner.Durability;
 import com.wraithhawit.rstweaks.storage.TaskPatternInternals;
+import com.wraithhawit.rstweaks.storage.WornToolAware;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -53,7 +54,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *       tool from inside {@code extractAll}, and a batched path does not call it;</li>
  *   <li><b>consumes what it produces</b> — self-duplication, where iteration two needs what
  *       iteration one made. Checked against outputs directly, which is exact here: two wear levels
- *       of a tool are different resources, and only the durability guard above catches those.</li>
+ *       of a tool are different resources, and only the durability guard above catches those;</li>
+ *   <li><b>is the root and makes what a sibling consumes</b> — a bucket the root empties and a
+ *       sibling refills. The serial step keeps it in the task; a batch hands outputs straight to
+ *       {@code returnOutput}, which sends the root's to the network.</li>
  * </ul>
  *
  * <p>Everything else falls through to Refined Storage's own stepping, unchanged. A pattern this
@@ -229,6 +233,9 @@ public abstract class BatchedStepMixin {
         if (!layout.byproducts().isEmpty()) {
             return false;
         }
+        if (rstweaks$rootFeedsASibling(layout)) {
+            return false;
+        }
         final Durability durability = Durability.Holder.get();
         for (final Ingredient ingredient : layout.ingredients()) {
             for (final ResourceKey input : ingredient.inputs()) {
@@ -243,6 +250,36 @@ public abstract class BatchedStepMixin {
             }
         }
         return true;
+    }
+
+    /**
+     * Whether this is the root and one of its outputs is something a sibling pattern consumes.
+     *
+     * <p>The serial step keeps such an output in the task -- {@code InternalTaskPatternMixin}
+     * redirects the outputs it hands to {@code returnOutput}. A batch calls {@code returnOutput}
+     * itself, and for the root that means the network: a bucket emptied by the root and refilled
+     * by a sibling left the task, and the sibling had nothing to fill.
+     *
+     * <p>Only the root is asked. {@code returnOutput} keeps every other pattern's outputs in the
+     * task already, and a sub-pattern's outputs are by definition consumed by a sibling, so asking
+     * every pattern would refuse to batch anything but the root.
+     *
+     * <p>Refused whether or not {@code keepRecycledResourcesInTask} is on, like the self-feeding
+     * rule above: the decision is cached for the task, and a config change mid-craft must not leave
+     * a yes behind that the serial path would now answer no to.
+     */
+    @Unique
+    private boolean rstweaks$rootFeedsASibling(final PatternLayout layout) {
+        if (!((TaskPatternInternals) this).rstweaks$root()
+            || !(this instanceof WornToolAware aware)) {
+            return false;
+        }
+        for (final ResourceAmount output : layout.outputs()) {
+            if (aware.rstweaks$taskConsumes().contains(output.resource())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

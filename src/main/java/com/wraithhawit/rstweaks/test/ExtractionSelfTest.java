@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Random;
 import java.util.function.Consumer;
+import java.util.function.ToLongFunction;
 
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -165,9 +166,15 @@ public final class ExtractionSelfTest {
                                  int slots,
                                  Item wanted,
                                  long firstRequest,
-                                 long secondRequest,
+                                 ToLongFunction<ItemStackHandler> secondRequest,
                                  Action action,
                                  Consumer<ItemStackHandler> disturb) {
+        /** A second request that does not depend on what the disturbance left behind. */
+        StaleScenario(final String name, final int slots, final Item wanted,
+                      final long firstRequest, final long secondRequest, final Action action,
+                      final Consumer<ItemStackHandler> disturb) {
+            this(name, slots, wanted, firstRequest, handler -> secondRequest, action, disturb);
+        }
     }
 
     /**
@@ -269,7 +276,10 @@ public final class ExtractionSelfTest {
         s.disturb().accept(handler);
 
         final long beforeSecond = count(handler, s.wanted());
-        final long second = storage.extract(wanted, s.secondRequest(), s.action(), ACTOR);
+        // Sized after the disturbance, because some requests only mean something relative to what
+        // the inventory now holds.
+        final long second = storage.extract(
+            wanted, s.secondRequest().applyAsLong(handler), s.action(), ACTOR);
         final long afterSecond = count(handler, s.wanted());
 
         return new StaleRun(first, beforeFirst - afterFirst,
@@ -362,15 +372,27 @@ public final class ExtractionSelfTest {
             // More arrives in a slot the index has never heard of. The index is allowed to
             // be late here -- but only late: what it does report must still be honest, and
             // the fallback scan has to find the rest.
-            out.add(new StaleScenario("more appears in an unindexed slot, " + tag,
-                200, Items.GOLD_INGOT, 5L, 9999L, action, handler -> {
-                    for (int slot = handler.getSlots() - 1; slot >= 0; slot--) {
-                        if (handler.getStackInSlot(slot).isEmpty()) {
-                            handler.setStackInSlot(slot, new ItemStack(Items.GOLD_INGOT, 64));
-                            return;
-                        }
+            final Consumer<ItemStackHandler> goldArrives = handler -> {
+                for (int slot = handler.getSlots() - 1; slot >= 0; slot--) {
+                    if (handler.getStackInSlot(slot).isEmpty()) {
+                        handler.setStackInSlot(slot, new ItemStack(Items.GOLD_INGOT, 64));
+                        return;
                     }
-                }));
+                }
+            };
+            out.add(new StaleScenario("more appears in an unindexed slot, " + tag,
+                200, Items.GOLD_INGOT, 5L, 9999L, action, goldArrives));
+
+            // The same arrival, asked for less than is now there but more than the index knows
+            // about. The indexed pass takes everything it knows of and falls back with the rest
+            // outstanding -- and the fallback scan used to be handed the whole request, so it
+            // took up to a full stack more from the new slot and the storage returned more than
+            // it was asked for. The scenario above cannot show that: 9,999 is more than exists,
+            // and a scan that over-reaches past everything there is still finds only that.
+            out.add(new StaleScenario("more appears in an unindexed slot, asked for less than "
+                + "is there, " + tag,
+                200, Items.GOLD_INGOT, 5L, handler -> count(handler, Items.GOLD_INGOT) - 32L,
+                action, goldArrives));
         }
         return out;
     }

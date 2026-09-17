@@ -159,8 +159,9 @@ public class RSTweaks {
             // installed, but a version of it that carries the author's own fix, so our mixin
             // stood down. Claiming it regardless would be the same lie as claiming it when
             // the mod is absent. See UpstreamGate.
-            if (ModList.get().isLoaded("stepcrafter")
-                && !UpstreamGate.isStoodDown("step requester backoff")) {
+            // Not gated any more: stepcrafter's own timeout is failure-only and leaves RS's
+            // 5,000ms budget in place, so it never supersedes ours. See UpstreamGate.
+            if (ModList.get().isLoaded("stepcrafter")) {
                 features.add("step requester backoff");
             }
             if (ModList.get().isLoaded("cabletiers")

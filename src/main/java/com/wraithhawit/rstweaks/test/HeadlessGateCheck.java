@@ -82,17 +82,14 @@ public final class HeadlessGateCheck {
 
     /** The versions this actually shipped for, so the constants cannot drift from the intent. */
     private static void theRealReleases() {
-        final Superseded step = UpstreamGate.forMixin(
-            "com.wraithhawit.rstweaks.mixin.StepRequesterNetworkNodeMixin");
-        expect("step crafter tweak is registered", step != null);
-        if (step != null) {
-            expect("0.1.5 still wants our backoff",
-                UpstreamGate.stillNeeded(step, "1.21.1-0.1.5"));
-            expect("0.1.6 still wants our backoff",
-                UpstreamGate.stillNeeded(step, "1.21.1-0.1.6"));
-            expect("0.1.7 stands it down",
-                !UpstreamGate.stillNeeded(step, "1.21.1-0.1.7"));
-        }
+        // Regression guard, not an omission. 0.22.2 and earlier gated the Step Requester mixin
+        // at stepcrafter 1.21.1-0.1.7 because his changelog said he had added a timeout. His
+        // timeout is failure-only, flat, and leaves RS's 5,000ms budget in place; standing ours
+        // down for it cost 68.1% of the server thread on a measured 0.1.9 world. If this
+        // assertion ever fails, someone re-registered it from a changelog line again.
+        expect("step crafter mixin is NOT gated — his timeout does not supersede ours",
+            UpstreamGate.forMixin(
+                "com.wraithhawit.rstweaks.mixin.StepRequesterNetworkNodeMixin") == null);
 
         final Superseded cable = UpstreamGate.forMixin(
             "com.wraithhawit.rstweaks.mixin.TieredAutocrafterBlockEntityMixin");

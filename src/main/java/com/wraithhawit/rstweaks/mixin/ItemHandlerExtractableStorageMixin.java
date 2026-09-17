@@ -17,7 +17,9 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Constant;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyConstant;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
@@ -101,8 +103,8 @@ public abstract class ItemHandlerExtractableStorageMixin {
         this.rstweaks$cachedSlots = -1;
         this.rstweaks$visited = null;
         // Must be cleared here too: when this injector cancels, the RETURN injector
-        // that normally consumes it never runs, and a leftover value would be added
-        // to an unrelated later extraction.
+        // that normally clears it never runs, and a leftover value would seed an
+        // unrelated later scan.
         this.rstweaks$partial = 0L;
 
         if (!Config.externalStorageSlotIndex) {
@@ -178,9 +180,33 @@ public abstract class ItemHandlerExtractableStorageMixin {
         ++Stats.externalIndexFallbacks;
     }
 
-    /** Extracted by the indexed pass before falling back; added to the scan's result. */
+    /** Extracted by the indexed pass before falling back; the scan counts on from it. */
     @Unique
     private long rstweaks$partial;
+
+    /**
+     * Starts the fallback scan's running total at what the indexed pass already took.
+     *
+     * <p>Refined Storage's loop compares that total against {@code amount} twice -- for what to
+     * ask the next slot for, and for when to stop -- so starting it at the partial makes both mean
+     * "what is still outstanding". The scan used to start from zero with the partial added to its
+     * result afterwards, and so stopped only once it had found the whole request again: 64 asked
+     * for, 16 from indexed slots, 64 more from a slot filled since the index was built, 80
+     * returned. Under {@code EXECUTE} those 80 really left the inventory.
+     *
+     * <p>The total's initial {@code 0L} is the only long constant in the method, and it runs after
+     * {@link #rstweaks$indexedExtract}. Every path but the fallback leaves the partial at zero,
+     * where this changes nothing.
+     *
+     * <p>Not a {@code @ModifyVariable} on {@code amount}, which was tried first: at {@code LOAD}
+     * Mixin stores the handler's result back into the argument, so the partial came off again at
+     * each of the loop's two reads for every matching slot, and the stale-entry exit stopped early
+     * -- 382 returned where 621 were there.
+     */
+    @ModifyConstant(method = EXTRACT, constant = @Constant(longValue = 0L))
+    private long rstweaks$countOnFromIndexedPass(final long zero) {
+        return this.rstweaks$partial;
+    }
 
     /**
      * Refined Storage's own per-slot extraction, called rather than reimplemented.
@@ -242,16 +268,14 @@ public abstract class ItemHandlerExtractableStorageMixin {
         return itemHandler.getStackInSlot(slot);
     }
 
-    @Inject(method = EXTRACT, at = @At("RETURN"), cancellable = true)
-    private void rstweaks$addPartial(final long amount,
-                                   final Action action,
-                                   final IItemHandler itemHandler,
-                                   final ItemStack stack,
-                                   final CallbackInfoReturnable<Long> cir) {
-        if (this.rstweaks$partial > 0L) {
-            cir.setReturnValue(cir.getReturnValue() + this.rstweaks$partial);
-            this.rstweaks$partial = 0L;
-        }
+    /** The scan's total already includes the partial, so this only drops the per-scan state. */
+    @Inject(method = EXTRACT, at = @At("RETURN"))
+    private void rstweaks$clearScanState(final long amount,
+                                        final Action action,
+                                        final IItemHandler itemHandler,
+                                        final ItemStack stack,
+                                        final CallbackInfoReturnable<Long> cir) {
+        this.rstweaks$partial = 0L;
         this.rstweaks$visited = null;
     }
 

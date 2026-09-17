@@ -62,9 +62,17 @@ public abstract class AbstractTaskPatternMixin implements WornToolAware, TaskPat
     @Shadow
     protected Map<Integer, Map<ResourceKey, Long>> ingredients;
 
+    @Shadow
+    protected boolean root;
+
     @Override
     public Pattern rstweaks$pattern() {
         return this.pattern;
+    }
+
+    @Override
+    public boolean rstweaks$root() {
+        return this.root;
     }
 
     @Override

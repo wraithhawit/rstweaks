@@ -5,6 +5,7 @@ import com.refinedmods.refinedstorage.api.autocrafting.Pattern;
 import com.refinedmods.refinedstorage.api.autocrafting.task.TaskPlan;
 import com.refinedmods.refinedstorage.api.resource.ResourceKey;
 
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -21,7 +22,9 @@ import java.util.Set;
  *
  * <p>A pattern cannot see its siblings — but the plan can. The set is computed once when
  * the task is built and handed to each pattern as it is constructed, which is the only
- * moment both are in scope.
+ * moment both are in scope. A task rebuilt from a save has no plan, so the same set is
+ * computed from its snapshot's patterns; missing that left every restored pattern
+ * believing its siblings consume nothing.
  *
  * <p>Handover uses a static field rather than a parameter because the patterns are built
  * inside {@code TaskImpl}'s constructor, where no signature we control is involved. It is
@@ -37,8 +40,13 @@ public final class TaskConsumption {
 
     /** Every resource any pattern in this plan takes as an ingredient. */
     public static Set<ResourceKey> of(final TaskPlan plan) {
+        return of(plan.patterns().keySet());
+    }
+
+    /** Every resource any of these patterns takes as an ingredient. */
+    public static Set<ResourceKey> of(final Collection<Pattern> patterns) {
         final Set<ResourceKey> consumed = new HashSet<>();
-        for (final Pattern pattern : plan.patterns().keySet()) {
+        for (final Pattern pattern : patterns) {
             for (final Ingredient ingredient : pattern.layout().ingredients()) {
                 consumed.addAll(ingredient.inputs());
             }

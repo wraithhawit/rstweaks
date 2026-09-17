@@ -8,7 +8,6 @@ import com.refinedmods.refinedstorage.api.autocrafting.calculation.CancellationT
 import com.refinedmods.refinedstorage.api.autocrafting.calculation.CraftingCalculatorImpl;
 import com.refinedmods.refinedstorage.api.autocrafting.task.ExternalPatternSinkProvider;
 import com.refinedmods.refinedstorage.api.autocrafting.task.StepBehavior;
-import com.refinedmods.refinedstorage.api.autocrafting.task.Task;
 import com.refinedmods.refinedstorage.api.autocrafting.task.TaskImpl;
 import com.refinedmods.refinedstorage.api.autocrafting.task.TaskListener;
 import com.refinedmods.refinedstorage.api.autocrafting.task.TaskPlan;
@@ -116,10 +115,17 @@ public final class TaskEngineSelfTest {
                 Config.durabilityAwarePlanning = scenario.durability() != null;
                 Durability.Holder.set(scenario.durability() == null
                     ? Durability.NONE : scenario.durability());
-                try {
-                    check(scenario, failures);
-                } catch (final RuntimeException | StackOverflowError e) {
-                    failures.add(scenario.name() + ": threw " + e);
+                for (final boolean restored : new boolean[] {false, true}) {
+                    final List<String> found = new ArrayList<>();
+                    try {
+                        check(scenario, restored, found);
+                    } catch (final RuntimeException | StackOverflowError e) {
+                        found.add(scenario.name() + ": threw " + e);
+                    }
+                    // Prefixed here rather than threaded through every message in audit, which
+                    // names the scenario on its own.
+                    found.forEach(failure -> failures.add(
+                        restored ? "[restored from a save after one step] " + failure : failure));
                 }
             }
         } finally {
@@ -131,7 +137,9 @@ public final class TaskEngineSelfTest {
         return new CraftingPlanSelfTest.Result(scenarios.size(), failures);
     }
 
-    private static void check(final Scenario scenario, final List<String> failures) {
+    private static void check(final Scenario scenario,
+                              final boolean restored,
+                              final List<String> failures) {
         final PatternRepositoryImpl patterns = new PatternRepositoryImpl();
         scenario.patterns().accept(patterns);
 
@@ -154,7 +162,7 @@ public final class TaskEngineSelfTest {
             return;
         }
 
-        final String problem = execute(plan, storage);
+        final String problem = execute(plan, storage, restored);
         if (problem != null) {
             failures.add(scenario.name() + ": " + problem);
             return;
@@ -216,8 +224,10 @@ public final class TaskEngineSelfTest {
         }
     };
 
-    private static String execute(final TaskPlan plan, final RootStorageImpl storage) {
-        final Task task = new TaskImpl(plan, ACTOR, false);
+    private static String execute(final TaskPlan plan,
+                                  final RootStorageImpl storage,
+                                  final boolean restoreAfterFirstStep) {
+        TaskImpl task = new TaskImpl(plan, ACTOR, false);
         // How the network wires a running task in: TaskContainer.attach registers it as a
         // listener on the storage so it can intercept inserts meant for it.
         storage.addListener(task);
@@ -244,6 +254,16 @@ public final class TaskEngineSelfTest {
                     return "made no progress and is stuck in " + task.getState()
                         + " after " + steps + " steps. Nothing else can feed this task, so"
                         + " this is a craft that never finishes.";
+                }
+                if (restoreAfterFirstStep && steps == 0) {
+                    // What a server restart does to a craft in progress: the task is saved as a
+                    // TaskSnapshot and rebuilt from it, through a different TaskImpl constructor
+                    // from the one that took the plan. Anything a pattern only learns while the
+                    // plan is in scope is gone unless that constructor supplies it too. Skips the
+                    // NBT round trip, which is Refined Storage's codec rather than our mixins.
+                    storage.removeListener(task);
+                    task = new TaskImpl(task.createSnapshot());
+                    storage.addListener(task);
                 }
             }
             return "did not finish within " + MAX_STEPS + " steps; stuck in "
@@ -456,6 +476,24 @@ public final class TaskEngineSelfTest {
                 List.of(ing(1, "template"), ing(7, "diamond"), ing(1, "netherite")),
                 List.of(out("template", 2)), List.of()), 0),
             Map.of("template", 1L, "diamond", 4096L, "netherite", 512L), "template", 100L));
+
+        // A container recycled through a sibling as an OUTPUT of the root: emptying a water
+        // bucket gives water and the bucket back, and the bucket is what the other pattern fills
+        // again. The root does not consume its own outputs, so the bucket only stays in the task
+        // because TaskImplMixin told every pattern what its siblings consume.
+        //
+        // Four buckets a fill rather than one, so the root holds several water buckets at once.
+        // With one bucket in circulation every batch is a batch of one, which batchedExecution
+        // declines, and its path that sent the bucket to the network could never be reached.
+        out.add(new Scenario("container recycled through a sibling as an output", Planner.LP,
+            null, repo -> {
+                repo.add(pattern("water",
+                    List.of(ing(1, "water_bucket")),
+                    List.of(out("water", 1), out("bucket", 1)), List.of()), 0);
+                repo.add(pattern("water_bucket",
+                    List.of(ing(4, "bucket"), ing(1, "essence")),
+                    List.of(out("water_bucket", 4)), List.of()), 0);
+            }, Map.of("essence", 1024L, "bucket", 4L), "water", 64L));
 
         // A tool that wears out. This is the exact path the 0.2.64 NPE was on -- the
         // substitution in AbstractTaskPattern.extractAll runs once per iteration here, so

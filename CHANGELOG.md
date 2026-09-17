@@ -8,6 +8,89 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.22.3
+
+**The Step Requester calculation budget is back on Step Crafter 0.1.7 and newer.** It had been
+silently withdrawn since the upstream gate landed, which is most of a year of installs running
+without the one setting that stops the five-second freeze.
+
+Diagnosed from a spark profile of LavaSurf's survival world (stepcrafter `1.21.1-0.1.9`,
+rstweaks 0.22.1, integrated server, 60s sample):
+
+```
+88.05%  LevelChunk$BoundTickingBlockEntity.tick
+  73.14%  NetworkNodeBlockEntityTicker.tick
+    68.11%  StepRequesterNetworkNode.doWork          <- 40,868ms of 60,000
+      68.09%  AutocraftingNetworkComponentImpl.startTask
+        67.97%  CraftingCalculatorImpl.calculate
+```
+
+TPS 6.4 (1m), mean MSPT 156ms, **worst tick 5,259ms** — RS's uncapped
+`craftingCalculationTimeoutMs`, which `stepRequesterCalculationMaxBudgetMs` should have held to
+1,000ms. `rsmbac` was 0.56% of the same profile and the suspected culprit; it was not involved.
+
+**Cause: our own `UpstreamGate`.** It stood `StepRequesterNetworkNodeMixin` down from stepcrafter
+`1.21.1-0.1.7` on the strength of a changelog line — "Improved Step Requester performance by adding
+a timeout on failed requested crafts" — without anyone reading what that timeout does. The tell in
+the profile is a frame that is not there: with the mixin applied, `doWork`'s call to `startTask`
+goes through `rstweaks$recordOutcome`, and it went straight to
+`AutocraftingNetworkComponentImpl.startTask` instead, while other rstweaks handlers
+(`copyBeforeWrite`) showed up normally elsewhere in the same tree.
+
+Read in the 0.1.8 and 0.1.9 jars, whose `doWork` is byte-identical, his timeout is
+`FAILED_TASK_TIMEOUT_TICKS = 20` — flat, no escalation — written only on the branch where
+`startTask` returns empty, over a bare `TimeoutableCancellationToken` carrying RS's full 5,000ms.
+So it never fires for a calculation that *succeeds* expensively, and it caps no calculation at all.
+That is precisely the case [StepRequesterNetworkNodeMixin]'s own javadoc records as measured and
+settled: 34.8% of the server thread against only 45 failures in 100 seconds. We withdrew an
+escalating 200ms→1,000ms budget and a cost-derived sleep, and took a one-second nap in exchange.
+
+**Fixed by removing the stepcrafter entry from `UpstreamGate.SUPERSEDED`.** All three injection
+points were re-verified against 0.1.8 and 0.1.9 bytecode before re-enabling — `SimpleNetworkNode`
+`.doWork()V` at offset 1, `PatternResourceContainerImpl.get(I)` at 106, and the five-argument
+`AutocraftingNetworkComponent.startTask` at 319 — each present exactly once, same offsets in both
+versions.
+
+The interaction that motivated the gate is real and points the other way: our sleeping-slot redirect
+returns null, which makes his `failedTaskTimeouts.remove(slot)` branch run, so his timeout cannot
+accumulate while ours is installed. The two do collapse into one. That one is ours, and ours is
+strictly stronger.
+
+`HeadlessGateCheck` now asserts the stepcrafter mixin is **not** registered, so re-adding it from a
+changelog line fails the build. `UpstreamGate`'s javadoc carries the rule that produced this: an
+entry belongs there only once the author's implementation has been read in his own bytecode.
+
+## 0.22.2
+
+**EMI tooltips, R and U work over a grid again when the JEI integration is also installed.**
+
+Seen in ATM10 with both `refinedstorage-jei-integration` and `refinedstorage-emi-integration`
+enabled: hovering a grid resource drew "Error rendering tooltip / See log" over the item's own
+tooltip, and R, U and clicks on grid resources failed with "Error while handling key press".
+Reported as server-only; the log it came from was single player. One session logged 14,463
+tooltip errors in eight minutes, all the same cast:
+
+```
+ClassCastException: ItemStack cannot be cast to EmiIngredient
+  at GridEmiStackProvider.lambda$getStackAt$0(GridEmiStackProvider.java:28)
+```
+
+Not ours. Both EMI stack providers (`GridEmiStackProvider`, `ResourceEmiStackProvider`) call
+`RefinedStorageApi.getIngredientConverter().convertToIngredient(resource)` and cast the answer to
+`EmiIngredient`. That converter is `CompositeRecipeModIngredientConverter`, which returns the first
+answer from a `HashSet` of every registered converter. The JEI integration registers one that
+returns a plain `ItemStack`. `HashSet` order comes from identity hash codes, so whether JEI's or
+EMI's converter answers first is decided per launch — which is why it looked intermittent, and why
+ATM10(1), with the JEI integration disabled, never showed it.
+
+**Fixed by asking each converter in turn and keeping the first `EmiIngredient`.** A `@Redirect` on
+the `convertToIngredient` call in both providers, reading the composite's converters through an
+accessor. Still the registered converters deciding, so Mekanism's EMI chemical converter is found
+the same way; nothing re-derives an `EmiStack` from a resource.
+
+In its own config, `rstweaks.rsemi.mixins.json`, gated on `refinedstorage_emi_integration` and
+client-only. `libs/` gains the EMI and RS EMI integration jars to compile against.
+
 ## 0.22.1
 
 **Shift-click crafting no longer stops after ~22 crafts when the ingredients live in a drawer wall.**

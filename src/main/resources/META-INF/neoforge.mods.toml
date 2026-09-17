@@ -45,6 +45,10 @@ requiredMods=["functionalstorage"]
 config="${mod_id}.sophisticatedcore.mixins.json"
 requiredMods=["sophisticatedcore"]
 
+[[mixins]]
+config="${mod_id}.rsemi.mixins.json"
+requiredMods=["refinedstorage_emi_integration"]
+
 [[dependencies.${mod_id}]]
     modId="neoforge"
     type="required"

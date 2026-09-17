@@ -45,12 +45,13 @@ class UpstreamGateTest {
 
     @Test
     void theRealReleases() {
-        final Superseded step = UpstreamGate.forMixin(
-            "com.wraithhawit.rstweaks.mixin.StepRequesterNetworkNodeMixin");
-        assertNotNull(step);
-        assertTrue(UpstreamGate.stillNeeded(step, "1.21.1-0.1.5"));
-        assertTrue(UpstreamGate.stillNeeded(step, "1.21.1-0.1.6"));
-        assertFalse(UpstreamGate.stillNeeded(step, "1.21.1-0.1.7"));
+        // Regression guard, not an omission. 0.22.2 and earlier gated the Step Requester mixin
+        // at stepcrafter 1.21.1-0.1.7 because his changelog said he had added a timeout. Read in
+        // his bytecode, that timeout is failure-only, flat, and leaves RS's 5,000ms budget in
+        // place; standing ours down for it cost 68.1% of the server thread on a measured 0.1.9
+        // world. If this fails, someone re-registered it from a changelog line again.
+        assertNull(UpstreamGate.forMixin(
+            "com.wraithhawit.rstweaks.mixin.StepRequesterNetworkNodeMixin"));
 
         final Superseded cable = UpstreamGate.forMixin(
             "com.wraithhawit.rstweaks.mixin.TieredAutocrafterBlockEntityMixin");

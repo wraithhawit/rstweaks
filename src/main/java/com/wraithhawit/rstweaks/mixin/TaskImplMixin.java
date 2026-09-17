@@ -1,12 +1,17 @@
 package com.wraithhawit.rstweaks.mixin;
 
+import com.refinedmods.refinedstorage.api.autocrafting.Pattern;
 import com.refinedmods.refinedstorage.api.autocrafting.task.TaskPlan;
+import com.refinedmods.refinedstorage.api.autocrafting.task.TaskSnapshot;
 import com.refinedmods.refinedstorage.api.autocrafting.task.TaskState;
 import com.refinedmods.refinedstorage.api.resource.ResourceKey;
 import com.refinedmods.refinedstorage.api.storage.Actor;
 import com.refinedmods.refinedstorage.common.api.storage.PlayerActor;
 import com.wraithhawit.rstweaks.CraftTimings;
 import com.wraithhawit.rstweaks.storage.TaskConsumption;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -57,6 +62,40 @@ public abstract class TaskImplMixin {
                                           final CallbackInfo ci) {
         TaskConsumption.endBuilding();
         this.rstweaks$startedNanos = System.nanoTime();
+    }
+
+    /**
+     * The same, for a task rebuilt from a save.
+     *
+     * <p>A restart does not replay the plan. {@code TaskImpl(TaskSnapshot)} rebuilds each pattern
+     * from its snapshot, and those constructors run the same {@code AbstractTaskPattern} one that
+     * reads the handover above -- which, with only the plan constructor hooked, found nothing in
+     * flight. Every restored pattern concluded its siblings consume nothing, so a bucket cycling
+     * between two patterns went to the network after the restart and the craft jammed.
+     *
+     * <p>Completed patterns are included because the plan constructor's set includes them: a
+     * restored task should hold back exactly what it held back before the restart.
+     */
+    @Inject(
+        method = "<init>(Lcom/refinedmods/refinedstorage/api/autocrafting/task/TaskSnapshot;)V",
+        at = @At("HEAD")
+    )
+    private static void rstweaks$captureRestoredConsumption(final TaskSnapshot snapshot,
+                                                           final CallbackInfo ci) {
+        final List<Pattern> patterns = new ArrayList<>(snapshot.patterns().keySet());
+        snapshot.completedPatterns().forEach(completed -> patterns.add(completed.pattern()));
+        TaskConsumption.beginBuilding(TaskConsumption.of(patterns));
+    }
+
+    @Inject(
+        method = "<init>(Lcom/refinedmods/refinedstorage/api/autocrafting/task/TaskSnapshot;)V",
+        at = @At("RETURN")
+    )
+    private void rstweaks$clearRestoredConsumption(final TaskSnapshot snapshot,
+                                                  final CallbackInfo ci) {
+        // No start time on purpose: the craft began before the restart, so a duration measured
+        // from here would not be the craft's.
+        TaskConsumption.endBuilding();
     }
 
     @Shadow

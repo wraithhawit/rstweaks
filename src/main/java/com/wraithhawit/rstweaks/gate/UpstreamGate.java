@@ -9,22 +9,41 @@ import javax.annotation.Nullable;
 /**
  * Which of our addon tweaks the addon author has since implemented himself.
  *
- * <p>Three of this mod's optimizations were written against someone else's code, reported
+ * <p>Some of this mod's optimizations were written against someone else's code, reported
  * upstream, and then <em>shipped</em> upstream. That is the outcome we wanted, and it leaves a
- * problem: our mixins still apply, and both of the ones below replace the author's own
- * implementation rather than sitting beside it. Ours injects at HEAD and cancels, so his new
- * code never runs — including any correctness fix folded into the same release.
- *
- * <p>The Step Crafter case is worse than redundant. Since 0.1.7 the node keeps a
- * {@code failedTaskTimeouts} map, and a null from {@code PatternResourceContainerImpl.get(slot)}
- * now means "this slot is empty, clear its timeout". Our redirect returns null for exactly the
- * slots we are sleeping, so on every sleeping tick we reset his backoff for the slots that are
- * failing. His timeout can never accumulate while ours is installed. Nothing crashes and nothing
- * logs; the two fixes just quietly cancel out into one.
+ * problem: our mixin still applies, and replaces the author's own implementation rather than
+ * sitting beside it. Ours injects at HEAD and cancels, so his new code never runs — including
+ * any correctness fix folded into the same release.
  *
  * <p>So each tweak below names the version that supersedes it, and the mixin is skipped from that
  * version on. Older installs keep our fix, which is the whole point — an ATM10 instance is not
  * necessarily an up-to-date one, and this mod has to stay drag-and-drop.
+ *
+ * <p><b>An entry belongs here only once the author's implementation has been read in his own
+ * bytecode and found to cover the ground ours covers.</b> A changelog line is not enough, and the
+ * Step Crafter entry that used to sit below is why. It stood down the entire Step Requester mixin
+ * from stepcrafter {@code 1.21.1-0.1.7} on the strength of "Improved Step Requester performance by
+ * adding a timeout on failed requested crafts". Read in 0.1.8 and 0.1.9 — whose {@code doWork} is
+ * byte-identical — that timeout is a flat {@code FAILED_TASK_TIMEOUT_TICKS = 20}, written only on
+ * the branch where {@code startTask} returns empty, over a bare
+ * {@code TimeoutableCancellationToken} carrying RS's full 5,000ms. It does not escalate, it never
+ * fires for a calculation that <em>succeeds</em> expensively, and it caps no calculation at all.
+ * Standing down for it withdrew the 200ms→1,000ms calculation budget and the cost-derived sleep
+ * and put a one-second nap in their place.
+ *
+ * <p>A spark profile of a survival world on stepcrafter 0.1.9 and rstweaks 0.22.1 measured what
+ * that costs: <b>68.1% of the server thread</b> inside one
+ * {@code StepRequesterNetworkNode.doWork}, TPS 6.4, worst tick 5,259ms — RS's uncapped timeout,
+ * which is the exact freeze {@code stepRequesterCalculationBudgetMs} exists to prevent. No
+ * {@code rstweaks$recordOutcome} frame sat between {@code doWork} and {@code startTask}, which is
+ * how the stand-down was spotted at all. The entry is gone as of 0.22.3; do not restore it without
+ * reading the bytecode first.
+ *
+ * <p>The interaction that motivated it is real, but it points the other way. Since 0.1.7 a null
+ * from {@code PatternResourceContainerImpl.get(slot)} means "slot empty, clear its timeout", and
+ * our redirect returns null for exactly the slots we are sleeping — so his timeout never
+ * accumulates while ours is installed. The two fixes do collapse into one. That one is ours, and
+ * ours is the stronger of the two. Nothing crashes and nothing logs.
  *
  * <p>Deliberately free of Minecraft, NeoForge and Mixin types so the comparison can be tested in a
  * plain JVM. {@link AddonMixinGate} is the thin part that reads the loaded version and calls in
@@ -48,12 +67,8 @@ public final class UpstreamGate {
     }
 
     public static final List<Superseded> SUPERSEDED = List.of(
-        new Superseded(
-            "com.wraithhawit.rstweaks.mixin.StepRequesterNetworkNodeMixin",
-            "stepcrafter",
-            "1.21.1-0.1.7",
-            "step requester backoff",
-            "Improved Step Requester performance by adding a timeout on failed requested crafts"),
+        // No stepcrafter entry, deliberately. See the class javadoc: its own timeout is
+        // failure-only and uncapped, so standing our mixin down for it is a straight loss.
         new Superseded(
             "com.wraithhawit.rstweaks.mixin.TieredAutocrafterBlockEntityMixin",
             "cabletiers",

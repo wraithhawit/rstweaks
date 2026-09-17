@@ -10,6 +10,24 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.22.3
+------
+Removed the stepcrafter entry from UpstreamGate. It had stood the whole Step Requester
+mixin down since stepcrafter 0.1.7 on the strength of a changelog line; his timeout is a
+flat 20 ticks, failure-only, over RS's full 5,000ms, so it supersedes nothing. A profile
+on 0.1.9 measured the cost: 68.1% of the server thread in one doWork, TPS 6.4, worst tick
+5,259ms. Injection points re-verified against 0.1.8 and 0.1.9 bytecode.
+
+0.22.2
+------
+  EMI "ERROR RENDERING TOOLTIP" OVER RS GRIDS, and R/U/clicks on grid resources failing, when the
+  JEI and EMI integrations are both installed. Not ours: both EMI stack providers cast the shared
+  converter's answer to EmiIngredient, and that composite returns the first of a HashSet -- JEI's
+  ItemStack on some launches, EMI's stack on others. Per launch, not per server.
+  FIXED BY TAKING THE FIRST CONVERTER ANSWER THAT IS AN EmiIngredient -- @Redirect in both
+  providers plus an accessor on the composite. New rstweaks.rsemi.mixins.json, client-only, gated
+  on refinedstorage_emi_integration.
+
 0.22.1
 ------
   SHIFT-CLICK CRAFTING STOPPED AFTER ~22 CRAFTS when the ingredients were in a drawer wall.

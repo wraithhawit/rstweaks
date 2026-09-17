@@ -223,6 +223,8 @@ dependencies {
     //   refinedstorage-quartz-arsenal-neoforge-1.0.8
     //   refinedstorage-mekanism-integration-1.1.1
     //   EdivadLib-1.21-3.0.0                       ExtraStorage/DimStorage support lib
+    //   refinedstorage-emi-integration-neoforge-1.0.0
+    //   emi-1.1.24+1.21.1+neoforge                 EmiIngredient, for the EMI integration fix
     //
     // Mekanism is the one entry here that is not a Refined Storage addon. It is on the
     // classpath for mekanism.api alone -- IQIOComponent and IQIOFrequency, for the QIO
