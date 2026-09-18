@@ -1,5 +1,7 @@
 package com.wraithhawit.rstweaks;
 
+import com.wraithhawit.rstweaks.sink.SinkCacheVerifier;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -60,10 +62,11 @@ public final class ChatReporter {
                           long wrongTypeProbes,
                           long lpPlanned,
                           long planCopies,
-                          long emptyExtracts) {
+                          long emptyExtracts,
+                          long sinkProbes) {
 
         static final Counts ZERO =
-            new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
         static Counts now() {
             return new Counts(
@@ -86,7 +89,8 @@ public final class ChatReporter {
                 Stats.mismatchedProviderCallsAvoided,
                 Stats.lpPlannerUsed,
                 Stats.patternPlanCopiesAvoided,
-                Stats.emptyExtractsAvoided);
+                Stats.emptyExtractsAvoided,
+                Stats.sinkProbesSkipped);
         }
 
         Counts since(final Counts earlier) {
@@ -110,7 +114,8 @@ public final class ChatReporter {
                 wrongTypeProbes - earlier.wrongTypeProbes,
                 lpPlanned - earlier.lpPlanned,
                 planCopies - earlier.planCopies,
-                emptyExtracts - earlier.emptyExtracts);
+                emptyExtracts - earlier.emptyExtracts,
+                sinkProbes - earlier.sinkProbes);
         }
     }
 
@@ -202,6 +207,15 @@ public final class ChatReporter {
         final List<String> parts = new ArrayList<>(12);
         if (delta.stepScans() > 0) {
             parts.add(String.format("%,d crafting calculations skipped", delta.stepScans()));
+        }
+        if (delta.sinkProbes() > 0) {
+            parts.add(String.format("%,d sink probes skipped", delta.sinkProbes()));
+        }
+        // Reported as totals rather than deltas: this is a diagnostic run's verdict, and the
+        // question it answers ("has the cache ever been wrong?") is about the whole session.
+        if (Config.verifySinkCache) {
+            parts.add(String.format("sink cache checked %,d times, %,d mismatches",
+                SinkCacheVerifier.agreements(), SinkCacheVerifier.mismatches()));
         }
         if (delta.uncraftable() > 0) {
             parts.add(String.format("%,d uncraftable rechecks avoided", delta.uncraftable()));

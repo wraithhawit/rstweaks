@@ -18,6 +18,12 @@ public final class Stats {
      * Slot scans skipped because the slot was backing off. Each one is a full
      * recursive Refined Storage crafting calculation that did not happen.
      */
+    /**
+     * Sink probes skipped because that sink already refused this burst. Each one is a whole
+     * simulated {@code ExternalPatternSink.accept} -- on a Mekanism machine, a full recipe lookup.
+     */
+    public static long sinkProbesSkipped;
+
     public static long stepRequesterScansSkipped;
 
     /** Craft attempts that genuinely failed and triggered a backoff. */

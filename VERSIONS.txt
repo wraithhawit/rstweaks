@@ -10,6 +10,17 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.22.4
+------
+Cache which sinks have already refused, for one stepping burst. TaskImpl runs step()
+getSteps(pattern) times per tick -- for rsmbac, the sum of the multiblock's CPU tiers --
+and each one re-walked every sink simulating a full accept. Measured at 35.47% of the
+server thread with mekmm Stamping Factories attached. Refusals only; an acceptance clears
+the cache. Measured A/B in one session: sink probing 47.2% of stepping time with the
+cache vs 97.1% without, Mekanism insert validation 112ms vs 1,852ms. verifySinkCache
+checked 209,346 hits against live probes with 0 mismatches. Kill switch
+cacheSinkRejections.
+
 0.22.3
 ------
 Removed the stepcrafter entry from UpstreamGate. It had stood the whole Step Requester

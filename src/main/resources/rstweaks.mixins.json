@@ -33,6 +33,7 @@
     "StepSkipMixin",
     "PatternResolverFuzzyMixin",
     "PreviewCraftingCalculatorListenerMixin",
+    "ExternalTaskPatternMixin",
     "TaskImplMixin",
     "TaskPlanCraftingCalculatorListenerMixin",
     "VariantUtilMixin"

@@ -638,6 +638,8 @@ public final class Config {
         externalStorageSlotIndex = EXTERNAL_STORAGE_SLOT_INDEX.get();
         keepRecycledResourcesInTask = KEEP_RECYCLED_RESOURCES_IN_TASK.get();
         skipMismatchedStorageTypes = SKIP_MISMATCHED_STORAGE_TYPES.get();
+        cacheSinkRejections = CACHE_SINK_REJECTIONS.get();
+        verifySinkCache = VERIFY_SINK_CACHE.get();
         cacheFailedInsertsByValue = CACHE_FAILED_INSERTS_BY_VALUE.get();
         cacheDrawerDenylist = CACHE_DRAWER_DENYLIST.get();
         skipEmptyCompositeExtract = SKIP_EMPTY_COMPOSITE_EXTRACT.get();
@@ -1043,6 +1045,69 @@ public final class Config {
 
     /** Cached like {@link #lazyPatternPlanCopy}; read on every provider probe. */
     public static volatile boolean skipMismatchedStorageTypes = true;
+
+    public static final ModConfigSpec.BooleanValue CACHE_SINK_REJECTIONS = BUILDER
+        .comment(
+            "Stop a crafting task re-asking every machine the same question all tick.",
+            "",
+            "To place an iteration, Refined Storage walks every sink that can take the",
+            "pattern and simulates a full insert into each, giving up only once the list is",
+            "exhausted. That is one whole sweep per step -- and a step is not once per tick.",
+            "TaskImpl runs it stepBehavior.getSteps(pattern) times, which for an rsmbac",
+            "multiblock is the sum of its CPU tiers. So a tick where every machine is busy",
+            "costs steps x sinks x validation, asking the same question with the same inputs",
+            "and being told the same thing every time.",
+            "",
+            "That is cheap when a sink is a chest and expensive when it is a machine.",
+            "Measured on a survival world with mekmm Stamping Factories attached: 35.47% of",
+            "the whole server thread, essentially all of it inside Mekanism's",
+            "isItemValidForInsertion, which runs a full recipe lookup per probe.",
+            "",
+            "This remembers which sinks have already refused and skips them for the rest of",
+            "the burst. IT CACHES REFUSALS ONLY. An acceptance is never stored -- it empties",
+            "the cache instead, because the task is about to insert -- and nothing survives",
+            "into another tick.",
+            "",
+            "WHAT YOU GIVE UP: if a machine frees up mid-tick for a reason other than our own",
+            "insert, such as another task pulling from its output slot, the craft it would",
+            "have taken is placed one tick later instead. Sinks are matched by identity, so",
+            "nothing here depends on a mod implementing equals or getKey.",
+            "",
+            "Set false to disable. 'N sink probes skipped' in /rstweaks stats is what tells",
+            "you whether it is doing anything."
+        )
+        .define("cacheSinkRejections", true);
+
+    /** Cached: read once per sink probe, which a busy multiblock does thousands of times a tick. */
+    public static volatile boolean cacheSinkRejections = true;
+
+    public static final ModConfigSpec.BooleanValue VERIFY_SINK_CACHE = BUILDER
+        .comment(
+            "Check the sink cache's answers against the real thing. DIAGNOSTIC -- leave this off.",
+            "",
+            "cacheSinkRejections keys on sink identity alone, while the resources a pattern offers",
+            "are recomputed on every attempt. If those can differ between two attempts in the same",
+            "burst, a refusal recorded for one set is being reused for another. The argument that",
+            "they cannot -- nothing leaves the task's internal storage without an acceptance, and",
+            "an acceptance empties the cache -- reasons about every sink implementation from the",
+            "outside, and no headless test can settle it.",
+            "",
+            "With this on, a cache hit STILL performs the real probe and compares, and THE LIVE",
+            "ANSWER IS THE ONE USED. So it cannot cause the delayed craft it is looking for.",
+            "",
+            "IT IS SLOWER THAN HAVING NO CACHE AT ALL: every hit pays for the probe it was meant",
+            "to avoid, plus the comparison. A profile taken with this enabled measures nothing",
+            "useful about performance. Turn it on to answer the question, read",
+            "'sink cache checked' in /rstweaks stats, then turn it off again.",
+            "",
+            "Rising agreements with zero mismatches is the assumption holding under real load.",
+            "Zero of both means the cache never hit and the run proved nothing -- the machines",
+            "were never busy enough to make a task sweep them twice."
+        )
+        .define("verifySinkCache", false);
+
+    /** Cached: read on every sink cache hit. */
+    public static volatile boolean verifySinkCache;
 
     public static final ModConfigSpec.BooleanValue CACHE_FAILED_INSERTS_BY_VALUE = BUILDER
         .comment(

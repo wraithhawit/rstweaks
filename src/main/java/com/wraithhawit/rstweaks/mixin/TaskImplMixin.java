@@ -8,6 +8,7 @@ import com.refinedmods.refinedstorage.api.resource.ResourceKey;
 import com.refinedmods.refinedstorage.api.storage.Actor;
 import com.refinedmods.refinedstorage.common.api.storage.PlayerActor;
 import com.wraithhawit.rstweaks.CraftTimings;
+import com.wraithhawit.rstweaks.sink.SinkRejectionCache;
 import com.wraithhawit.rstweaks.storage.TaskConsumption;
 
 import java.util.ArrayList;
@@ -19,6 +20,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Works out what the whole task consumes, before its patterns are built.
@@ -146,6 +148,20 @@ public abstract class TaskImplMixin {
      * {@code TaskImpl} goes through it. That includes a CANCELLED task, which is why the two are
      * told apart here rather than both being reported as crafts.
      */
+    /**
+     * Opens a new stepping burst for {@link ExternalTaskPatternMixin}'s sink cache.
+     *
+     * <p>This is the whole clock that cache runs on. {@code step} is called once per task per
+     * tick, and the {@code steps} loop inside it is exactly the window in which the same sinks are
+     * asked the same question repeatedly, so the burst is a truer scope than a game tick and needs
+     * no Minecraft types to read. Bumping it for every task is harmless: a spare bump can only
+     * clear a cache early, never keep a stale answer alive.
+     */
+    @Inject(method = "step", at = @At("HEAD"))
+    private void rstweaks$openSinkBurst(final CallbackInfoReturnable<Boolean> cir) {
+        SinkRejectionCache.newBurst();
+    }
+
     @Inject(method = "updateState", at = @At("HEAD"))
     private void rstweaks$timeCraft(final TaskState state, final CallbackInfo ci) {
         if (state != TaskState.COMPLETED || this.rstweaks$timed

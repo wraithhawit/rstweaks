@@ -8,6 +8,128 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.22.4
+
+**A crafting task no longer re-asks every machine the same question for the whole of a tick.**
+
+Found in the profile taken right after 0.22.3 landed. With the Step Requester stall gone, the
+bottleneck moved from *planning* a craft to *placing* one:
+
+```
+36.81%  ControllerBlockEntity.tickNode            <- rsmbac, self = 4ms
+  36.75%  TaskContainer.step -> TaskImpl.stepPatterns
+    35.47%  ExternalTaskPattern.getSinkThatIsAcceptingResources   self = 28ms
+      34.59%  TieredAutocrafterBlockEntity.accept
+         9.74%    BasicInventorySlot.isItemValidForInsertion
+           6.22%      mekmm TileEntityMoreMachineFactory.inputProducesOutput
+             5.05%        TileEntityStampingFactory.findRecipe
+```
+
+**Cause: a sweep per step, and many steps per tick.** `getSinkThatIsAcceptingResources` walks every
+sink that can take the pattern, simulating a full `accept` on each, and gives up only once the list
+is exhausted — so a tick where every machine is busy costs one whole sweep. And `step()` is not
+called once per tick:
+
+```java
+int steps = stepBehavior.getSteps(pattern.getKey());
+for (int i = 0; i < steps; i++) {
+    pattern.getValue().step(...);
+}
+```
+
+rsmbac supplies that budget from `StructureStepBehavior.stepsPerTick`, which its own gametest names
+`theStructureSpeedIsTheSumOfItsCpuTiers`. The cost of a busy tick is therefore
+**steps × sinks × validation**, and every sweep after the first asks the same question with the same
+inputs and is told the same thing. Building a bigger multiblock multiplies it.
+
+That is cheap when a sink is a chest and expensive when it is a machine. Mekanism validates an
+insert with `isItemValidForInsertion`, and for a mekmm factory that predicate runs a full recipe
+lookup — `inputProducesOutput` → `findRecipe` → `BasicStamperRecipe.getOutput`, which is
+`output.copy()`, a fresh `ItemStack` allocated and thrown away per probe. In this pack owo lib
+mixes into `ItemStack.<init>`, so each of those copies drags `DerivedComponentMap.derive` behind it
+as well.
+
+**Fixed by remembering which sinks have already refused, for the length of one stepping burst.** A
+`@Redirect` on the `SIMULATE` `accept` call inside `getSinkThatIsAcceptingResources`, backed by
+`SinkRejectionCache`.
+
+**It caches refusals only.** An acceptance is never stored — it empties the cache instead, because
+the task is about to insert into that sink. That is the same distinction that justified
+`CachedFailedInsertInventoryHandlerMixin`: a cached refusal can delay a craft, a cached acceptance
+can send items into a machine that no longer has room. Nothing survives into another tick;
+`TaskImpl.step` opens a new burst and every cache older than it empties on next use.
+
+Sinks are matched by **identity**, which is their real identity —
+`AutocraftingNetworkComponentImpl` hands out the same long-lived objects from its stored
+`sinksByPatternLayout` map. `getKey()` is `@Nullable` with a null default and could not have been
+used.
+
+**What you give up:** if a machine frees up mid-tick for a reason other than our own insert — another
+task pulling from its output slot — the craft it would have taken is placed one tick later. That is
+the bound the existing failed-insert cache already accepts.
+
+Deliberately above the sink rather than inside one: the measured cost here is Mekanism's, but the
+mixin knows nothing about Mekanism and helps any sink whose `accept` is expensive.
+
+Scoped to `getSinkThatIsAcceptingResources` because `ExternalTaskPattern` has a second `accept`
+call — the `EXECUTE` one in `acceptsIterationInputs` — which must never be answered from a cache.
+Verified against Refined Storage 2.0.9 bytecode: exactly one `ExternalPatternSink.accept` inside
+the redirected method, at offset 59.
+
+`cacheSinkRejections` is the kill switch, `N sink probes skipped` in `/rstweaks stats` is the
+evidence it is working, and `./gradlew sinkCheck` covers the decision in a plain JVM.
+
+**Reviewed before shipping, and one defect came out of it.** The burst counter was a plain
+`long`. A lost update there is not a lost cache hit, it is a *wrong* answer — two interleaved
+increments can leave the counter back on a value a cache has already recorded as seen, and that
+cache then keeps the previous burst's refusals instead of dropping them. It is an `AtomicLong` now.
+Task stepping is believed to be server-thread-only, but `TaskContainer` holds its tasks in a
+`CopyOnWriteArrayList`, and one uncontended increment per task per tick is not worth resting on a
+belief this class cannot check. It does not make the per-instance maps thread-safe and is not meant
+to: those belong to one `ExternalTaskPattern`, which belongs to one task.
+
+**The assumption this rests on, written down so it can be disproved:** that within one burst, and
+with no acceptance in between, the resources a pattern offers a sink do not change.
+`calculateIterationInputs(SIMULATE)` is recomputed on every attempt while only sink identity is
+keyed, so if those inputs can differ between attempts then a refusal recorded for one set would be
+reused for another. Nothing extracts from the task's internal storage without an acceptance, which
+is why it is believed to hold — but it has not been proven against every sink implementation. If it
+is ever false the cost is a craft placed later than it could have been, never resources sent
+somewhere they should not go, because acceptances are never cached and no craft is placed on a
+stale yes.
+
+On the round-robin cursor: a cached refusal advances `currentSinkIndex` exactly as a real one does,
+an exhausted search leaves it at `sinks.size()`, and the next search resets it to zero — so no sink
+can be permanently skipped while stepping continues.
+
+**Measured in game**, as an A/B in one session: same world, same saturating craft, the flag
+toggled live between two 60-second sparks.
+
+| | `cacheSinkRejections = true` | `= false` |
+|---|---|---|
+| `getSinkThatIsAcceptingResources` | 3,264ms (5.44%) | 7,824ms (13.04%) |
+| as a share of `TaskImpl.stepPatterns` | **47.2%** | **97.1%** |
+| Mekanism `isItemValidForInsertion` | 112ms | 1,852ms |
+| TPS (1m) | 7.57 | 4.31 |
+| worst tick | 5,103ms | 7,052ms |
+
+The normalised line is the honest one: sink probing is about half of all pattern-stepping time with
+the cache and essentially *all* of it without. Mekanism's insert validation — the full recipe lookup
+with the throwaway `ItemStack.copy` in it — falls by about 16x, and `BasicStamperRecipe.getOutput`
+drops out of the profile entirely.
+
+The cache's own cost is 48ms of 60,000.
+
+**The comparison has a confound, and it runs the safe way.** Exporter autocrafting grew between the
+two runs (`ensureTask` 25,996ms → 40,320ms), so the cache-off run had *less* thread time available
+for stepping, not more — and the sink path still cost 2.4x as much. The measured difference
+understates the effect rather than flattering it.
+
+**Verified before it was trusted, with `verifySinkCache`.** Under real backpressure the probe
+performed the live `accept` on every cache hit and compared: **209,346 checks, 0 mismatches**, and
+no `MISMATCH` line in the log. That is the input-stability assumption above holding under load
+rather than by argument.
+
 ## 0.22.3
 
 **The Step Requester calculation budget is back on Step Crafter 0.1.7 and newer.** It had been
