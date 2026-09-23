@@ -85,6 +85,13 @@ tasks.register('batchCheck', JavaExec) {
     mainClass = 'com.wraithhawit.rstweaks.test.HeadlessBatchCheck'
 }
 
+tasks.register('ensureCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the automation calculation-budget ladder self-tests headlessly.'
+    classpath = sourceSets.main.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'com.wraithhawit.rstweaks.test.HeadlessEnsureCheck'
+}
+
 tasks.register('sinkCheck', JavaExec) {
     group = 'verification'
     description = 'Runs the sink-rejection cache self-tests headlessly.'
@@ -94,7 +101,7 @@ tasks.register('sinkCheck', JavaExec) {
 
 tasks.named('check') {
     dependsOn 'backoffCheck', 'patternOrderCheck', 'traceCheck', 'gateCheck', 'ledgerCheck',
-        'schedulerCheck', 'batchCheck', 'sinkCheck'
+        'schedulerCheck', 'batchCheck', 'sinkCheck', 'ensureCheck'
 }
 
 tasks.register('compressionProbe', JavaExec) {

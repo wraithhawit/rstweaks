@@ -9,6 +9,7 @@ import com.refinedmods.refinedstorage.api.resource.ResourceKey;
 import com.refinedmods.refinedstorage.api.storage.Actor;
 import com.wraithhawit.rstweaks.Config;
 import com.wraithhawit.rstweaks.ServerTicks;
+import com.wraithhawit.rstweaks.ensure.AutomationBudget;
 import com.wraithhawit.rstweaks.Stats;
 
 import java.util.HashMap;
@@ -219,6 +220,16 @@ public abstract class AutocraftingNetworkComponentImplMixin {
                                                             final long amount,
                                                             final CraftingCalculator calculator,
                                                             final CancellationToken cancellationToken) {
+        // The request's own deadline, when one is in flight. Handing the search the caller's token
+        // was the whole fix while NONE was the alternative, but that is still five seconds, and
+        // this search measured 13.78% of the server thread on a busy exporter. It shares the
+        // deadline with the plan calculations around it rather than being given a second
+        // allowance of its own -- see AutomationBudget for why that distinction is the fix.
+        final CancellationToken inFlight = AutomationBudget.inFlight(String.valueOf(resource));
+        if (inFlight != null) {
+            ++Stats.craftableSearchesBounded;
+            return inFlight;
+        }
         if (!Config.boundCraftableSearch) {
             return CancellationToken.NONE;
         }
@@ -234,8 +245,21 @@ public abstract class AutocraftingNetworkComponentImplMixin {
         final CancellationToken cancellationToken,
         final CallbackInfoReturnable<AutocraftingNetworkComponent.EnsureResult> cir
     ) {
-        if (cir.getReturnValue() != AutocraftingNetworkComponent.EnsureResult.MISSING_RESOURCES) {
+        final boolean succeeded =
+            cir.getReturnValue() != AutocraftingNetworkComponent.EnsureResult.MISSING_RESOURCES;
+        // Ends the request: one ladder move, one counter, one verdict, in the one place that sees
+        // the whole of ensureTask. Must run before the caching below, which asks it what happened.
+        AutomationBudget.finish(succeeded);
+        if (succeeded) {
             rstweaks$uncraftable().remove(resource);
+            return;
+        }
+        // "We ran out of time" is not "it cannot be made". A calculation our own budget cut short
+        // returns empty, which arrives here as MISSING_RESOURCES and is indistinguishable from the
+        // real thing -- and caching it would suppress retries of a perfectly craftable resource for
+        // uncraftableRecheckTicks. So a cut-short request is simply not cached; the exporter asks
+        // again on its own schedule, with a bigger budget next time.
+        if (AutomationBudget.wasCutShort()) {
             return;
         }
         final long now = ServerTicks.current();

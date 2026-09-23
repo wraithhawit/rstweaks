@@ -638,6 +638,7 @@ public final class Config {
         externalStorageSlotIndex = EXTERNAL_STORAGE_SLOT_INDEX.get();
         keepRecycledResourcesInTask = KEEP_RECYCLED_RESOURCES_IN_TASK.get();
         skipMismatchedStorageTypes = SKIP_MISMATCHED_STORAGE_TYPES.get();
+        budgetEnsureTaskCalculations = BUDGET_ENSURE_TASK_CALCULATIONS.get();
         cacheSinkRejections = CACHE_SINK_REJECTIONS.get();
         verifySinkCache = VERIFY_SINK_CACHE.get();
         cacheFailedInsertsByValue = CACHE_FAILED_INSERTS_BY_VALUE.get();
@@ -1045,6 +1046,50 @@ public final class Config {
 
     /** Cached like {@link #lazyPatternPlanCopy}; read on every provider probe. */
     public static volatile boolean skipMismatchedStorageTypes = true;
+
+    public static final ModConfigSpec.BooleanValue BUDGET_ENSURE_TASK_CALCULATIONS = BUILDER
+        .comment(
+            "Give exporters, interfaces and constructors the same calculation budget a Step",
+            "Requester gets.",
+            "",
+            "stepRequesterCalculationBudgetMs bounds what a Step Requester may spend planning,",
+            "and it works -- 36.62% of the server thread down to 1.27%. But it only reaches",
+            "startTask. An Exporter or an Interface with an autocrafting upgrade asks through",
+            "ensureTask, and everything down that path runs on Refined Storage's full",
+            "craftingCalculationTimeoutMs -- five seconds, a hundred ticks in which nothing else",
+            "in the world happens.",
+            "",
+            "Measured on the same world once the Step Requester stopped dominating it:",
+            "ExporterNetworkNode.doWork at 67.25% of the server thread, TPS 4.3, worst tick",
+            "7,052ms, with 13.78% of the thread in the craftable-amount search alone.",
+            "",
+            "A failing automated request runs up to THREE complete crafting calculations: the",
+            "plan, then the binary search for how much is craftable, then the plan again for the",
+            "amount it found. uncraftableRecheckTicks already makes that happen less often and",
+            "boundCraftableSearch already gives the search a token at all, where upstream passed",
+            "CancellationToken.NONE. Neither made any of the three cheaper than five seconds.",
+            "This does, sharing one ladder rung per resource across all of them.",
+            "",
+            "The budget and ceiling are stepRequesterCalculationBudgetMs and",
+            "stepRequesterCalculationMaxBudgetMs -- the same ladder, shared rather than",
+            "duplicated. Those names say stepRequester for historical reasons; what they bound is",
+            "automation. It escalates per RESOURCE on cancellation and resets on a success.",
+            "",
+            "A PLAYER IS NEVER AFFECTED. Clicking craft goes through startTask, which this does",
+            "not touch, and the 'how much could I make' query keeps its own token too.",
+            "",
+            "WHAT YOU GIVE UP: a craft that genuinely needs longer than the ceiling to PLAN will",
+            "not be started by an exporter or an interface. It stays craftable by hand.",
+            "'N automation calculations cut short' in /rstweaks stats is what tells you it is",
+            "happening; raise stepRequesterCalculationMaxBudgetMs if automation stops keeping",
+            "something in stock.",
+            "",
+            "Set false to disable."
+        )
+        .define("budgetEnsureTaskCalculations", true);
+
+    /** Cached: read on every automation calculation. */
+    public static volatile boolean budgetEnsureTaskCalculations = true;
 
     public static final ModConfigSpec.BooleanValue CACHE_SINK_REJECTIONS = BUILDER
         .comment(

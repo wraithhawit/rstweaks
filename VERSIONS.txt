@@ -10,6 +10,16 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.22.5
+------
+Give exporters, interfaces and constructors the Step Requester calculation budget. The
+0.22.3 budget only reached startTask; everything down ensureTask still ran on RS full
+5,000ms, and a failing request runs up to three complete calculations. Measured at 67.25%
+of the server thread, TPS 4.3, worst tick 7,052ms. ONE request owns ONE deadline, one
+ladder move and one verdict -- review caught three defects in the first attempt, including
+caching a cut-short calculation as MISSING_RESOURCES, which suppressed retries of craftable
+resources. Kill switch budgetEnsureTaskCalculations.
+
 0.22.4
 ------
 Cache which sinks have already refused, for one stepping burst. TaskImpl runs step()

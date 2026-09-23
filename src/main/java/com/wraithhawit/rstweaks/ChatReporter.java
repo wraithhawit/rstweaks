@@ -63,10 +63,12 @@ public final class ChatReporter {
                           long lpPlanned,
                           long planCopies,
                           long emptyExtracts,
-                          long sinkProbes) {
+                          long sinkProbes,
+                          long ensureCalls,
+                          long ensureExpiries) {
 
         static final Counts ZERO =
-            new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
         static Counts now() {
             return new Counts(
@@ -90,7 +92,9 @@ public final class ChatReporter {
                 Stats.lpPlannerUsed,
                 Stats.patternPlanCopiesAvoided,
                 Stats.emptyExtractsAvoided,
-                Stats.sinkProbesSkipped);
+                Stats.sinkProbesSkipped,
+                Stats.ensureTaskCalculations,
+                Stats.ensureTaskBudgetExpiries);
         }
 
         Counts since(final Counts earlier) {
@@ -115,7 +119,9 @@ public final class ChatReporter {
                 lpPlanned - earlier.lpPlanned,
                 planCopies - earlier.planCopies,
                 emptyExtracts - earlier.emptyExtracts,
-                sinkProbes - earlier.sinkProbes);
+                sinkProbes - earlier.sinkProbes,
+                ensureCalls - earlier.ensureCalls,
+                ensureExpiries - earlier.ensureExpiries);
         }
     }
 
@@ -216,6 +222,10 @@ public final class ChatReporter {
         if (Config.verifySinkCache) {
             parts.add(String.format("sink cache checked %,d times, %,d mismatches",
                 SinkCacheVerifier.agreements(), SinkCacheVerifier.mismatches()));
+        }
+        if (delta.ensureCalls() > 0) {
+            parts.add(String.format("%,d automation calculations (%,d cut short; %,dms session peak)",
+                delta.ensureCalls(), delta.ensureExpiries(), Stats.ensureTaskSlowestMs));
         }
         if (delta.uncraftable() > 0) {
             parts.add(String.format("%,d uncraftable rechecks avoided", delta.uncraftable()));

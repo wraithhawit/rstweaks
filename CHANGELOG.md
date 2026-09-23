@@ -8,6 +8,81 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.22.5
+
+**Exporters, interfaces and constructors get the Step Requester's calculation budget.**
+
+0.22.3 bounded what a Step Requester may spend planning and took it from 36.62% of the server
+thread to 1.27%. That budget reaches `startTask` only. The profile taken straight afterwards, on the
+same world, showed where the cost went instead:
+
+```
+67.25%  ExporterNetworkNode.doWork
+  67.20%  ensureTask
+    38.90%  calculatePlan
+    13.78%  binarySearchMaxAmount  →  isCraftable  →  CraftingCalculatorImpl.calculate
+```
+
+TPS 4.3, worst tick **7,052ms**. Everything down the `ensureTask` path runs on Refined Storage's
+full `craftingCalculationTimeoutMs` — five seconds, a hundred ticks in which nothing else in the
+world happens — and a *failing* automated request runs up to **three** complete crafting
+calculations: the plan, the binary search for how much is craftable, then the plan again for the
+amount it found.
+
+**What was already there.** `uncraftableRecheckTicks` caches the negative answer so this happens
+less often, and `boundCraftableSearch` already replaces the `CancellationToken.NONE` that upstream
+hands the binary search with the caller's real token. Neither made any of the three calculations
+cheaper than five seconds.
+
+**One request owns one deadline.** The token is created at the request's first calculation and held
+in `AutomationBudget` for the rest of it; the search and the clamped plan ask for it back rather
+than making their own. `startTask` is untouched, which is what keeps a player's own request on the
+full budget — every caller of `ensureTask` is automation, and none of them waits on the answer.
+
+The ladder is **per resource**, LRU-bounded at 512, escalating only when *our* bound is what stopped
+the request and resetting on a success. It reuses `stepRequesterCalculationBudgetMs` and
+`stepRequesterCalculationMaxBudgetMs` rather than adding a second pair of knobs.
+
+### Three defects found in review, before any of this ran
+
+The first attempt wrapped a fresh token at each of the three calculations. That was wrong in three
+separate ways, and the third was a correctness bug rather than a tuning one:
+
+- **Three deadlines, not one.** Each wrap granted another allowance, so a failing request could
+  spend three rungs back to back — three seconds at the defaults. Bounding each calculation is not
+  the same as bounding the request.
+- **Escalation per calculation.** Several expiries inside one request are correlated consequences of
+  a single attempt and do not justify several doublings. The ladder reached the ceiling in one
+  request, which means longer stalls before independent retries have shown they are needed.
+- **False negatives cached.** Our budget expiring makes `calculatePlan` return empty, which arrives
+  as `MISSING_RESOURCES` and is indistinguishable from the real thing — and the uncraftable cache
+  stored it. Cutting a calculation short could therefore suppress retries of a **perfectly craftable
+  resource** for `uncraftableRecheckTicks`. "We ran out of time" is not "it cannot be made". A
+  cut-short request is now excluded from that cache.
+
+Review also corrected the accounting in the other direction: the craftable-amount search created a
+token but never recorded its expiry, so a search-only overrun moved nothing at all. There is now one
+place where a request's outcome is decided, which is what makes both errors impossible rather than
+fixed — the existing `rstweaks$recordOutcome` RETURN hook, which already knew the request's verdict.
+
+`budgetEnsureTaskCalculations` is the kill switch, `N automation calculations (M cut short)` in
+`/rstweaks stats` is the evidence, and `./gradlew ensureCheck` covers the ladder and the request
+lifecycle in a plain JVM — including a real expiry, because a seam that let the test supply its own
+clock would not be testing the path that ships.
+
+A second mixin on the same target rather than more methods in
+`AutocraftingNetworkComponentImplMixin`: that class is the uncraftable cache and the
+duplicate-request guard, and this is a budget. They meet at the search token and at the end of the
+request, and both of those are edits to that class.
+
+`CalculationTrace` now starts on this path too. It could previously only describe a Step Requester
+stall, so an exporter burning thirty-five seconds went unexplained — and worse, its tree nodes were
+being counted into whatever trace a Step Requester had last begun.
+
+**Not yet measured in game.** What a plain JVM cannot show is whether the redirects land, whether
+RS's `orElseGet` lambda really carries our token into the private helper, and whether anything stops
+being kept in stock because a plan was cut short. Those need a launch.
+
 ## 0.22.4
 
 **A crafting task no longer re-asks every machine the same question for the whole of a tick.**

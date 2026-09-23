@@ -22,6 +22,15 @@ public final class Stats {
      * Sink probes skipped because that sink already refused this burst. Each one is a whole
      * simulated {@code ExternalPatternSink.accept} -- on a Mekanism machine, a full recipe lookup.
      */
+    /** Automation calculations that went through ensureTask -- exporters, interfaces, constructors. */
+    public static long ensureTaskCalculations;
+
+    /** Automation calculations our budget cut short. Upstream bounded one of them by nothing. */
+    public static long ensureTaskBudgetExpiries;
+
+    /** Slowest single automation calculation this session, in milliseconds. */
+    public static long ensureTaskSlowestMs;
+
     public static long sinkProbesSkipped;
 
     public static long stepRequesterScansSkipped;
