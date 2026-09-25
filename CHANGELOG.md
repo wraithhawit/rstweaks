@@ -10,7 +10,7 @@ maintained; this one carries the reasoning, that one is the index.
 
 ## 0.22.6
 
-**EMI's recipe transfer into a Pattern Grid keeps an ingredient's count.**
+**EMI's recipe transfer into a Pattern Grid keeps an ingredient's count, and leaves out inputs the recipe does not consume.**
 
 `refinedstorage-emi-integration` 1.0.0 fills a processing pattern through
 `PatternGridEmiRecipeHandler.getResourceAmounts`, which converts each stack inside an `EmiIngredient`
@@ -23,8 +23,13 @@ dust, GT silicon dust]" -- a shape ATM10's unification gives many inputs -- arri
 to the ingredient's own amount, which is what EMI means by how many of it the recipe takes. A
 single-stack ingredient already matches and is left untouched. Not yet seen in a client.
 
-The same transfer also copies GregTech's non-consumed programmed circuit into the pattern as an
-ordinary input. That half is GregTech-specific and is fixed in gttweaks, not here.
+The same transfer copied GregTech's programmed circuit into the pattern as an ordinary input, so
+every craft would ask the network for a circuit and deliver it to the machine, where it is never used
+up -- into a GregTech pattern buffer slot that then never empties. GregTech marks it as it marks its
+extruder shapes, molds and lenses: an EMI input with consumption chance 0. That is generic EMI data,
+not GregTech code, so the fix is here: the same mixin redirects `recipe.getInputs()` in
+`transferProcessingRecipe` to drop chance-0 inputs. Chanced inputs above 0 are kept. Not yet seen in
+a client.
 
 ## 0.22.5
 

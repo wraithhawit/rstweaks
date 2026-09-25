@@ -12,8 +12,9 @@ The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a
 
 0.22.6
 ------
-EMI transfer into a Pattern Grid keeps a list/tag ingredient's count: "any of" inputs (32
-silicon dust) arrived as 1. Client mixin on refinedstorage-emi-integration.
+EMI transfer into a Pattern Grid keeps a list/tag ingredient's count ("any of" inputs, 32
+silicon dust, arrived as 1) and drops never-consumed inputs (EMI chance 0: GT's programmed
+circuit, shapes, lenses). Client mixin on refinedstorage-emi-integration.
 
 0.22.5
 ------
