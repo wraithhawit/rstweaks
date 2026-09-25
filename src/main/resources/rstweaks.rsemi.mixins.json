@@ -6,7 +6,8 @@
   "mixins": [],
   "client": [
     "CompositeRecipeModIngredientConverterAccessor",
-    "EmiStackProviderMixin"
+    "EmiStackProviderMixin",
+    "PatternGridEmiRecipeHandlerMixin"
   ],
   "server": [],
   "injectors": {
