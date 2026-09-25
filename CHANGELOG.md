@@ -21,15 +21,18 @@ dust, GT silicon dust]" -- a shape ATM10's unification gives many inputs -- arri
 
 `PatternGridEmiRecipeHandlerMixin` (client, `rstweaks.rsemi.mixins.json`) rescales every alternative
 to the ingredient's own amount, which is what EMI means by how many of it the recipe takes. A
-single-stack ingredient already matches and is left untouched. Not yet seen in a client.
+single-stack ingredient already matches and is left untouched.
 
 The same transfer copied GregTech's programmed circuit into the pattern as an ordinary input, so
 every craft would ask the network for a circuit and deliver it to the machine, where it is never used
 up -- into a GregTech pattern buffer slot that then never empties. GregTech marks it as it marks its
 extruder shapes, molds and lenses: an EMI input with consumption chance 0. That is generic EMI data,
 not GregTech code, so the fix is here: the same mixin redirects `recipe.getInputs()` in
-`transferProcessingRecipe` to drop chance-0 inputs. Chanced inputs above 0 are kept. Not yet seen in
-a client.
+`transferProcessingRecipe` to drop chance-0 inputs. Chanced inputs above 0 are kept.
+
+Confirmed in ATM10(3) 2026-09-25 (md5 cf290cf3): EMI's transfer of the silicon boule recipe filled the
+pattern with 32 silicon dust, 1 small gallium arsenide dust and no circuit, and the encoded pattern
+drove a GregTech blast furnace pair through gttweaks' RS Pattern Buffer and proxy.
 
 ## 0.22.5
 
