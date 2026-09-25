@@ -10,6 +10,11 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.22.6
+------
+EMI transfer into a Pattern Grid keeps a list/tag ingredient's count: "any of" inputs (32
+silicon dust) arrived as 1. Client mixin on refinedstorage-emi-integration.
+
 0.22.5
 ------
 Give exporters, interfaces and constructors the Step Requester calculation budget. The

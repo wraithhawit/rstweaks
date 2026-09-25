@@ -8,6 +8,24 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.22.6
+
+**EMI's recipe transfer into a Pattern Grid keeps an ingredient's count.**
+
+`refinedstorage-emi-integration` 1.0.0 fills a processing pattern through
+`PatternGridEmiRecipeHandler.getResourceAmounts`, which converts each stack inside an `EmiIngredient`
+and takes the amount from that stack. EMI keeps the count on a list or tag ingredient itself, and the
+stacks inside it each say one. So a GregTech blast furnace recipe needing 32 of "any of [MI silicon
+dust, GT silicon dust]" -- a shape ATM10's unification gives many inputs -- arrived in the pattern as
+1 (ATM10(3), 2026-09-25), while its single-item gallium arsenide input came across correctly.
+
+`PatternGridEmiRecipeHandlerMixin` (client, `rstweaks.rsemi.mixins.json`) rescales every alternative
+to the ingredient's own amount, which is what EMI means by how many of it the recipe takes. A
+single-stack ingredient already matches and is left untouched. Not yet seen in a client.
+
+The same transfer also copies GregTech's non-consumed programmed circuit into the pattern as an
+ordinary input. That half is GregTech-specific and is fixed in gttweaks, not here.
+
 ## 0.22.5
 
 **Exporters, interfaces and constructors get the Step Requester's calculation budget.**
