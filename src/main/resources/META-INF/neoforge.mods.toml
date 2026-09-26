@@ -125,7 +125,7 @@ requiredMods=["refinedstorage_emi_integration"]
 [[dependencies.${mod_id}]]
     modId="sophisticatedcore"
     type="optional"
-    versionRange="[1.4.80,1.5.0)"
+    versionRange="[1.4.80,1.6.0)"
     ordering="AFTER"
     side="BOTH"
 

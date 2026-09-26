@@ -8,6 +8,16 @@ Patch digit bumps on every build handed over for testing.
 `VERSIONS.txt` is the short form of this file — one or two lines per version. Both are
 maintained; this one carries the reasoning, that one is the index.
 
+## 0.22.7
+
+**Loads with Sophisticated Core 1.5.x (ATM10 8.2).** ATM10 8.2 ships Sophisticated Core 1.5.1, and
+the optional dependency range `[1.4.80,1.5.0)` stopped the game at boot ("Mod rstweaks only supports
+sophisticatedcore 1.4.80 or above, and below 1.5.0"). The one class rstweaks patches there,
+`CachedFailedInsertInventoryHandler`, is byte-for-byte identical in 1.4.80 and 1.5.1 apart from
+constant-pool numbering -- same fields, same `insertItem`/`extractItem` -- so the range is widened to
+`[1.4.80,1.6.0)` with no code change. Every other dependency range of rstweaks, rsmbac,
+rsadditionaldisks and gttweaks was checked against the 8.2 install and is satisfied.
+
 ## 0.22.6
 
 **EMI's recipe transfer into a Pattern Grid keeps an ingredient's count, and leaves out inputs the recipe does not consume.**

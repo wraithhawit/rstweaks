@@ -10,6 +10,11 @@ one honest block rather than reconstructed.
 The mod was called "rsperf" up to 0.2.40 and "rstweaks" from 0.2.41. Searching a log for
 "rstweaks" will miss anyone still running an older build.
 
+0.22.7
+------
+Sophisticated Core range widened to [1.4.80,1.6.0) for ATM10 8.2's 1.5.1, which refused to
+boot. The patched class is byte-identical across 1.4.80 and 1.5.1.
+
 0.22.6
 ------
 EMI transfer into a Pattern Grid keeps a list/tag ingredient's count ("any of" inputs, 32
